@@ -1,5 +1,5 @@
 generator client {
-  provider      = "prisma-client"
+  provider      = "prisma-client-js"
   output        = "../src/generated/prisma"
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
@@ -31,6 +31,7 @@ model Cliente {
 
 model Producto {
   id                 String   @id @default(cuid())
+
   nombre             String
   tamanioCm          Float?   @map("tamanio_cm")
   pesoPromedioGr     Float?   @map("peso_promedio_gr")
