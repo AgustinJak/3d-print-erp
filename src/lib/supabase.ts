@@ -24,5 +24,6 @@ export const supabaseAdmin = new Proxy({} as SupabaseClient, {
 
 // URL pública para archivos
 export function getPublicUrl(bucket: string, path: string) {
-  return `${supabaseUrl}/storage/v1/object/public/${bucket}/${path}`;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  return `${url}/storage/v1/object/public/${bucket}/${path}`;
 }
