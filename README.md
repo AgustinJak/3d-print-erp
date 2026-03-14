@@ -2,6 +2,19 @@
 
 Sistema de gestión (ERP) para un negocio de impresión 3D bajo demanda. Diseñado para controlar productos, modelos, pedidos, clientes, materiales y finanzas desde una única plataforma web.
 
+## Demo en vivo
+
+Podés probar la aplicación completa con datos de ejemplo:
+
+**URL:** [3d-print-erp-git-master-agustin-js-projects-133bdaae.vercel.app](https://3d-print-erp-git-master-agustin-js-projects-133bdaae.vercel.app)
+
+| | |
+|---|---|
+| **Email** | `demo@sendero3d.com` |
+| **Contraseña** | `demo1234` |
+
+> Los datos del usuario demo están aislados de la operación real del negocio. Podés crear productos, pedidos, clientes — todo se guarda en un espacio separado.
+
 ## Sobre el proyecto
 
 Esta aplicación fue creada para gestionar **Sendero 3D**, un emprendimiento de impresión 3D que opera con pedidos personalizados (print-on-demand). El sistema reemplaza planillas de cálculo y notas sueltas con una plataforma centralizada, accesible desde cualquier dispositivo.
