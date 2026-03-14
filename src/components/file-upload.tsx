@@ -3,6 +3,14 @@
 import { useState, useRef } from "react";
 import { Upload, X, FileBox, Image as ImageIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/client";
+
+// Límites por bucket
+const BUCKET_LIMITS: Record<string, number> = {
+  "modelos-3d": 50,
+  imagenes: 10,
+  comprobantes: 10,
+};
 
 interface FileUploadProps {
   bucket: "modelos-3d" | "imagenes" | "comprobantes";
@@ -31,20 +39,45 @@ export function FileUpload({
     setUploading(true);
     setError(null);
 
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("bucket", bucket);
+    // Validar tamaño
+    const maxMB = BUCKET_LIMITS[bucket] || 10;
+    if (file.size > maxMB * 1024 * 1024) {
+      setError(`El archivo supera el límite de ${maxMB}MB`);
+      setUploading(false);
+      return;
+    }
 
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      const data = await res.json();
+      const supabase = createClient();
 
-      if (!res.ok) {
-        setError(data.error || "Error al subir");
+      // Generar nombre único
+      const ext = file.name.split(".").pop() || "bin";
+      const timestamp = Date.now();
+      const safeName = file.name
+        .replace(/\.[^/.]+$/, "")
+        .replace(/[^a-zA-Z0-9_-]/g, "_")
+        .substring(0, 50);
+      const filePath = `${safeName}_${timestamp}.${ext}`;
+
+      // Subir directo a Supabase Storage (no pasa por API route → sin límite 4.5MB de Vercel)
+      const { error: uploadError } = await supabase.storage
+        .from(bucket)
+        .upload(filePath, file, {
+          contentType: file.type || "application/octet-stream",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        setError(uploadError.message);
         return;
       }
 
-      onUploaded(data.url);
+      // Obtener URL pública
+      const { data: urlData } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(filePath);
+
+      onUploaded(urlData.publicUrl);
     } catch {
       setError("Error de conexión");
     } finally {
