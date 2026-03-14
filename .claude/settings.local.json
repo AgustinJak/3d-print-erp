@@ -5,7 +5,9 @@
       "Read(//d/Programas/**)",
       "Bash(npx create-next-app@latest inventario_sendero3d_temp --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --use-npm)",
       "Bash(npx shadcn@latest add sidebar input label card table dialog dropdown-menu separator badge sheet tooltip avatar scroll-area select textarea -y)",
-      "Bash(npx next:*)"
+      "Bash(npx next:*)",
+      "mcp__e5d060b4-2ba8-4cc1-9baa-1e2f96f0f623__create_project",
+      "mcp__e5d060b4-2ba8-4cc1-9baa-1e2f96f0f623__list_projects"
     ]
   }
 }

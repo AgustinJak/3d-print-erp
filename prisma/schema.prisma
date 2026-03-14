@@ -19,6 +19,7 @@ model Cliente {
   email     String?
   direccion String?
   notas     String?
+  tenantId  String   @default("sendero3d") @map("tenant_id")
   creadoEn  DateTime @default(now()) @map("creado_en")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -41,6 +42,7 @@ model Producto {
   reglasDescuento    Json?    @map("reglas_descuento")
   notas              String?
   activo             Boolean  @default(true)
+  tenantId           String   @default("sendero3d") @map("tenant_id")
   creadoEn           DateTime @default(now()) @map("creado_en")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
@@ -61,6 +63,7 @@ model Modelo {
   notas         String?
   archivo3mfUrl String?  @map("archivo_3mf_url")
   imagenUrl     String?  @map("imagen_url")
+  tenantId      String   @default("sendero3d") @map("tenant_id")
   creadoEn      DateTime @default(now()) @map("creado_en")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -107,6 +110,7 @@ model Pedido {
   notas               String?
   etiquetas           String[]     @default([])
   canalVenta          String       @default("directa") @map("canal_venta")
+  tenantId            String       @default("sendero3d") @map("tenant_id")
   creadoEn            DateTime     @default(now()) @map("creado_en")
   updatedAt           DateTime     @updatedAt @map("updated_at")
 
@@ -149,6 +153,7 @@ model Filamento {
   pesoRestanteGr Float?   @map("peso_restante_gr")
   costoPorGr     Float?   @map("costo_por_gr")
   notas          String?
+  tenantId       String   @default("sendero3d") @map("tenant_id")
   creadoEn       DateTime @default(now()) @map("creado_en")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
@@ -163,6 +168,7 @@ model Gasto {
   categoria   String
   monto       Float
   descripcion String?
+  tenantId    String   @default("sendero3d") @map("tenant_id")
   creadoEn    DateTime @default(now()) @map("creado_en")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
