@@ -91,7 +91,7 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader className="border-b border-sidebar-border px-4 py-3">
         <div className="flex items-center justify-between">
-          <span className="text-lg font-bold text-primary">Sendero 3D</span>
+          <Link href="/" className="text-lg font-bold text-primary hover:opacity-80 transition-opacity">Sendero 3D</Link>
           <ThemeToggle />
         </div>
       </SidebarHeader>
