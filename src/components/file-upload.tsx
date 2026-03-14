@@ -1,0 +1,187 @@
+"use client";
+
+import { useState, useRef } from "react";
+import { Upload, X, FileBox, Image as ImageIcon, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+interface FileUploadProps {
+  bucket: "modelos-3d" | "imagenes" | "comprobantes";
+  accept: string;
+  currentUrl?: string | null;
+  onUploaded: (url: string) => void;
+  onRemoved?: () => void;
+  label?: string;
+  compact?: boolean;
+}
+
+export function FileUpload({
+  bucket,
+  accept,
+  currentUrl,
+  onUploaded,
+  onRemoved,
+  label = "Subir archivo",
+  compact = false,
+}: FileUploadProps) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    setError(null);
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("bucket", bucket);
+
+    try {
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Error al subir");
+        return;
+      }
+
+      onUploaded(data.url);
+    } catch {
+      setError("Error de conexión");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemove = () => {
+    if (onRemoved) onRemoved();
+    if (inputRef.current) inputRef.current.value = "";
+  };
+
+  const isImage = currentUrl && (currentUrl.match(/\.(jpg|jpeg|png|webp|gif)$/i) || bucket === "imagenes");
+  const is3mf = currentUrl && (currentUrl.endsWith(".3mf") || bucket === "modelos-3d");
+
+  if (compact) {
+    return (
+      <div className="space-y-1">
+        {currentUrl ? (
+          <div className="flex items-center gap-2">
+            {isImage ? (
+              <img src={currentUrl} alt="" className="h-8 w-8 rounded object-cover" />
+            ) : is3mf ? (
+              <FileBox className="h-4 w-4 text-violet-500" />
+            ) : (
+              <ImageIcon className="h-4 w-4 text-muted-foreground" />
+            )}
+            <span className="text-xs text-muted-foreground truncate max-w-[200px]" title={currentUrl.split("/").pop()}>
+              {currentUrl.split("/").pop()}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-5 w-5"
+              onClick={handleRemove}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            disabled={uploading}
+            onClick={() => inputRef.current?.click()}
+          >
+            {uploading ? (
+              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+            ) : (
+              <Upload className="h-3 w-3 mr-1" />
+            )}
+            {label}
+          </Button>
+        )}
+        <input
+          ref={inputRef}
+          type="file"
+          accept={accept}
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleUpload(file);
+          }}
+        />
+        {error && <p className="text-xs text-red-500">{error}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {currentUrl ? (
+        <div className="relative rounded-lg border p-3">
+          <div className="flex items-center gap-3">
+            {isImage ? (
+              <img src={currentUrl} alt="" className="h-16 w-16 rounded object-cover" />
+            ) : is3mf ? (
+              <div className="h-16 w-16 rounded bg-violet-500/10 flex items-center justify-center">
+                <FileBox className="h-8 w-8 text-violet-500" />
+              </div>
+            ) : (
+              <div className="h-16 w-16 rounded bg-muted flex items-center justify-center">
+                <ImageIcon className="h-8 w-8 text-muted-foreground" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">
+                {decodeURIComponent(currentUrl.split("/").pop() || "")}
+              </p>
+              <p className="text-xs text-muted-foreground">{bucket}</p>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-red-500"
+              onClick={handleRemove}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div
+          className="relative rounded-lg border-2 border-dashed p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
+          onClick={() => !uploading && inputRef.current?.click()}
+        >
+          {uploading ? (
+            <div className="flex flex-col items-center gap-2">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Subiendo...</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2">
+              <Upload className="h-8 w-8 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">{label}</p>
+              <p className="text-xs text-muted-foreground">
+                {accept.replace(/\./g, "").replace(/,/g, ", ").toUpperCase()}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleUpload(file);
+        }}
+      />
+      {error && <p className="text-xs text-red-500">{error}</p>}
+    </div>
+  );
+}

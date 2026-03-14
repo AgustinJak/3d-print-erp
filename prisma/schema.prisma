@@ -1,15 +1,168 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ==================== CLIENTES ====================
+
+model Cliente {
+  id        String   @id @default(cuid())
+  nombre    String
+  telefono  String?
+  email     String?
+  direccion String?
+  notas     String?
+  creadoEn  DateTime @default(now()) @map("creado_en")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  pedidos Pedido[]
+
+  @@map("clientes")
+}
+
+// ==================== PRODUCTOS ====================
+
+model Producto {
+  id                 String   @id @default(cuid())
+  nombre             String
+  tamanioCm          Float?   @map("tamanio_cm")
+  pesoPromedioGr     Float?   @map("peso_promedio_gr")
+  costoBaseFab       Float    @map("costo_base_fab")
+  precioBaseVenta    Float    @map("precio_base_venta")
+  precioCreditoPorc  Float    @default(10) @map("precio_credito_porc")
+  reglasDescuento    Json?    @map("reglas_descuento")
+  notas              String?
+  activo             Boolean  @default(true)
+  creadoEn           DateTime @default(now()) @map("creado_en")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  modelos     Modelo[]
+  itemsPedido ItemPedido[]
+
+  @@map("productos")
+}
+
+// ==================== MODELOS ====================
+
+model Modelo {
+  id            String   @id @default(cuid())
+  productoId    String   @map("producto_id")
+  nombre        String
+  serie         String?
+  pesoGr        Float?   @map("peso_gr")
+  notas         String?
+  archivo3mfUrl String?  @map("archivo_3mf_url")
+  imagenUrl     String?  @map("imagen_url")
+  creadoEn      DateTime @default(now()) @map("creado_en")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  producto    Producto     @relation(fields: [productoId], references: [id], onDelete: Cascade)
+  itemsPedido ItemPedido[]
+
+  @@map("modelos")
+}
+
+// ==================== PEDIDOS ====================
+
+enum EstadoPedido {
+  PENDIENTE_PAGO
+  CONFIRMADO
+  EN_PRODUCCION
+  TERMINADO
+  ENTREGADO
+  ESPERANDO_LIQUIDACION_ML
+  COMPLETADO
+  CANCELADO
+}
+
+enum Prioridad {
+  BAJA
+  MEDIA
+  ALTA
+  URGENTE
+}
+
+model Pedido {
+  id                  String       @id @default(cuid())
+  prioridad           Prioridad    @default(MEDIA)
+  clienteId           String?      @map("cliente_id")
+  fechaPedido         DateTime     @default(now()) @map("fecha_pedido")
+  fechaEntrega        DateTime?    @map("fecha_entrega")
+  estado              EstadoPedido @default(PENDIENTE_PAGO)
+  metodoEnvio         String?      @map("metodo_envio")
+  metodoPago          String?      @map("metodo_pago")
+  precioEnvio         Float        @default(0) @map("precio_envio")
+  senia               Float        @default(0)
+  comprobanteUrl      String?      @map("comprobante_url")
+  fechaLiquidacionMl  DateTime?    @map("fecha_liquidacion_ml")
+  contacto            String?
+  notas               String?
+  etiquetas           String[]     @default([])
+  canalVenta          String       @default("directa") @map("canal_venta")
+  creadoEn            DateTime     @default(now()) @map("creado_en")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+
+  cliente Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  items   ItemPedido[]
+
+  @@map("pedidos")
+}
+
+// ==================== ITEMS DEL PEDIDO ====================
+
+model ItemPedido {
+  id              String  @id @default(cuid())
+  pedidoId        String  @map("pedido_id")
+  productoId      String  @map("producto_id")
+  modeloId        String? @map("modelo_id")
+  cantidad        Int     @default(1)
+  precioUnitario  Float   @map("precio_unitario")
+  costoUnitario   Float   @map("costo_unitario")
+  ajusteManual    Float   @default(0) @map("ajuste_manual")
+
+  pedido   Pedido   @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  producto Producto @relation(fields: [productoId], references: [id])
+  modelo   Modelo?  @relation(fields: [modeloId], references: [id])
+
+  @@map("items_pedido")
+}
+
+// ==================== FILAMENTOS ====================
+
+model Filamento {
+  id             String   @id @default(cuid())
+  marca          String
+  tipoMaterial   String   @map("tipo_material")
+  color          String
+  tempExtrusor   Int?     @map("temp_extrusor")
+  tempCama       Int?     @map("temp_cama")
+  velocidadRec   Int?     @map("velocidad_rec")
+  pesoCarreteGr  Float?   @map("peso_carrete_gr")
+  pesoRestanteGr Float?   @map("peso_restante_gr")
+  costoPorGr     Float?   @map("costo_por_gr")
+  notas          String?
+  creadoEn       DateTime @default(now()) @map("creado_en")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("filamentos")
+}
+
+// ==================== GASTOS ====================
+
+model Gasto {
+  id          String   @id @default(cuid())
+  fecha       DateTime @default(now())
+  categoria   String
+  monto       Float
+  descripcion String?
+  creadoEn    DateTime @default(now()) @map("creado_en")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("gastos")
 }
