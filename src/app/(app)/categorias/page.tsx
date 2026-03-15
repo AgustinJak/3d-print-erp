@@ -23,12 +23,7 @@ interface Categoria {
   color: string | null;
   activo: boolean;
   _count: { modelos: number };
-  modelos: Array<{
-    modelo: {
-      id: string;
-      imagenUrl: string | null;
-    };
-  }>;
+  modeloImagenes: string[];
 }
 
 type ViewMode = "cards" | "table";
@@ -116,8 +111,8 @@ export default function CategoriasPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const getModelImages = (c: Categoria): (string | null)[] => {
-    return c.modelos.slice(0, 4).map((m) => m.modelo.imagenUrl);
+  const getModelImages = (c: Categoria): string[] => {
+    return c.modeloImagenes.slice(0, 4);
   };
 
   return (
