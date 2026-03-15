@@ -46,6 +46,8 @@ interface Pedido {
   etiquetas: string[];
   canalVenta: string;
   comprobanteUrl: string | null;
+  fechaLiquidacionMl: string | null;
+  idMercadolibre: string | null;
   cliente: { id: string; nombre: string } | null;
   items: ItemPedido[];
 }
@@ -188,10 +190,14 @@ export default function PedidosPage() {
                 const isExpanded = expandedId === p.id;
                 const prioConfig = PRIORIDADES[p.prioridad];
                 const estadoConfig = ESTADOS_PEDIDO[p.estado];
+                const liquidacionVencida =
+                  p.estado === "ESPERANDO_LIQUIDACION_ML" &&
+                  p.fechaLiquidacionMl &&
+                  new Date(p.fechaLiquidacionMl) <= new Date();
                 return (
                   <React.Fragment key={p.id}>
                     <TableRow
-                      className="cursor-pointer hover:bg-muted/50"
+                      className={`cursor-pointer hover:bg-muted/50 ${liquidacionVencida ? "bg-emerald-50 dark:bg-emerald-950/30" : ""}`}
                       onClick={() => setExpandedId(isExpanded ? null : p.id)}
                     >
                       <TableCell className="w-[40px] px-2">
@@ -270,6 +276,18 @@ export default function PedidosPage() {
                                 <p><span className="text-muted-foreground">Seña:</span> ${p.senia.toFixed(0)}</p>
                                 <p><span className="text-muted-foreground">Precio envío:</span> ${p.precioEnvio.toFixed(0)}</p>
                                 <p><span className="text-muted-foreground">Canal de venta:</span> {getCanalLabel(p.canalVenta)}</p>
+                                {p.idMercadolibre && (
+                                  <p><span className="text-muted-foreground">ID MercadoLibre:</span> {p.idMercadolibre}</p>
+                                )}
+                                {p.fechaLiquidacionMl && (
+                                  <p>
+                                    <span className="text-muted-foreground">Liquidación ML:</span>{" "}
+                                    {new Date(p.fechaLiquidacionMl).toLocaleDateString("es-AR")}
+                                    {liquidacionVencida && (
+                                      <Badge className="ml-2 bg-emerald-600 text-white text-xs">Liquidado</Badge>
+                                    )}
+                                  </p>
+                                )}
                               </div>
                             </div>
 

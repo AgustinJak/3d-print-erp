@@ -58,6 +58,8 @@ export async function POST(request: NextRequest) {
         etiquetas: body.etiquetas || [],
         canalVenta: body.canalVenta || "directa",
         comprobanteUrl: body.comprobanteUrl || null,
+        fechaLiquidacionMl: body.fechaLiquidacionMl ? new Date(body.fechaLiquidacionMl) : null,
+        idMercadolibre: body.idMercadolibre || null,
         tenantId,
         items: {
           create: (body.items || []).map((item: {

@@ -60,6 +60,8 @@ interface PedidoData {
   etiquetas: string[];
   canalVenta: string;
   comprobanteUrl: string | null;
+  fechaLiquidacionMl: string | null;
+  idMercadolibre: string | null;
   items: {
     productoId: string;
     modeloId: string | null;
@@ -105,6 +107,8 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
   const [etiquetas, setEtiquetas] = useState<string[]>([]);
   const [canalVenta, setCanalVenta] = useState("directa");
   const [comprobanteUrl, setComprobanteUrl] = useState("");
+  const [fechaLiquidacionMl, setFechaLiquidacionMl] = useState("");
+  const [idMercadolibre, setIdMercadolibre] = useState("");
   const [items, setItems] = useState<ItemForm[]>([{ ...emptyItem }]);
 
   const fetchData = useCallback(async () => {
@@ -137,6 +141,8 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
       setEtiquetas(pedido.etiquetas || []);
       setCanalVenta(pedido.canalVenta || "directa");
       setComprobanteUrl(pedido.comprobanteUrl || "");
+      setFechaLiquidacionMl(pedido.fechaLiquidacionMl ? pedido.fechaLiquidacionMl.slice(0, 10) : "");
+      setIdMercadolibre(pedido.idMercadolibre || "");
       setItems(
         pedido.items.map((i) => ({
           productoId: i.productoId,
@@ -161,6 +167,8 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
       setEtiquetas([]);
       setCanalVenta("directa");
       setComprobanteUrl("");
+      setFechaLiquidacionMl("");
+      setIdMercadolibre("");
       setItems([{ ...emptyItem }]);
     }
   }, [pedido, open]);
@@ -219,6 +227,8 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
       etiquetas,
       canalVenta,
       comprobanteUrl: comprobanteUrl || null,
+      fechaLiquidacionMl: fechaLiquidacionMl || null,
+      idMercadolibre: idMercadolibre || null,
       items: items.filter((i) => i.productoId).map((i) => ({
         productoId: i.productoId,
         modeloId: i.modeloId || null,
@@ -293,6 +303,19 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
               </Select>
             </div>
           </div>
+
+          {canalVenta === "mercadolibre" && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>ID de MercadoLibre</Label>
+                <Input value={idMercadolibre} onChange={(e) => setIdMercadolibre(e.target.value)} placeholder="Ej: 2000005123456789" />
+              </div>
+              <div className="space-y-2">
+                <Label>Fecha liquidación ML</Label>
+                <Input type="date" value={fechaLiquidacionMl} onChange={(e) => setFechaLiquidacionMl(e.target.value)} />
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">

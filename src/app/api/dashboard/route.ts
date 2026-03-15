@@ -12,6 +12,16 @@ export async function GET() {
     const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
     const finMes = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 1);
 
+    // Auto-completar pedidos ML con fecha de liquidación vencida
+    await prisma.$executeRaw`
+      UPDATE pedidos
+      SET estado = 'COMPLETADO'::"EstadoPedido", updated_at = NOW()
+      WHERE tenant_id = ${tenantId}
+        AND estado = 'ESPERANDO_LIQUIDACION_ML'::"EstadoPedido"
+        AND fecha_liquidacion_ml IS NOT NULL
+        AND fecha_liquidacion_ml <= ${ahora}
+    `;
+
     // Pedidos activos por estado
     const pedidos = await prisma.pedido.findMany({
       where: {

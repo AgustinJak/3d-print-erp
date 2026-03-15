@@ -106,6 +106,7 @@ model Pedido {
   senia               Float        @default(0)
   comprobanteUrl      String?      @map("comprobante_url")
   fechaLiquidacionMl  DateTime?    @map("fecha_liquidacion_ml")
+  idMercadolibre      String?      @map("id_mercadolibre")
   contacto            String?
   notas               String?
   etiquetas           String[]     @default([])
