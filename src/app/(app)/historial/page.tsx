@@ -19,8 +19,12 @@ interface ItemPedido {
   precioUnitario: number;
   costoUnitario: number;
   ajusteManual: number;
-  producto: { id: string; nombre: string };
-  modelo: { id: string; nombre: string } | null;
+  modelo: {
+    id: string;
+    nombre: string;
+    imagenUrl: string | null;
+    categorias: Array<{ categoria: { id: string; nombre: string; color: string | null } }>;
+  };
 }
 
 interface Pedido {
@@ -32,7 +36,7 @@ interface Pedido {
   items: ItemPedido[];
 }
 
-interface Producto { id: string; nombre: string }
+interface Modelo { id: string; nombre: string }
 interface Cliente { id: string; nombre: string }
 
 const ANIOS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
@@ -46,12 +50,12 @@ const MESES_OPTS = [
 
 export default function HistorialPage() {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
-  const [productos, setProductos] = useState<Producto[]>([]);
+  const [modelos, setModelos] = useState<Modelo[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [search, setSearch] = useState("");
   const [filterAnio, setFilterAnio] = useState(new Date().getFullYear().toString());
   const [filterMes, setFilterMes] = useState("todos");
-  const [filterProducto, setFilterProducto] = useState("todos");
+  const [filterModelo, setFilterModelo] = useState("todos");
   const [filterCliente, setFilterCliente] = useState("todos");
   const [filterCanal, setFilterCanal] = useState("todos");
   const [initialLoading, setInitialLoading] = useState(true);
@@ -60,22 +64,22 @@ export default function HistorialPage() {
     const params = new URLSearchParams();
     params.set("anio", filterAnio);
     if (filterMes !== "todos") params.set("mes", filterMes);
-    if (filterProducto !== "todos") params.set("productoId", filterProducto);
+    if (filterModelo !== "todos") params.set("modeloId", filterModelo);
     if (filterCliente !== "todos") params.set("clienteId", filterCliente);
     if (filterCanal !== "todos") params.set("canal", filterCanal);
 
     const res = await fetch(`/api/historial?${params}`);
     setPedidos(await res.json());
     setInitialLoading(false);
-  }, [filterAnio, filterMes, filterProducto, filterCliente, filterCanal]);
+  }, [filterAnio, filterMes, filterModelo, filterCliente, filterCanal]);
 
   const fetchRefs = useCallback(async () => {
-    const [prodRes, cliRes] = await Promise.all([
-      fetch("/api/productos"),
+    const [modRes, cliRes] = await Promise.all([
+      fetch("/api/modelos"),
       fetch("/api/clientes"),
     ]);
-    const prodData = await prodRes.json();
-    setProductos(prodData.map((p: Producto & { _count?: unknown }) => ({ id: p.id, nombre: p.nombre })));
+    const modData = await modRes.json();
+    setModelos(modData.map((m: Modelo & { _count?: unknown }) => ({ id: m.id, nombre: m.nombre })));
     const cliData = await cliRes.json();
     setClientes(cliData.map((c: Cliente) => ({ id: c.id, nombre: c.nombre })));
   }, []);
@@ -158,14 +162,14 @@ export default function HistorialPage() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={filterProducto} onValueChange={(v) => setFilterProducto(v ?? "todos")}>
+        <Select value={filterModelo} onValueChange={(v) => setFilterModelo(v ?? "todos")}>
           <SelectTrigger>
-            <span className="truncate">{filterProducto === "todos" ? "Todos los productos" : productos.find(p => p.id === filterProducto)?.nombre ?? "..."}</span>
+            <span className="truncate">{filterModelo === "todos" ? "Todos los modelos" : modelos.find(m => m.id === filterModelo)?.nombre ?? "..."}</span>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="todos">Todos los productos</SelectItem>
-            {productos.map((p) => (
-              <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>
+            <SelectItem value="todos">Todos los modelos</SelectItem>
+            {modelos.map((m) => (
+              <SelectItem key={m.id} value={m.id}>{m.nombre}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -227,9 +231,18 @@ export default function HistorialPage() {
                     </TableCell>
                     <TableCell className="text-sm">
                       {p.items.map((i) => (
-                        <div key={i.producto.id + (i.modelo?.id || "")}>
-                          {i.cantidad}x {i.producto.nombre}
-                          {i.modelo && <span className="text-muted-foreground"> ({i.modelo.nombre})</span>}
+                        <div key={i.modelo.id} className="flex items-center gap-1 flex-wrap mb-0.5">
+                          <span>{i.cantidad}x {i.modelo.nombre}</span>
+                          {i.modelo.categorias.map(({ categoria }) => (
+                            <Badge
+                              key={categoria.id}
+                              variant="secondary"
+                              className="text-[10px] px-1.5 py-0"
+                              style={categoria.color ? { backgroundColor: categoria.color, color: "#fff" } : undefined}
+                            >
+                              {categoria.nombre}
+                            </Badge>
+                          ))}
                         </div>
                       ))}
                     </TableCell>

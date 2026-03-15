@@ -20,14 +20,18 @@ import { PedidoDialog } from "./pedido-dialog";
 
 interface ItemPedido {
   id: string;
-  productoId: string;
-  modeloId: string | null;
+  productoId: string | null;
+  modeloId: string;
   cantidad: number;
   precioUnitario: number;
   costoUnitario: number;
   ajusteManual: number;
-  producto: { id: string; nombre: string };
-  modelo: { id: string; nombre: string } | null;
+  modelo: {
+    id: string;
+    nombre: string;
+    imagenUrl: string | null;
+    categorias: Array<{ categoria: { id: string; nombre: string; color: string | null } }>;
+  };
 }
 
 interface Pedido {
@@ -297,9 +301,20 @@ export default function PedidosPage() {
                               <div className="space-y-1">
                                 {p.items.map((item) => (
                                   <div key={item.id} className="text-sm border rounded-md p-2 space-y-0.5">
-                                    <p className="font-medium">{item.producto.nombre}</p>
-                                    {item.modelo && (
-                                      <p className="text-muted-foreground text-xs">Modelo: {item.modelo.nombre}</p>
+                                    <p className="font-medium">{item.modelo.nombre}</p>
+                                    {item.modelo.categorias.length > 0 && (
+                                      <div className="flex flex-wrap gap-1">
+                                        {item.modelo.categorias.map(({ categoria }) => (
+                                          <Badge
+                                            key={categoria.id}
+                                            variant="secondary"
+                                            className="text-[10px] px-1.5 py-0"
+                                            style={categoria.color ? { backgroundColor: categoria.color, color: "#fff" } : undefined}
+                                          >
+                                            {categoria.nombre}
+                                          </Badge>
+                                        ))}
+                                      </div>
                                     )}
                                     <div className="flex gap-3 text-xs text-muted-foreground">
                                       <span>Cant: {item.cantidad}</span>

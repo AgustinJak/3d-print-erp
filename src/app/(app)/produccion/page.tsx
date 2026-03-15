@@ -14,8 +14,12 @@ import { ESTADOS_PEDIDO, PRIORIDADES } from "@/lib/constants";
 interface ItemPedido {
   id: string;
   cantidad: number;
-  producto: { id: string; nombre: string };
-  modelo: { id: string; nombre: string } | null;
+  modelo: {
+    id: string;
+    nombre: string;
+    imagenUrl: string | null;
+    categorias: Array<{ categoria: { id: string; nombre: string; color: string | null } }>;
+  };
 }
 
 interface Pedido {
@@ -52,20 +56,25 @@ export default function ProduccionPage() {
   if (initialLoading) return <TableSkeleton cols={4} />;
 
   // Agrupar items para ver qué hay que imprimir
-  const itemsAgrupados = new Map<string, { nombre: string; modelo: string; cantidad: number; pedidos: string[] }>();
+  const itemsAgrupados = new Map<string, {
+    nombre: string;
+    cantidad: number;
+    pedidos: string[];
+    categorias: Array<{ categoria: { id: string; nombre: string; color: string | null } }>;
+  }>();
   pedidos.forEach((p) => {
     p.items.forEach((item) => {
-      const key = `${item.producto.id}-${item.modelo?.id || "sin-modelo"}`;
+      const key = item.modelo.id;
       const existing = itemsAgrupados.get(key);
       if (existing) {
         existing.cantidad += item.cantidad;
         existing.pedidos.push(p.id.slice(-6));
       } else {
         itemsAgrupados.set(key, {
-          nombre: item.producto.nombre,
-          modelo: item.modelo?.nombre || "Sin modelo",
+          nombre: item.modelo.nombre,
           cantidad: item.cantidad,
           pedidos: [p.id.slice(-6)],
+          categorias: item.modelo.categorias,
         });
       }
     });
@@ -100,9 +109,22 @@ export default function ProduccionPage() {
                 .sort((a, b) => b.cantidad - a.cantidad)
                 .map((item, idx) => (
                   <div key={idx} className="flex items-center justify-between rounded-md border px-3 py-2">
-                    <div>
+                    <div className="flex items-center gap-2">
                       <span className="font-medium">{item.nombre}</span>
-                      <span className="text-muted-foreground"> — {item.modelo}</span>
+                      {item.categorias.length > 0 && (
+                        <div className="flex gap-1">
+                          {item.categorias.map(({ categoria }) => (
+                            <Badge
+                              key={categoria.id}
+                              variant="secondary"
+                              className="text-[10px] px-1.5 py-0"
+                              style={categoria.color ? { backgroundColor: categoria.color, color: "#fff" } : undefined}
+                            >
+                              {categoria.nombre}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-sm text-muted-foreground">
@@ -187,12 +209,19 @@ export default function ProduccionPage() {
 
                   <div className="space-y-1">
                     {p.items.map((item) => (
-                      <div key={item.id} className="flex items-center gap-2 text-sm">
+                      <div key={item.id} className="flex items-center gap-2 text-sm flex-wrap">
                         <span className="font-medium">{item.cantidad}x</span>
-                        <span>{item.producto.nombre}</span>
-                        {item.modelo && (
-                          <span className="text-muted-foreground">({item.modelo.nombre})</span>
-                        )}
+                        <span>{item.modelo.nombre}</span>
+                        {item.modelo.categorias.map(({ categoria }) => (
+                          <Badge
+                            key={categoria.id}
+                            variant="secondary"
+                            className="text-[10px] px-1.5 py-0"
+                            style={categoria.color ? { backgroundColor: categoria.color, color: "#fff" } : undefined}
+                          >
+                            {categoria.nombre}
+                          </Badge>
+                        ))}
                       </div>
                     ))}
                   </div>

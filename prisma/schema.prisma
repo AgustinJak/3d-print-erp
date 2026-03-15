@@ -28,7 +28,7 @@ model Cliente {
   @@map("clientes")
 }
 
-// ==================== PRODUCTOS ====================
+// ==================== PRODUCTOS (LEGACY - será eliminado) ====================
 
 model Producto {
   id                 String   @id @default(cuid())
@@ -52,22 +52,59 @@ model Producto {
   @@map("productos")
 }
 
+// ==================== CATEGORÍAS ====================
+
+model Categoria {
+  id          String   @id @default(cuid())
+  nombre      String
+  descripcion String?
+  color       String?
+  activo      Boolean  @default(true)
+  tenantId    String   @default("sendero3d") @map("tenant_id")
+  creadoEn    DateTime @default(now()) @map("creado_en")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  modelos CategoriaModelo[]
+
+  @@map("categorias")
+}
+
+model CategoriaModelo {
+  id          String @id @default(cuid())
+  categoriaId String @map("categoria_id")
+  modeloId    String @map("modelo_id")
+
+  categoria Categoria @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
+  modelo    Modelo    @relation(fields: [modeloId], references: [id], onDelete: Cascade)
+
+  @@unique([categoriaId, modeloId])
+  @@map("categorias_modelos")
+}
+
 // ==================== MODELOS ====================
 
 model Modelo {
-  id            String   @id @default(cuid())
-  productoId    String   @map("producto_id")
-  nombre        String
-  serie         String?
-  pesoGr        Float?   @map("peso_gr")
-  notas         String?
-  archivo3mfUrl String?  @map("archivo_3mf_url")
-  imagenUrl     String?  @map("imagen_url")
-  tenantId      String   @default("sendero3d") @map("tenant_id")
-  creadoEn      DateTime @default(now()) @map("creado_en")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id                String   @id @default(cuid())
+  productoId        String?  @map("producto_id")
+  nombre            String
+  serie             String?
+  pesoGr            Float?   @map("peso_gr")
+  costoFab          Float    @default(0) @map("costo_fab")
+  precioVenta       Float    @default(0) @map("precio_venta")
+  precioCreditoPorc Float    @default(10) @map("precio_credito_porc")
+  precioMayorista   Float?   @map("precio_mayorista")
+  precioPromo       Float?   @map("precio_promo")
+  notas             String?
+  archivo3mfUrl     String?  @map("archivo_3mf_url")
+  imagenUrl         String?  @map("imagen_url")
+  imagenesUrls      String[] @default([]) @map("imagenes_urls")
+  activo            Boolean  @default(true)
+  tenantId          String   @default("sendero3d") @map("tenant_id")
+  creadoEn          DateTime @default(now()) @map("creado_en")
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
-  producto    Producto     @relation(fields: [productoId], references: [id], onDelete: Cascade)
+  producto    Producto?        @relation(fields: [productoId], references: [id], onDelete: SetNull)
+  categorias  CategoriaModelo[]
   itemsPedido ItemPedido[]
 
   @@map("modelos")
@@ -126,16 +163,16 @@ model Pedido {
 model ItemPedido {
   id              String  @id @default(cuid())
   pedidoId        String  @map("pedido_id")
-  productoId      String  @map("producto_id")
-  modeloId        String? @map("modelo_id")
+  productoId      String? @map("producto_id")
+  modeloId        String  @map("modelo_id")
   cantidad        Int     @default(1)
   precioUnitario  Float   @map("precio_unitario")
   costoUnitario   Float   @map("costo_unitario")
   ajusteManual    Float   @default(0) @map("ajuste_manual")
 
-  pedido   Pedido   @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
-  producto Producto @relation(fields: [productoId], references: [id])
-  modelo   Modelo?  @relation(fields: [modeloId], references: [id])
+  pedido   Pedido    @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  producto Producto? @relation(fields: [productoId], references: [id])
+  modelo   Modelo    @relation(fields: [modeloId], references: [id])
 
   @@map("items_pedido")
 }

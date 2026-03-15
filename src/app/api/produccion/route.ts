@@ -20,7 +20,16 @@ export async function GET() {
         items: {
           include: {
             producto: { select: { id: true, nombre: true } },
-            modelo: { select: { id: true, nombre: true } },
+            modelo: {
+              select: {
+                id: true,
+                nombre: true,
+                imagenUrl: true,
+                categorias: {
+                  include: { categoria: true },
+                },
+              },
+            },
           },
         },
       },

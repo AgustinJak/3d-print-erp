@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  Package,
+  Tag,
   Box,
   ShoppingCart,
   Factory,
@@ -38,7 +38,7 @@ const navPrincipal = [
 ];
 
 const navCatalogo = [
-  { title: "Productos", href: "/productos", icon: Package },
+  { title: "Categorías", href: "/categorias", icon: Tag },
   { title: "Modelos", href: "/modelos", icon: Box },
   { title: "Filamentos", href: "/filamentos", icon: Palette },
 ];

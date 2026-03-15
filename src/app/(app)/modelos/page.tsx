@@ -1,7 +1,11 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Pencil, Trash2, FileBox, Download, ChevronRight } from "lucide-react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import {
+  Plus, Search, Pencil, Trash2, FileBox, Download,
+  LayoutGrid, TableIcon, ChevronDown, X,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -12,77 +16,307 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/data-loading";
 import { FileUpload } from "@/components/file-upload";
 
-interface Producto {
+/* ─── Types ────────────────────────────────────────────── */
+
+interface Categoria {
   id: string;
   nombre: string;
+  color: string | null;
 }
 
 interface Modelo {
   id: string;
-  productoId: string;
   nombre: string;
   serie: string | null;
   pesoGr: number | null;
+  costoFab: number;
+  precioVenta: number;
+  precioCreditoPorc: number;
+  precioMayorista: number | null;
+  precioPromo: number | null;
   notas: string | null;
   archivo3mfUrl: string | null;
   imagenUrl: string | null;
-  producto: { id: string; nombre: string };
+  imagenesUrls: string[];
+  activo: boolean;
+  categorias: Array<{
+    categoria: Categoria;
+  }>;
 }
 
+/* ─── Form ─────────────────────────────────────────────── */
+
 const emptyForm = {
-  productoId: "",
   nombre: "",
   serie: "",
   pesoGr: "",
+  costoFab: "",
+  precioVenta: "",
+  precioCreditoPorc: "10",
+  precioMayorista: "",
+  precioPromo: "",
   notas: "",
   archivo3mfUrl: "",
   imagenUrl: "",
+  activo: true,
+  categoriaIds: [] as string[],
 };
 
+type ViewMode = "table" | "cards";
+
+/* ─── Category Filter Dropdown ─────────────────────────── */
+
+function CategoryFilter({
+  categorias,
+  selected,
+  onChange,
+}: {
+  categorias: Categoria[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const toggle = (id: string) => {
+    onChange(
+      selected.includes(id)
+        ? selected.filter((s) => s !== id)
+        : [...selected, id]
+    );
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <Button
+        variant="outline"
+        className="w-full justify-between"
+        onClick={() => setOpen(!open)}
+        type="button"
+      >
+        <span className="truncate text-left">
+          {selected.length === 0
+            ? "Todas las categorías"
+            : `${selected.length} categoría${selected.length > 1 ? "s" : ""}`}
+        </span>
+        <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+      </Button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md">
+          {categorias.length === 0 && (
+            <p className="px-2 py-1.5 text-sm text-muted-foreground">Sin categorías</p>
+          )}
+          {categorias.map((c) => (
+            <label
+              key={c.id}
+              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
+            >
+              <input
+                type="checkbox"
+                checked={selected.includes(c.id)}
+                onChange={() => toggle(c.id)}
+                className="h-4 w-4 rounded border-input accent-primary"
+              />
+              {c.color && (
+                <span
+                  className="h-3 w-3 rounded-full shrink-0"
+                  style={{ backgroundColor: c.color }}
+                />
+              )}
+              {c.nombre}
+            </label>
+          ))}
+          {selected.length > 0 && (
+            <button
+              type="button"
+              className="mt-1 w-full rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+              onClick={() => onChange([])}
+            >
+              Limpiar filtro
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Category Multi-Select for Form ───────────────────── */
+
+function CategoryMultiSelect({
+  categorias,
+  selected,
+  onChange,
+}: {
+  categorias: Categoria[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const toggle = (id: string) => {
+    onChange(
+      selected.includes(id)
+        ? selected.filter((s) => s !== id)
+        : [...selected, id]
+    );
+  };
+
+  const selectedCats = categorias.filter((c) => selected.includes(c.id));
+
+  return (
+    <div className="relative" ref={ref}>
+      <div
+        className="flex min-h-9 w-full cursor-pointer flex-wrap items-center gap-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
+        onClick={() => setOpen(!open)}
+      >
+        {selectedCats.length === 0 && (
+          <span className="text-muted-foreground">Seleccionar categorías...</span>
+        )}
+        {selectedCats.map((c) => (
+          <Badge key={c.id} variant="secondary" className="gap-1">
+            {c.color && (
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: c.color }}
+              />
+            )}
+            {c.nombre}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); toggle(c.id); }}
+              className="ml-0.5 hover:text-destructive"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </Badge>
+        ))}
+      </div>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md max-h-48 overflow-y-auto">
+          {categorias.map((c) => (
+            <label
+              key={c.id}
+              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
+            >
+              <input
+                type="checkbox"
+                checked={selected.includes(c.id)}
+                onChange={() => toggle(c.id)}
+                className="h-4 w-4 rounded border-input accent-primary"
+              />
+              {c.color && (
+                <span
+                  className="h-3 w-3 rounded-full shrink-0"
+                  style={{ backgroundColor: c.color }}
+                />
+              )}
+              {c.nombre}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Category Badges ──────────────────────────────────── */
+
+function CategoriaBadges({ categorias }: { categorias: Modelo["categorias"] }) {
+  if (!categorias || categorias.length === 0) return <span className="text-muted-foreground text-sm">—</span>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {categorias.map(({ categoria: c }) => (
+        <Badge
+          key={c.id}
+          variant="outline"
+          className="gap-1"
+          style={c.color ? { borderColor: c.color, color: c.color } : undefined}
+        >
+          {c.color && (
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c.color }} />
+          )}
+          {c.nombre}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
+/* ─── Helpers ──────────────────────────────────────────── */
+
+function formatPrice(n: number) {
+  return `$${n.toLocaleString("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
+/* ═══════════════════════════════════════════════════════ */
+
 export default function ModelosPage() {
+  const router = useRouter();
   const [modelos, setModelos] = useState<Modelo[]>([]);
-  const [productos, setProductos] = useState<Producto[]>([]);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [search, setSearch] = useState("");
-  const [filterProducto, setFilterProducto] = useState<string>("todos");
+  const [filterCategoriaIds, setFilterCategoriaIds] = useState<string[]>([]);
+  const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  /* ─── Fetch ───────────────────────────────────────── */
 
   const fetchModelos = useCallback(async () => {
     const res = await fetch("/api/modelos");
     setModelos(await res.json());
   }, []);
 
-  const fetchProductos = useCallback(async () => {
-    const res = await fetch("/api/productos");
-    const data = await res.json();
-    setProductos(data.map((p: Producto & { _count?: unknown }) => ({ id: p.id, nombre: p.nombre })));
+  const fetchCategorias = useCallback(async () => {
+    const res = await fetch("/api/categorias");
+    setCategorias(await res.json());
   }, []);
 
   useEffect(() => {
-    Promise.all([fetchModelos(), fetchProductos()]).then(() => setInitialLoading(false));
-  }, [fetchModelos, fetchProductos]);
+    Promise.all([fetchModelos(), fetchCategorias()]).then(() => setInitialLoading(false));
+  }, [fetchModelos, fetchCategorias]);
 
-  if (initialLoading) return <TableSkeleton cols={6} />;
+  if (initialLoading) return <TableSkeleton cols={8} />;
+
+  /* ─── Filter ──────────────────────────────────────── */
 
   const filtered = modelos.filter((m) => {
     const matchSearch =
       m.nombre.toLowerCase().includes(search.toLowerCase()) ||
-      m.serie?.toLowerCase().includes(search.toLowerCase()) ||
-      m.producto.nombre.toLowerCase().includes(search.toLowerCase());
-    const matchProducto = filterProducto === "todos" || m.productoId === filterProducto;
-    return matchSearch && matchProducto;
+      m.serie?.toLowerCase().includes(search.toLowerCase());
+    const matchCategoria =
+      filterCategoriaIds.length === 0 ||
+      m.categorias.some(({ categoria }) => filterCategoriaIds.includes(categoria.id));
+    return matchSearch && matchCategoria;
   });
+
+  /* ─── CRUD ────────────────────────────────────────── */
 
   const openCreate = () => {
     setEditingId(null);
@@ -93,13 +327,19 @@ export default function ModelosPage() {
   const openEdit = (m: Modelo) => {
     setEditingId(m.id);
     setForm({
-      productoId: m.productoId,
       nombre: m.nombre,
       serie: m.serie || "",
       pesoGr: m.pesoGr?.toString() || "",
+      costoFab: m.costoFab.toString(),
+      precioVenta: m.precioVenta.toString(),
+      precioCreditoPorc: m.precioCreditoPorc.toString(),
+      precioMayorista: m.precioMayorista?.toString() || "",
+      precioPromo: m.precioPromo?.toString() || "",
       notas: m.notas || "",
       archivo3mfUrl: m.archivo3mfUrl || "",
       imagenUrl: m.imagenUrl || "",
+      activo: m.activo,
+      categoriaIds: m.categorias.map(({ categoria }) => categoria.id),
     });
     setDialogOpen(true);
   };
@@ -112,7 +352,15 @@ export default function ModelosPage() {
     await fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify({
+        ...form,
+        pesoGr: form.pesoGr ? parseFloat(form.pesoGr) : null,
+        costoFab: parseFloat(form.costoFab) || 0,
+        precioVenta: parseFloat(form.precioVenta) || 0,
+        precioCreditoPorc: parseFloat(form.precioCreditoPorc) || 10,
+        precioMayorista: form.precioMayorista ? parseFloat(form.precioMayorista) : null,
+        precioPromo: form.precioPromo ? parseFloat(form.precioPromo) : null,
+      }),
     });
     setDialogOpen(false);
     setLoading(false);
@@ -125,185 +373,338 @@ export default function ModelosPage() {
     fetchModelos();
   };
 
-  const updateField = (field: string, value: string) => {
+  const updateField = (field: string, value: string | boolean | string[]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  /* ─── Render ──────────────────────────────────────── */
+
   return (
     <div className="space-y-4">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Modelos</h1>
-        <Button onClick={openCreate} disabled={productos.length === 0}>
+        <Button onClick={openCreate}>
           <Plus className="mr-2 h-4 w-4" />
           Nuevo Modelo
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      {/* Toolbar: search, category filter, view mode */}
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2 items-start">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar modelo, serie o producto..."
+            placeholder="Buscar modelo o serie..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
           />
         </div>
-        <Select value={filterProducto} onValueChange={(v) => setFilterProducto(v ?? "todos")}>
-          <SelectTrigger>
-            <span className="truncate">{filterProducto === "todos" ? "Todos los productos" : productos.find(p => p.id === filterProducto)?.nombre ?? "..."}</span>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos los productos</SelectItem>
-            {productos.map((p) => (
-              <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+
+        <div className="w-full sm:w-56">
+          <CategoryFilter
+            categorias={categorias}
+            selected={filterCategoriaIds}
+            onChange={setFilterCategoriaIds}
+          />
+        </div>
+
+        <div className="inline-flex rounded-md border">
+          <Button
+            variant={viewMode === "table" ? "default" : "ghost"}
+            size="icon"
+            className="rounded-r-none"
+            onClick={() => setViewMode("table")}
+            title="Vista tabla"
+          >
+            <TableIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={viewMode === "cards" ? "default" : "ghost"}
+            size="icon"
+            className="rounded-l-none"
+            onClick={() => setViewMode("cards")}
+            title="Vista tarjetas"
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
-      <div className="rounded-md border overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="min-w-[120px]">Nombre</TableHead>
-              <TableHead className="min-w-[120px]">Producto</TableHead>
-              <TableHead>Serie</TableHead>
-              <TableHead>Peso</TableHead>
-              <TableHead>Archivo 3MF</TableHead>
-              <TableHead className="w-[100px]">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.length === 0 ? (
+      {/* Content */}
+      {filtered.length === 0 ? (
+        <div className="text-center text-muted-foreground py-12">
+          {modelos.length === 0 ? "No hay modelos registrados." : "Sin resultados."}
+        </div>
+      ) : viewMode === "cards" ? (
+        /* ─── Card View ─────────────────────────────── */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filtered.map((m) => (
+            <Card
+              key={m.id}
+              className="cursor-pointer overflow-hidden transition-shadow hover:shadow-lg"
+              onClick={() => router.push(`/modelos/${m.id}`)}
+            >
+              {/* Image */}
+              <div className="relative aspect-square w-full bg-muted">
+                {m.imagenUrl ? (
+                  <img
+                    src={m.imagenUrl}
+                    alt={m.nombre}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center">
+                    <FileBox className="h-12 w-12 text-muted-foreground/40" />
+                  </div>
+                )}
+                {/* Active badge */}
+                {!m.activo && (
+                  <Badge variant="destructive" className="absolute top-2 right-2">
+                    Inactivo
+                  </Badge>
+                )}
+              </div>
+              {/* Info */}
+              <div className="space-y-2 px-4 pb-4">
+                <h3 className="font-semibold truncate" title={m.nombre}>
+                  {m.nombre}
+                </h3>
+                <p className="text-lg font-bold text-primary">
+                  {formatPrice(m.precioVenta)}
+                </p>
+                <CategoriaBadges categorias={m.categorias} />
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        /* ─── Table View ────────────────────────────── */
+        <div className="rounded-md border overflow-x-auto">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                  {modelos.length === 0
-                    ? productos.length === 0
-                      ? "Primero creá un producto."
-                      : "No hay modelos registrados."
-                    : "Sin resultados."}
-                </TableCell>
+                <TableHead className="w-[60px]">Imagen</TableHead>
+                <TableHead className="min-w-[140px]">Nombre</TableHead>
+                <TableHead>Categorías</TableHead>
+                <TableHead className="text-right">Costo Fab</TableHead>
+                <TableHead className="text-right">Precio Venta</TableHead>
+                <TableHead className="text-right">Precio Crédito</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead className="w-[100px]">Acciones</TableHead>
               </TableRow>
-            ) : (
-              filtered.map((m) => (
-                <React.Fragment key={m.id}>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((m) => {
+                const precioCredito = m.precioVenta * (1 + m.precioCreditoPorc / 100);
+                return (
                   <TableRow
+                    key={m.id}
                     className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
+                    onClick={() => router.push(`/modelos/${m.id}`)}
                   >
                     <TableCell>
-                      <div className="flex items-center gap-3">
-                        <ChevronRight className={`h-4 w-4 shrink-0 transition-transform ${expandedId === m.id ? "rotate-90" : ""}`} />
-                        {m.imagenUrl ? (
-                          <img src={m.imagenUrl} alt={m.nombre} className="h-10 w-10 rounded object-cover" />
-                        ) : (
-                          <div className="h-10 w-10 rounded bg-muted flex items-center justify-center">
-                            <FileBox className="h-5 w-5 text-muted-foreground" />
-                          </div>
-                        )}
-                        <span className="font-medium">{m.nombre}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{m.producto.nombre}</Badge>
-                    </TableCell>
-                    <TableCell>{m.serie || "—"}</TableCell>
-                    <TableCell>{m.pesoGr ? `${m.pesoGr} g` : "—"}</TableCell>
-                    <TableCell>
-                      {m.archivo3mfUrl ? (
-                        <a
-                          href={m.archivo3mfUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-sm text-violet-500 hover:text-violet-400"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          Descargar
-                        </a>
+                      {m.imagenUrl ? (
+                        <img
+                          src={m.imagenUrl}
+                          alt={m.nombre}
+                          className="h-10 w-10 rounded object-cover"
+                        />
                       ) : (
-                        <span className="text-muted-foreground text-sm">No</span>
+                        <div className="h-10 w-10 rounded bg-muted flex items-center justify-center">
+                          <FileBox className="h-5 w-5 text-muted-foreground" />
+                        </div>
                       )}
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-2">
-                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); openEdit(m); }}>
+                      <div>
+                        <span className="font-medium">{m.nombre}</span>
+                        {m.serie && (
+                          <span className="block text-xs text-muted-foreground">{m.serie}</span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <CategoriaBadges categorias={m.categorias} />
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{formatPrice(m.costoFab)}</TableCell>
+                    <TableCell className="text-right tabular-nums font-medium">{formatPrice(m.precioVenta)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatPrice(precioCredito)}</TableCell>
+                    <TableCell>
+                      <Badge variant={m.activo ? "default" : "destructive"}>
+                        {m.activo ? "Activo" : "Inactivo"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => { e.stopPropagation(); openEdit(m); }}
+                          title="Editar"
+                        >
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleDelete(m.id); }}>
+                        {m.archivo3mfUrl && (
+                          <a
+                            href={m.archivo3mfUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            title="Descargar 3MF"
+                          >
+                            <Button variant="ghost" size="icon">
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </a>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => { e.stopPropagation(); handleDelete(m.id); }}
+                          title="Eliminar"
+                        >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
                     </TableCell>
                   </TableRow>
-                  {expandedId === m.id && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="bg-muted/30 p-4">
-                        <div className="space-y-3">
-                          <div>
-                            <span className="text-sm font-medium">Notas</span>
-                            {m.notas ? (
-                              <p className="text-sm">{m.notas}</p>
-                            ) : (
-                              <p className="text-sm text-muted-foreground">Sin notas</p>
-                            )}
-                          </div>
-                          {m.imagenUrl && (
-                            <div>
-                              <span className="text-sm font-medium">Vista previa</span>
-                              <img src={m.imagenUrl} alt={m.nombre} className="mt-1 h-32 w-32 rounded object-cover" />
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </React.Fragment>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
+      {/* ─── Create / Edit Dialog ───────────────────── */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId ? "Editar Modelo" : "Nuevo Modelo"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Nombre */}
             <div className="space-y-2">
-              <Label>Producto *</Label>
-              <Select value={form.productoId || "placeholder"} onValueChange={(v) => updateField("productoId", v === "placeholder" ? "" : (v ?? ""))} required>
-                <SelectTrigger>
-                  <span className="truncate">{form.productoId ? productos.find(p => p.id === form.productoId)?.nombre ?? "..." : "Seleccionar producto"}</span>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="placeholder" disabled>Seleccionar producto</SelectItem>
-                  {productos.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="nombre">Nombre *</Label>
+              <Input
+                id="nombre"
+                value={form.nombre}
+                onChange={(e) => updateField("nombre", e.target.value)}
+                required
+              />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="nombre">Nombre del modelo *</Label>
-              <Input id="nombre" value={form.nombre} onChange={(e) => updateField("nombre", e.target.value)} required />
-            </div>
+
+            {/* Serie + Peso */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="serie">Serie / Franquicia</Label>
-                <Input id="serie" value={form.serie} onChange={(e) => updateField("serie", e.target.value)} placeholder="Ej: One Piece, Naruto..." />
+                <Input
+                  id="serie"
+                  value={form.serie}
+                  onChange={(e) => updateField("serie", e.target.value)}
+                  placeholder="Ej: One Piece, Naruto..."
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="pesoGr">Peso (g)</Label>
-                <Input id="pesoGr" type="number" step="0.1" value={form.pesoGr} onChange={(e) => updateField("pesoGr", e.target.value)} />
+                <Input
+                  id="pesoGr"
+                  type="number"
+                  step="0.1"
+                  value={form.pesoGr}
+                  onChange={(e) => updateField("pesoGr", e.target.value)}
+                />
               </div>
             </div>
+
+            {/* Costo Fab + Precio Venta */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="costoFab">Costo Fabricación *</Label>
+                <Input
+                  id="costoFab"
+                  type="number"
+                  step="0.01"
+                  value={form.costoFab}
+                  onChange={(e) => updateField("costoFab", e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="precioVenta">Precio Venta *</Label>
+                <Input
+                  id="precioVenta"
+                  type="number"
+                  step="0.01"
+                  value={form.precioVenta}
+                  onChange={(e) => updateField("precioVenta", e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Crédito % + Mayorista */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="precioCreditoPorc">Recargo Crédito (%)</Label>
+                <Input
+                  id="precioCreditoPorc"
+                  type="number"
+                  step="0.1"
+                  value={form.precioCreditoPorc}
+                  onChange={(e) => updateField("precioCreditoPorc", e.target.value)}
+                  placeholder="10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="precioMayorista">Precio Mayorista</Label>
+                <Input
+                  id="precioMayorista"
+                  type="number"
+                  step="0.01"
+                  value={form.precioMayorista}
+                  onChange={(e) => updateField("precioMayorista", e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Precio Promo */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="precioPromo">Precio Promo</Label>
+                <Input
+                  id="precioPromo"
+                  type="number"
+                  step="0.01"
+                  value={form.precioPromo}
+                  onChange={(e) => updateField("precioPromo", e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Categorías */}
+            <div className="space-y-2">
+              <Label>Categorías</Label>
+              <CategoryMultiSelect
+                categorias={categorias}
+                selected={form.categoriaIds}
+                onChange={(ids) => updateField("categoriaIds", ids)}
+              />
+            </div>
+
+            {/* Notas */}
             <div className="space-y-2">
               <Label htmlFor="notas">Notas</Label>
-              <Textarea id="notas" value={form.notas} onChange={(e) => updateField("notas", e.target.value)} rows={2} />
+              <Textarea
+                id="notas"
+                value={form.notas}
+                onChange={(e) => updateField("notas", e.target.value)}
+                rows={2}
+              />
             </div>
+
+            {/* File uploads */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Archivo 3MF</Label>
@@ -328,9 +729,35 @@ export default function ModelosPage() {
                 />
               </div>
             </div>
+
+            {/* Activo toggle */}
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={form.activo}
+                onClick={() => updateField("activo", !form.activo)}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 border-transparent transition-colors ${
+                  form.activo ? "bg-primary" : "bg-muted-foreground/30"
+                }`}
+              >
+                <span
+                  className={`pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform ${
+                    form.activo ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+              <span className="text-sm font-medium">Activo</span>
+            </label>
+
+            {/* Actions */}
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-              <Button type="submit" disabled={loading || !form.productoId}>{loading ? "Guardando..." : "Guardar"}</Button>
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={loading || !form.nombre || !form.costoFab || !form.precioVenta}>
+                {loading ? "Guardando..." : "Guardar"}
+              </Button>
             </div>
           </form>
         </DialogContent>

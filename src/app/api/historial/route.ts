@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
     const mes = searchParams.get("mes");
     const anio = searchParams.get("anio");
     const productoId = searchParams.get("productoId");
+    const categoriaId = searchParams.get("categoriaId");
     const clienteId = searchParams.get("clienteId");
     const canal = searchParams.get("canal");
 
@@ -35,6 +36,17 @@ export async function GET(request: NextRequest) {
     if (productoId) {
       where.items = { some: { productoId } };
     }
+    if (categoriaId) {
+      where.items = {
+        some: {
+          modelo: {
+            categorias: {
+              some: { categoriaId },
+            },
+          },
+        },
+      };
+    }
 
     const pedidos = await prisma.pedido.findMany({
       where,
@@ -44,7 +56,16 @@ export async function GET(request: NextRequest) {
         items: {
           include: {
             producto: { select: { id: true, nombre: true } },
-            modelo: { select: { id: true, nombre: true } },
+            modelo: {
+              select: {
+                id: true,
+                nombre: true,
+                imagenUrl: true,
+                categorias: {
+                  include: { categoria: true },
+                },
+              },
+            },
           },
         },
       },

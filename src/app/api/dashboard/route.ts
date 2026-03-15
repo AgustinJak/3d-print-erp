@@ -33,7 +33,15 @@ export async function GET() {
         items: {
           include: {
             producto: { select: { nombre: true } },
-            modelo: { select: { nombre: true } },
+            modelo: {
+              select: {
+                nombre: true,
+                imagenUrl: true,
+                categorias: {
+                  include: { categoria: true },
+                },
+              },
+            },
           },
         },
       },
@@ -73,7 +81,7 @@ export async function GET() {
     });
     const totalGastosMes = gastosMes._sum.monto || 0;
 
-    // Productos más vendidos (últimos 30 días)
+    // Modelos más vendidos (últimos 30 días)
     const hace30Dias = new Date(ahora.getTime() - 30 * 24 * 60 * 60 * 1000);
     const itemsRecientes = await prisma.itemPedido.findMany({
       where: {
@@ -84,21 +92,44 @@ export async function GET() {
         },
       },
       include: {
-        producto: { select: { nombre: true } },
+        modelo: {
+          select: {
+            nombre: true,
+            imagenUrl: true,
+            categorias: {
+              include: { categoria: true },
+            },
+          },
+        },
       },
     });
 
-    const ventasPorProducto: Record<string, { nombre: string; cantidad: number; ingresos: number }> = {};
-    itemsRecientes.forEach((item) => {
-      const key = item.productoId;
-      if (!ventasPorProducto[key]) {
-        ventasPorProducto[key] = { nombre: item.producto.nombre, cantidad: 0, ingresos: 0 };
+    const ventasPorModelo: Record<
+      string,
+      {
+        nombre: string;
+        imagenUrl: string | null;
+        categorias: string[];
+        cantidad: number;
+        ingresos: number;
       }
-      ventasPorProducto[key].cantidad += item.cantidad;
-      ventasPorProducto[key].ingresos += item.precioUnitario * item.cantidad + item.ajusteManual;
+    > = {};
+    itemsRecientes.forEach((item) => {
+      const key = item.modeloId;
+      if (!ventasPorModelo[key]) {
+        ventasPorModelo[key] = {
+          nombre: item.modelo.nombre,
+          imagenUrl: item.modelo.imagenUrl,
+          categorias: item.modelo.categorias.map((c) => c.categoria.nombre),
+          cantidad: 0,
+          ingresos: 0,
+        };
+      }
+      ventasPorModelo[key].cantidad += item.cantidad;
+      ventasPorModelo[key].ingresos += item.precioUnitario * item.cantidad + item.ajusteManual;
     });
 
-    const productosTop = Object.values(ventasPorProducto)
+    const modelosTop = Object.values(ventasPorModelo)
       .sort((a, b) => b.cantidad - a.cantidad)
       .slice(0, 5);
 
@@ -158,7 +189,7 @@ export async function GET() {
         gastado: totalGastosHistoricos,
         disponible: billeteraFabDisponible,
       },
-      productosTop,
+      modelosTop,
       proximasEntregas,
     });
   } catch (e) {

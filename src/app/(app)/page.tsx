@@ -32,7 +32,14 @@ interface DashboardData {
     gastado: number;
     disponible: number;
   };
-  productosTop: { nombre: string; cantidad: number; ingresos: number }[];
+  modelosTop: {
+    modeloId: string;
+    nombre: string;
+    imagenUrl: string | null;
+    categorias: Array<{ categoria: { id: string; nombre: string; color: string | null } }>;
+    totalVendido: number;
+    ingresos: number;
+  }[];
   proximasEntregas: {
     id: string;
     cliente: string;
@@ -78,7 +85,7 @@ export default function DashboardPage() {
     return <p className="text-muted-foreground">Error cargando el dashboard.</p>;
   }
 
-  const { contadores, finanzasMes, billeteraFab, productosTop, proximasEntregas } = data;
+  const { contadores, finanzasMes, billeteraFab, modelosTop, proximasEntregas } = data;
 
   return (
     <div className="space-y-6">
@@ -155,28 +162,56 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Productos más vendidos */}
+        {/* Modelos más vendidos */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
               <ShoppingCart className="h-4 w-4" />
-              Productos más vendidos (30 días)
+              Modelos más vendidos (30 días)
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {productosTop.length === 0 ? (
+            {modelosTop.length === 0 ? (
               <p className="text-sm text-muted-foreground">Sin ventas recientes.</p>
             ) : (
               <div className="space-y-3">
-                {productosTop.map((p, i) => (
-                  <div key={i} className="flex items-center justify-between">
+                {modelosTop.map((m, i) => (
+                  <div key={m.modeloId} className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="text-sm font-medium text-muted-foreground w-5">#{i + 1}</span>
-                      <span className="text-sm font-medium">{p.nombre}</span>
+                      {m.imagenUrl ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={m.imagenUrl}
+                          alt={m.nombre}
+                          className="h-8 w-8 rounded object-cover border"
+                        />
+                      ) : (
+                        <div className="h-8 w-8 rounded bg-muted flex items-center justify-center">
+                          <Package className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-sm font-medium">{m.nombre}</span>
+                        {m.categorias.length > 0 && (
+                          <div className="flex gap-1 mt-0.5">
+                            {m.categorias.map(({ categoria }) => (
+                              <Badge
+                                key={categoria.id}
+                                variant="secondary"
+                                className="text-[10px] px-1.5 py-0"
+                                style={categoria.color ? { backgroundColor: categoria.color, color: "#fff" } : undefined}
+                              >
+                                {categoria.nombre}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center gap-4">
-                      <span className="text-sm text-muted-foreground">{p.cantidad} uds</span>
-                      <span className="text-sm font-medium w-24 text-right">{formatMoney(p.ingresos)}</span>
+                      <span className="text-sm text-muted-foreground">{m.totalVendido} uds</span>
+                      <span className="text-sm font-medium w-24 text-right">{formatMoney(m.ingresos)}</span>
                     </div>
                   </div>
                 ))}

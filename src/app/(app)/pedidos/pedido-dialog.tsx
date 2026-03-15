@@ -18,17 +18,20 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { FileUpload } from "@/components/file-upload";
 
-interface Producto {
-  id: string;
-  nombre: string;
-  costoBaseFab: number;
-  precioBaseVenta: number;
-}
-
 interface Modelo {
   id: string;
   nombre: string;
-  productoId: string;
+  costoFab: number;
+  precioVenta: number;
+  precioCreditoPorc: number;
+  imagenUrl: string | null;
+  activo: boolean;
+  categorias: Array<{ categoria: { id: string; nombre: string } }>;
+}
+
+interface Categoria {
+  id: string;
+  nombre: string;
 }
 
 interface Cliente {
@@ -37,12 +40,12 @@ interface Cliente {
 }
 
 interface ItemForm {
-  productoId: string;
   modeloId: string;
   cantidad: string;
   precioUnitario: string;
   costoUnitario: string;
   ajusteManual: string;
+  categoriaFiltro: string;
 }
 
 interface PedidoData {
@@ -63,8 +66,7 @@ interface PedidoData {
   fechaLiquidacionMl: string | null;
   idMercadolibre: string | null;
   items: {
-    productoId: string;
-    modeloId: string | null;
+    modeloId: string;
     cantidad: number;
     precioUnitario: number;
     costoUnitario: number;
@@ -73,12 +75,12 @@ interface PedidoData {
 }
 
 const emptyItem: ItemForm = {
-  productoId: "",
   modeloId: "",
   cantidad: "1",
   precioUnitario: "",
   costoUnitario: "",
   ajusteManual: "0",
+  categoriaFiltro: "",
 };
 
 interface Props {
@@ -89,8 +91,8 @@ interface Props {
 }
 
 export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
-  const [productos, setProductos] = useState<Producto[]>([]);
   const [modelos, setModelos] = useState<Modelo[]>([]);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -112,13 +114,13 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
   const [items, setItems] = useState<ItemForm[]>([{ ...emptyItem }]);
 
   const fetchData = useCallback(async () => {
-    const [prodRes, modRes, cliRes] = await Promise.all([
-      fetch("/api/productos"),
+    const [modRes, catRes, cliRes] = await Promise.all([
       fetch("/api/modelos"),
+      fetch("/api/categorias"),
       fetch("/api/clientes"),
     ]);
-    setProductos(await prodRes.json());
     setModelos(await modRes.json());
+    setCategorias(await catRes.json());
     setClientes(await cliRes.json());
   }, []);
 
@@ -145,12 +147,12 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
       setIdMercadolibre(pedido.idMercadolibre || "");
       setItems(
         pedido.items.map((i) => ({
-          productoId: i.productoId,
-          modeloId: i.modeloId || "",
+          modeloId: i.modeloId,
           cantidad: i.cantidad.toString(),
           precioUnitario: i.precioUnitario.toString(),
           costoUnitario: i.costoUnitario.toString(),
           ajusteManual: i.ajusteManual.toString(),
+          categoriaFiltro: "",
         }))
       );
     } else {
@@ -179,15 +181,29 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
     const updated = [...items];
     updated[idx] = { ...updated[idx], [field]: value };
 
-    // Auto-fill prices when selecting a product
-    if (field === "productoId") {
-      const prod = productos.find((p) => p.id === value);
-      if (prod) {
-        updated[idx].precioUnitario = prod.precioBaseVenta.toString();
-        updated[idx].costoUnitario = prod.costoBaseFab.toString();
-        updated[idx].modeloId = "";
+    // Auto-fill prices when selecting a model
+    if (field === "modeloId") {
+      const modelo = modelos.find((m) => m.id === value);
+      if (modelo) {
+        updated[idx].precioUnitario = modelo.precioVenta.toString();
+        updated[idx].costoUnitario = modelo.costoFab.toString();
       }
     }
+
+    // Reset model selection when category filter changes
+    if (field === "categoriaFiltro") {
+      const currentModeloId = updated[idx].modeloId;
+      if (currentModeloId && value) {
+        const modelo = modelos.find((m) => m.id === currentModeloId);
+        const belongsToCategory = modelo?.categorias.some((c) => c.categoria.id === value);
+        if (!belongsToCategory) {
+          updated[idx].modeloId = "";
+          updated[idx].precioUnitario = "";
+          updated[idx].costoUnitario = "";
+        }
+      }
+    }
+
     setItems(updated);
   };
 
@@ -210,7 +226,7 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (items.length === 0 || !items[0].productoId) return;
+    if (items.length === 0 || !items[0].modeloId) return;
     setLoading(true);
 
     const body = {
@@ -229,9 +245,8 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
       comprobanteUrl: comprobanteUrl || null,
       fechaLiquidacionMl: fechaLiquidacionMl || null,
       idMercadolibre: idMercadolibre || null,
-      items: items.filter((i) => i.productoId).map((i) => ({
-        productoId: i.productoId,
-        modeloId: i.modeloId || null,
+      items: items.filter((i) => i.modeloId).map((i) => ({
+        modeloId: i.modeloId,
         cantidad: parseInt(i.cantidad) || 1,
         precioUnitario: parseFloat(i.precioUnitario) || 0,
         costoUnitario: parseFloat(i.costoUnitario) || 0,
@@ -251,8 +266,13 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
     onSaved();
   };
 
-  const modelosFiltrados = (productoId: string) =>
-    modelos.filter((m) => m.productoId === productoId);
+  const modelosFiltrados = (categoriaId: string) => {
+    const activos = modelos.filter((m) => m.activo);
+    if (!categoriaId) return activos;
+    return activos.filter((m) =>
+      m.categorias.some((c) => c.categoria.id === categoriaId)
+    );
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -431,32 +451,42 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label className="text-sm">Producto *</Label>
-                    <Select value={item.productoId || "placeholder"} onValueChange={(v) => updateItem(idx, "productoId", v === "placeholder" ? "" : (v ?? ""))}>
+                    <Label className="text-sm">Categoría (filtro)</Label>
+                    <Select
+                      value={item.categoriaFiltro || "todas"}
+                      onValueChange={(v) => updateItem(idx, "categoriaFiltro", v === "todas" ? "" : (v ?? ""))}
+                    >
                       <SelectTrigger>
-                        <span className="truncate">{item.productoId ? productos.find(p => p.id === item.productoId)?.nombre ?? "..." : "Seleccionar"}</span>
+                        <span className="truncate">
+                          {item.categoriaFiltro
+                            ? categorias.find((c) => c.id === item.categoriaFiltro)?.nombre ?? "..."
+                            : "Todas las categorías"}
+                        </span>
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="placeholder" disabled>Seleccionar</SelectItem>
-                        {productos.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>
+                        <SelectItem value="todas">Todas las categorías</SelectItem>
+                        {categorias.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-sm">Modelo</Label>
+                    <Label className="text-sm">Modelo *</Label>
                     <Select
-                      value={item.modeloId || "ninguno"}
-                      onValueChange={(v) => updateItem(idx, "modeloId", v === "ninguno" ? "" : (v ?? ""))}
-                      disabled={!item.productoId}
+                      value={item.modeloId || "placeholder"}
+                      onValueChange={(v) => updateItem(idx, "modeloId", v === "placeholder" ? "" : (v ?? ""))}
                     >
                       <SelectTrigger>
-                        <span className="truncate">{item.modeloId ? modelos.find(m => m.id === item.modeloId)?.nombre ?? "..." : "Sin modelo"}</span>
+                        <span className="truncate">
+                          {item.modeloId
+                            ? modelos.find((m) => m.id === item.modeloId)?.nombre ?? "..."
+                            : "Seleccionar"}
+                        </span>
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="ninguno">Sin modelo</SelectItem>
-                        {modelosFiltrados(item.productoId).map((m) => (
+                        <SelectItem value="placeholder" disabled>Seleccionar</SelectItem>
+                        {modelosFiltrados(item.categoriaFiltro).map((m) => (
                           <SelectItem key={m.id} value={m.id}>{m.nombre}</SelectItem>
                         ))}
                       </SelectContent>

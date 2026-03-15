@@ -4,6 +4,17 @@ import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
+const itemsInclude = {
+  producto: { select: { id: true, nombre: true } },
+  modelo: {
+    include: {
+      categorias: {
+        include: { categoria: true },
+      },
+    },
+  },
+};
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -15,12 +26,7 @@ export async function GET(
       where: { id, tenantId },
       include: {
         cliente: true,
-        items: {
-          include: {
-            producto: { select: { id: true, nombre: true } },
-            modelo: { select: { id: true, nombre: true } },
-          },
-        },
+        items: { include: itemsInclude },
       },
     });
     if (!pedido) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
@@ -45,12 +51,52 @@ export async function PUT(
       const pedido = await prisma.pedido.update({
         where: { id, tenantId },
         data: { estado: body.estado },
+        include: {
+          cliente: { select: { id: true, nombre: true } },
+          items: { include: itemsInclude },
+        },
       });
       return NextResponse.json(pedido);
     }
 
     // Actualización completa: eliminar items viejos y crear nuevos
     await prisma.itemPedido.deleteMany({ where: { pedidoId: id } });
+
+    // Resolve pricing from Modelo when not explicitly provided
+    const itemsData = await Promise.all(
+      (body.items || []).map(async (item: {
+        productoId?: string;
+        modeloId: string;
+        cantidad?: number;
+        precioUnitario?: number;
+        costoUnitario?: number;
+        ajusteManual?: number;
+      }) => {
+        let precioUnitario = item.precioUnitario;
+        let costoUnitario = item.costoUnitario;
+
+        // If pricing not provided, fetch from Modelo
+        if (precioUnitario == null || costoUnitario == null) {
+          const modelo = await prisma.modelo.findUnique({
+            where: { id: item.modeloId },
+            select: { precioVenta: true, costoFab: true },
+          });
+          if (modelo) {
+            precioUnitario = precioUnitario ?? modelo.precioVenta;
+            costoUnitario = costoUnitario ?? modelo.costoFab;
+          }
+        }
+
+        return {
+          modeloId: item.modeloId,
+          productoId: item.productoId || null,
+          cantidad: item.cantidad || 1,
+          precioUnitario: parseFloat(String(precioUnitario ?? 0)),
+          costoUnitario: parseFloat(String(costoUnitario ?? 0)),
+          ajusteManual: item.ajusteManual ? parseFloat(String(item.ajusteManual)) : 0,
+        };
+      })
+    );
 
     const pedido = await prisma.pedido.update({
       where: { id, tenantId },
@@ -70,27 +116,11 @@ export async function PUT(
         comprobanteUrl: body.comprobanteUrl || null,
         fechaLiquidacionMl: body.fechaLiquidacionMl ? new Date(body.fechaLiquidacionMl) : null,
         idMercadolibre: body.idMercadolibre || null,
-        items: {
-          create: (body.items || []).map((item: {
-            productoId: string;
-            modeloId?: string;
-            cantidad: number;
-            precioUnitario: number;
-            costoUnitario: number;
-            ajusteManual?: number;
-          }) => ({
-            productoId: item.productoId,
-            modeloId: item.modeloId || null,
-            cantidad: item.cantidad || 1,
-            precioUnitario: parseFloat(String(item.precioUnitario)),
-            costoUnitario: parseFloat(String(item.costoUnitario)),
-            ajusteManual: item.ajusteManual ? parseFloat(String(item.ajusteManual)) : 0,
-          })),
-        },
+        items: { create: itemsData },
       },
       include: {
         cliente: { select: { id: true, nombre: true } },
-        items: true,
+        items: { include: itemsInclude },
       },
     });
     return NextResponse.json(pedido);

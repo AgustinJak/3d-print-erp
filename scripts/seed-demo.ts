@@ -63,78 +63,198 @@ async function main() {
 
   console.log(`Filamentos creados: ${filPLA.id}, ${filRESINA.id}, ${filTPU.id}`);
 
-  // ==================== PRODUCTOS ====================
-  const prodFigura = await prisma.producto.create({
+  // ==================== CATEGORÍAS ====================
+  const catAnime = await prisma.categoria.create({
     data: {
       tenantId: TENANT_DEMO,
-      nombre: "Figura Anime - Tamaño Estándar",
-      tamanioCm: 15,
-      pesoPromedioGr: 45,
-      costoBaseFab: 350,
-      precioBaseVenta: 1200,
+      nombre: "Figuras Anime",
+      descripcion: "Figuras de personajes de anime y manga",
+      color: "#e74c3c",
+    },
+  });
+
+  const catMiniaturas = await prisma.categoria.create({
+    data: {
+      tenantId: TENANT_DEMO,
+      nombre: "Miniaturas",
+      descripcion: "Miniaturas para juegos de mesa (Warhammer, D&D, etc.)",
+      color: "#8e44ad",
+    },
+  });
+
+  const catLlaveros = await prisma.categoria.create({
+    data: {
+      tenantId: TENANT_DEMO,
+      nombre: "Llaveros",
+      descripcion: "Llaveros personalizados en PLA",
+      color: "#f39c12",
+    },
+  });
+
+  const catGaming = await prisma.categoria.create({
+    data: {
+      tenantId: TENANT_DEMO,
+      nombre: "Accesorios Gaming",
+      descripcion: "Fundas, soportes y accesorios para gamers",
+      color: "#2ecc71",
+    },
+  });
+
+  const catEscritorio = await prisma.categoria.create({
+    data: {
+      tenantId: TENANT_DEMO,
+      nombre: "Escritorio",
+      descripcion: "Organización y decoración para escritorio",
+      color: "#3498db",
+    },
+  });
+
+  console.log(`Categorías creadas: ${catAnime.id}, ${catMiniaturas.id}, ${catLlaveros.id}, ${catGaming.id}, ${catEscritorio.id}`);
+
+  // ==================== MODELOS ====================
+  const modLuffy = await prisma.modelo.create({
+    data: {
+      tenantId: TENANT_DEMO,
+      nombre: "Luffy Gear 5",
+      serie: "One Piece",
+      pesoGr: 45,
+      costoFab: 350,
+      precioVenta: 1200,
       precioCreditoPorc: 15,
-      notas: "Figuras de personajes anime impresas en PLA o resina",
+      notas: "Figura de Luffy en Gear 5, tamaño estándar 15cm",
       activo: true,
+      categorias: {
+        create: [{ categoriaId: catAnime.id }],
+      },
     },
   });
 
-  const prodMiniatura = await prisma.producto.create({
+  const modZoro = await prisma.modelo.create({
     data: {
       tenantId: TENANT_DEMO,
-      nombre: "Miniatura Warhammer / D&D",
-      tamanioCm: 4,
-      pesoPromedioGr: 8,
-      costoBaseFab: 120,
-      precioBaseVenta: 500,
+      nombre: "Roronoa Zoro - Enma",
+      serie: "One Piece",
+      pesoGr: 50,
+      costoFab: 380,
+      precioVenta: 1300,
+      precioCreditoPorc: 15,
+      notas: "Zoro con espada Enma, tamaño estándar 15cm",
+      activo: true,
+      categorias: {
+        create: [{ categoriaId: catAnime.id }],
+      },
+    },
+  });
+
+  const modGoblin = await prisma.modelo.create({
+    data: {
+      tenantId: TENANT_DEMO,
+      nombre: "Goblin Arquero",
+      serie: "D&D Minis",
+      pesoGr: 8,
+      costoFab: 120,
+      precioVenta: 500,
       precioCreditoPorc: 10,
-      notas: "Miniaturas para juegos de mesa, alta resolución en resina",
+      notas: "Miniatura en resina, alta resolución",
       activo: true,
+      categorias: {
+        create: [{ categoriaId: catMiniaturas.id }],
+      },
     },
   });
 
-  const prodLlavero = await prisma.producto.create({
+  const modDragon = await prisma.modelo.create({
     data: {
       tenantId: TENANT_DEMO,
-      nombre: "Llavero Personalizado",
-      tamanioCm: 5,
-      pesoPromedioGr: 12,
-      costoBaseFab: 80,
-      precioBaseVenta: 350,
+      nombre: "Dragón Joven",
+      serie: "D&D Minis",
+      pesoGr: 15,
+      costoFab: 200,
+      precioVenta: 750,
       precioCreditoPorc: 10,
-      notas: "Llaveros en PLA con diseños personalizados",
+      notas: "Dragón tamaño mediano para encuentros épicos",
       activo: true,
+      categorias: {
+        create: [{ categoriaId: catMiniaturas.id }],
+      },
     },
   });
 
-  const prodFundaJoystick = await prisma.producto.create({
+  const modLlaveroTriforce = await prisma.modelo.create({
     data: {
       tenantId: TENANT_DEMO,
-      nombre: "Funda para Joystick PS5/Xbox",
-      tamanioCm: 8,
-      pesoPromedioGr: 25,
-      costoBaseFab: 180,
-      precioBaseVenta: 700,
+      nombre: "Llavero Triforce",
+      serie: null,
+      pesoGr: 12,
+      costoFab: 80,
+      precioVenta: 350,
+      precioCreditoPorc: 10,
+      notas: "Llavero con diseño de Triforce de Zelda",
+      activo: true,
+      categorias: {
+        create: [
+          { categoriaId: catLlaveros.id },
+          { categoriaId: catGaming.id },
+        ],
+      },
+    },
+  });
+
+  const modFundaPS5 = await prisma.modelo.create({
+    data: {
+      tenantId: TENANT_DEMO,
+      nombre: "Funda Joystick PS5",
+      serie: null,
+      pesoGr: 25,
+      costoFab: 180,
+      precioVenta: 700,
       precioCreditoPorc: 12,
-      notas: "Funda TPU flexible para joysticks, varios colores disponibles",
+      notas: "Funda TPU flexible para DualSense PS5",
       activo: true,
+      categorias: {
+        create: [{ categoriaId: catGaming.id }],
+      },
     },
   });
 
-  const prodOrganizador = await prisma.producto.create({
+  const modFundaXbox = await prisma.modelo.create({
     data: {
       tenantId: TENANT_DEMO,
-      nombre: "Organizador de Escritorio Modular",
-      tamanioCm: 20,
-      pesoPromedioGr: 150,
-      costoBaseFab: 600,
-      precioBaseVenta: 2200,
+      nombre: "Funda Joystick Xbox",
+      serie: null,
+      pesoGr: 25,
+      costoFab: 180,
+      precioVenta: 700,
+      precioCreditoPorc: 12,
+      notas: "Funda TPU flexible para control Xbox Series",
+      activo: true,
+      categorias: {
+        create: [{ categoriaId: catGaming.id }],
+      },
+    },
+  });
+
+  const modOrganizador = await prisma.modelo.create({
+    data: {
+      tenantId: TENANT_DEMO,
+      nombre: "Organizador Modular 4 Módulos",
+      serie: "Organizer Pro",
+      pesoGr: 150,
+      costoFab: 600,
+      precioVenta: 2200,
       precioCreditoPorc: 15,
       notas: "Sistema modular de organización para escritorio gamer",
       activo: true,
+      categorias: {
+        create: [
+          { categoriaId: catEscritorio.id },
+          { categoriaId: catGaming.id },
+        ],
+      },
     },
   });
 
-  console.log(`Productos creados: ${prodFigura.id}, ${prodMiniatura.id}, ${prodLlavero.id}, ${prodFundaJoystick.id}, ${prodOrganizador.id}`);
+  console.log(`Modelos creados: ${modLuffy.id}, ${modZoro.id}, ${modGoblin.id}, ${modDragon.id}, ${modLlaveroTriforce.id}, ${modFundaPS5.id}, ${modFundaXbox.id}, ${modOrganizador.id}`);
 
   // ==================== CLIENTES ====================
   const clienteMarcos = await prisma.cliente.create({
@@ -205,10 +325,17 @@ async function main() {
       items: {
         create: [
           {
-            productoId: prodFigura.id,
-            cantidad: 2,
+            modeloId: modLuffy.id,
+            cantidad: 1,
             precioUnitario: 1200,
             costoUnitario: 350,
+            ajusteManual: 0,
+          },
+          {
+            modeloId: modZoro.id,
+            cantidad: 1,
+            precioUnitario: 1300,
+            costoUnitario: 380,
             ajusteManual: 0,
           },
         ],
@@ -230,17 +357,24 @@ async function main() {
       precioEnvio: 0,
       senia: 1000,
       contacto: "1167890123",
-      notas: "Set de 5 miniaturas para campaña nueva",
+      notas: "Set de miniaturas para campaña nueva: 3 goblins y 2 dragones",
       etiquetas: ["miniaturas", "dnd"],
       canalVenta: "directa",
       items: {
         create: [
           {
-            productoId: prodMiniatura.id,
-            cantidad: 5,
+            modeloId: modGoblin.id,
+            cantidad: 3,
             precioUnitario: 500,
             costoUnitario: 120,
-            ajusteManual: -250,
+            ajusteManual: -150,
+          },
+          {
+            modeloId: modDragon.id,
+            cantidad: 2,
+            precioUnitario: 750,
+            costoUnitario: 200,
+            ajusteManual: -100,
           },
         ],
       },
@@ -261,13 +395,13 @@ async function main() {
       precioEnvio: 300,
       senia: 0,
       contacto: "@rod.gamer",
-      notas: "3 llaveros personalizados con logos de videojuegos",
+      notas: "3 llaveros Triforce personalizados",
       etiquetas: ["llaveros", "gaming"],
       canalVenta: "instagram",
       items: {
         create: [
           {
-            productoId: prodLlavero.id,
+            modeloId: modLlaveroTriforce.id,
             cantidad: 3,
             precioUnitario: 350,
             costoUnitario: 80,
@@ -298,8 +432,15 @@ async function main() {
       items: {
         create: [
           {
-            productoId: prodFundaJoystick.id,
-            cantidad: 2,
+            modeloId: modFundaPS5.id,
+            cantidad: 1,
+            precioUnitario: 700,
+            costoUnitario: 180,
+            ajusteManual: 0,
+          },
+          {
+            modeloId: modFundaXbox.id,
+            cantidad: 1,
             precioUnitario: 700,
             costoUnitario: 180,
             ajusteManual: 0,
@@ -329,7 +470,7 @@ async function main() {
       items: {
         create: [
           {
-            productoId: prodOrganizador.id,
+            modeloId: modOrganizador.id,
             cantidad: 1,
             precioUnitario: 2200,
             costoUnitario: 600,
@@ -360,7 +501,7 @@ async function main() {
       items: {
         create: [
           {
-            productoId: prodMiniatura.id,
+            modeloId: modGoblin.id,
             cantidad: 2,
             precioUnitario: 500,
             costoUnitario: 120,
