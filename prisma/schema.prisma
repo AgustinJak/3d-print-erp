@@ -28,30 +28,6 @@ model Cliente {
   @@map("clientes")
 }
 
-// ==================== PRODUCTOS (LEGACY - será eliminado) ====================
-
-model Producto {
-  id                 String   @id @default(cuid())
-
-  nombre             String
-  tamanioCm          Float?   @map("tamanio_cm")
-  pesoPromedioGr     Float?   @map("peso_promedio_gr")
-  costoBaseFab       Float    @map("costo_base_fab")
-  precioBaseVenta    Float    @map("precio_base_venta")
-  precioCreditoPorc  Float    @default(10) @map("precio_credito_porc")
-  reglasDescuento    Json?    @map("reglas_descuento")
-  notas              String?
-  activo             Boolean  @default(true)
-  tenantId           String   @default("sendero3d") @map("tenant_id")
-  creadoEn           DateTime @default(now()) @map("creado_en")
-  updatedAt          DateTime @updatedAt @map("updated_at")
-
-  modelos     Modelo[]
-  itemsPedido ItemPedido[]
-
-  @@map("productos")
-}
-
 // ==================== CATEGORÍAS ====================
 
 model Categoria {
@@ -85,7 +61,6 @@ model CategoriaModelo {
 
 model Modelo {
   id                String   @id @default(cuid())
-  productoId        String?  @map("producto_id")
   nombre            String
   serie             String?
   pesoGr            Float?   @map("peso_gr")
@@ -103,7 +78,6 @@ model Modelo {
   creadoEn          DateTime @default(now()) @map("creado_en")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  producto    Producto?        @relation(fields: [productoId], references: [id], onDelete: SetNull)
   categorias  CategoriaModelo[]
   itemsPedido ItemPedido[]
 
@@ -163,7 +137,6 @@ model Pedido {
 model ItemPedido {
   id              String  @id @default(cuid())
   pedidoId        String  @map("pedido_id")
-  productoId      String? @map("producto_id")
   modeloId        String  @map("modelo_id")
   cantidad        Int     @default(1)
   precioUnitario  Float   @map("precio_unitario")
@@ -171,7 +144,6 @@ model ItemPedido {
   ajusteManual    Float   @default(0) @map("ajuste_manual")
 
   pedido   Pedido    @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
-  producto Producto? @relation(fields: [productoId], references: [id])
   modelo   Modelo    @relation(fields: [modeloId], references: [id])
 
   @@map("items_pedido")

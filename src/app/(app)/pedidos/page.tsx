@@ -20,7 +20,6 @@ import { PedidoDialog } from "./pedido-dialog";
 
 interface ItemPedido {
   id: string;
-  productoId: string | null;
   modeloId: string;
   cantidad: number;
   precioUnitario: number;

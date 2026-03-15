@@ -14,7 +14,6 @@ export async function GET(
     const modelo = await prisma.modelo.findUnique({
       where: { id, tenantId },
       include: {
-        producto: { select: { id: true, nombre: true } },
         categorias: { include: { categoria: true } },
       },
     });
@@ -56,7 +55,6 @@ export async function PUT(
       return tx.modelo.update({
         where: { id, tenantId },
         data: {
-          productoId: body.productoId !== undefined ? (body.productoId || null) : undefined,
           nombre: body.nombre,
           serie: body.serie || null,
           pesoGr: body.pesoGr ? parseFloat(body.pesoGr) : null,
@@ -72,7 +70,6 @@ export async function PUT(
           activo: body.activo !== undefined ? body.activo : undefined,
         },
         include: {
-          producto: { select: { id: true, nombre: true } },
           categorias: { include: { categoria: true } },
         },
       });

@@ -7,7 +7,8 @@
       "Bash(npx shadcn@latest add sidebar input label card table dialog dropdown-menu separator badge sheet tooltip avatar scroll-area select textarea -y)",
       "Bash(npx next:*)",
       "mcp__e5d060b4-2ba8-4cc1-9baa-1e2f96f0f623__create_project",
-      "mcp__e5d060b4-2ba8-4cc1-9baa-1e2f96f0f623__list_projects"
+      "mcp__e5d060b4-2ba8-4cc1-9baa-1e2f96f0f623__list_projects",
+      "Bash(pip install:*)"
     ]
   }
 }

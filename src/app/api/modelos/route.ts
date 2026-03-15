@@ -8,12 +8,10 @@ export async function GET(request: NextRequest) {
   try {
     const { tenantId } = await getAuthenticatedTenant();
     const { searchParams } = new URL(request.url);
-    const productoId = searchParams.get("productoId");
     const categoriaId = searchParams.get("categoriaId");
     const activoParam = searchParams.get("activo");
 
     const where: Record<string, unknown> = { tenantId };
-    if (productoId) where.productoId = productoId;
     if (categoriaId) {
       where.categorias = { some: { categoriaId } };
     }
@@ -25,7 +23,6 @@ export async function GET(request: NextRequest) {
       where,
       orderBy: { creadoEn: "desc" },
       include: {
-        producto: { select: { id: true, nombre: true } },
         categorias: { include: { categoria: true } },
       },
     });
@@ -45,7 +42,6 @@ export async function POST(request: NextRequest) {
 
     const modelo = await prisma.modelo.create({
       data: {
-        productoId: body.productoId || null,
         nombre: body.nombre,
         serie: body.serie || null,
         pesoGr: body.pesoGr ? parseFloat(body.pesoGr) : null,
@@ -65,7 +61,6 @@ export async function POST(request: NextRequest) {
           : undefined,
       },
       include: {
-        producto: { select: { id: true, nombre: true } },
         categorias: { include: { categoria: true } },
       },
     });
