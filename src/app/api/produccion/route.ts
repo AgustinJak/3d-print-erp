@@ -19,7 +19,6 @@ export async function GET() {
         cliente: { select: { id: true, nombre: true } },
         items: {
           include: {
-            producto: { select: { id: true, nombre: true } },
             modelo: {
               select: {
                 id: true,

@@ -7,7 +7,6 @@ import { NextRequest, NextResponse } from "next/server";
 const ESTADOS_FINALIZADOS = ["COMPLETADO", "ENTREGADO", "CANCELADO"];
 
 const itemsInclude = {
-  producto: { select: { id: true, nombre: true } },
   modelo: {
     include: {
       categorias: {
@@ -53,7 +52,6 @@ export async function POST(request: NextRequest) {
     // Resolve pricing from Modelo when not explicitly provided
     const itemsData = await Promise.all(
       (body.items || []).map(async (item: {
-        productoId?: string;
         modeloId: string;
         cantidad?: number;
         precioUnitario?: number;
@@ -77,7 +75,6 @@ export async function POST(request: NextRequest) {
 
         return {
           modeloId: item.modeloId,
-          productoId: item.productoId || null,
           cantidad: item.cantidad || 1,
           precioUnitario: parseFloat(String(precioUnitario ?? 0)),
           costoUnitario: parseFloat(String(costoUnitario ?? 0)),

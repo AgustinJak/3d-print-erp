@@ -32,7 +32,6 @@ export async function GET() {
         cliente: { select: { nombre: true } },
         items: {
           include: {
-            producto: { select: { nombre: true } },
             modelo: {
               select: {
                 nombre: true,
@@ -107,10 +106,11 @@ export async function GET() {
     const ventasPorModelo: Record<
       string,
       {
+        modeloId: string;
         nombre: string;
         imagenUrl: string | null;
-        categorias: string[];
-        cantidad: number;
+        categorias: typeof itemsRecientes[0]["modelo"]["categorias"];
+        totalVendido: number;
         ingresos: number;
       }
     > = {};
@@ -118,19 +118,20 @@ export async function GET() {
       const key = item.modeloId;
       if (!ventasPorModelo[key]) {
         ventasPorModelo[key] = {
+          modeloId: key,
           nombre: item.modelo.nombre,
           imagenUrl: item.modelo.imagenUrl,
-          categorias: item.modelo.categorias.map((c) => c.categoria.nombre),
-          cantidad: 0,
+          categorias: item.modelo.categorias,
+          totalVendido: 0,
           ingresos: 0,
         };
       }
-      ventasPorModelo[key].cantidad += item.cantidad;
+      ventasPorModelo[key].totalVendido += item.cantidad;
       ventasPorModelo[key].ingresos += item.precioUnitario * item.cantidad + item.ajusteManual;
     });
 
     const modelosTop = Object.values(ventasPorModelo)
-      .sort((a, b) => b.cantidad - a.cantidad)
+      .sort((a, b) => b.totalVendido - a.totalVendido)
       .slice(0, 5);
 
     // Próximas entregas (pedidos con fecha de entrega futura)

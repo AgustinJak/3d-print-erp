@@ -230,8 +230,8 @@ export default function HistorialPage() {
                       {p.cliente?.nombre || "Sin cliente"}
                     </TableCell>
                     <TableCell className="text-sm">
-                      {p.items.map((i) => (
-                        <div key={i.modelo.id} className="flex items-center gap-1 flex-wrap mb-0.5">
+                      {p.items.map((i, idx) => (
+                        <div key={idx} className="flex items-center gap-1 flex-wrap mb-0.5">
                           <span>{i.cantidad}x {i.modelo.nombre}</span>
                           {i.modelo.categorias.map(({ categoria }) => (
                             <Badge

@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const mes = searchParams.get("mes");
     const anio = searchParams.get("anio");
-    const productoId = searchParams.get("productoId");
+    const modeloId = searchParams.get("modeloId");
     const categoriaId = searchParams.get("categoriaId");
     const clienteId = searchParams.get("clienteId");
     const canal = searchParams.get("canal");
@@ -33,8 +33,8 @@ export async function GET(request: NextRequest) {
 
     if (clienteId) where.clienteId = clienteId;
     if (canal) where.canalVenta = canal;
-    if (productoId) {
-      where.items = { some: { productoId } };
+    if (modeloId) {
+      where.items = { some: { modeloId } };
     }
     if (categoriaId) {
       where.items = {
@@ -55,7 +55,6 @@ export async function GET(request: NextRequest) {
         cliente: { select: { id: true, nombre: true } },
         items: {
           include: {
-            producto: { select: { id: true, nombre: true } },
             modelo: {
               select: {
                 id: true,

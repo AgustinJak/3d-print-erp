@@ -5,7 +5,6 @@ import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
 const itemsInclude = {
-  producto: { select: { id: true, nombre: true } },
   modelo: {
     include: {
       categorias: {
@@ -65,7 +64,6 @@ export async function PUT(
     // Resolve pricing from Modelo when not explicitly provided
     const itemsData = await Promise.all(
       (body.items || []).map(async (item: {
-        productoId?: string;
         modeloId: string;
         cantidad?: number;
         precioUnitario?: number;
@@ -89,7 +87,6 @@ export async function PUT(
 
         return {
           modeloId: item.modeloId,
-          productoId: item.productoId || null,
           cantidad: item.cantidad || 1,
           precioUnitario: parseFloat(String(precioUnitario ?? 0)),
           costoUnitario: parseFloat(String(costoUnitario ?? 0)),
