@@ -127,6 +127,30 @@ export async function GET(request: NextRequest) {
       });
     });
 
+    // Pedidos en curso (todo excepto COMPLETADO y CANCELADO)
+    const pedidosEnCurso = await prisma.pedido.findMany({
+      where: {
+        tenantId,
+        estado: { notIn: ["COMPLETADO", "CANCELADO"] },
+      },
+      include: { items: true },
+    });
+
+    let totalEnCurso = 0;
+    let cobradoEnCurso = 0; // señas ya recibidas
+    const enCursoPorEstado: Record<string, { cantidad: number; total: number }> = {};
+
+    pedidosEnCurso.forEach((p) => {
+      const totalPedido = p.items.reduce(
+        (s, item) => s + item.precioUnitario * item.cantidad + item.ajusteManual, 0
+      ) + p.precioEnvio;
+      totalEnCurso += totalPedido;
+      cobradoEnCurso += p.senia;
+      if (!enCursoPorEstado[p.estado]) enCursoPorEstado[p.estado] = { cantidad: 0, total: 0 };
+      enCursoPorEstado[p.estado].cantidad += 1;
+      enCursoPorEstado[p.estado].total += totalPedido;
+    });
+
     return NextResponse.json({
       mes: {
         ingresos: mesData.ingresos,
@@ -152,6 +176,13 @@ export async function GET(request: NextRequest) {
       datosMensuales,
       mesActual: mesNum,
       anioActual: anioNum,
+      pedidosEnCurso: {
+        total: totalEnCurso,
+        cobrado: cobradoEnCurso,
+        pendiente: totalEnCurso - cobradoEnCurso,
+        cantidad: pedidosEnCurso.length,
+        porEstado: enCursoPorEstado,
+      },
     });
   } catch (e) {
     if (e instanceof NextResponse) return e;

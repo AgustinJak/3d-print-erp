@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, ArrowLeft, ArrowRight, Wallet, Users, Save } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, ArrowLeft, ArrowRight, Wallet, Users, Save, Clock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +35,13 @@ interface FinanzasData {
     mes: number;
   };
   gastosPorCategoria: Record<string, number>;
+  pedidosEnCurso: {
+    total: number;
+    cobrado: number;
+    pendiente: number;
+    cantidad: number;
+    porEstado: Record<string, { cantidad: number; total: number }>;
+  };
   datosMensuales: {
     mes: string;
     ingresos: number;
@@ -135,6 +142,56 @@ export default function FinanzasPage() {
           </Button>
         </div>
       </div>
+
+      {/* Pedidos en curso */}
+      <Card className="border-amber-500/30 bg-amber-500/5">
+        <CardContent className="pt-4 pb-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2 rounded-lg bg-amber-500/10">
+              <Clock className="h-5 w-5 text-amber-500" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-amber-600 dark:text-amber-400">Pedidos en curso</h2>
+              <p className="text-xs text-muted-foreground">
+                {data.pedidosEnCurso.cantidad} pedido{data.pedidosEnCurso.cantidad !== 1 ? "s" : ""} activos (excluye completados y cancelados)
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <p className="text-xs text-muted-foreground">Total a cobrar</p>
+              <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{formatMoney(data.pedidosEnCurso.total)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Ya cobrado (señas)</p>
+              <p className="text-lg font-semibold text-green-600">{formatMoney(data.pedidosEnCurso.cobrado)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Pendiente de cobro</p>
+              <p className="text-lg font-semibold">{formatMoney(data.pedidosEnCurso.pendiente)}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">Por estado</p>
+              {Object.entries(data.pedidosEnCurso.porEstado).map(([estado, info]) => {
+                const labels: Record<string, string> = {
+                  PENDIENTE_PAGO: "Pendiente pago",
+                  CONFIRMADO: "Confirmado",
+                  EN_PRODUCCION: "En producción",
+                  TERMINADO: "Terminado",
+                  ENTREGADO: "Entregado",
+                  ESPERANDO_LIQUIDACION_ML: "Liquid. ML",
+                };
+                return (
+                  <div key={estado} className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">{labels[estado] ?? estado} ({info.cantidad})</span>
+                    <span className="font-medium">{formatMoney(info.total)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Billetera de Fabricación */}
       <Card className="border-violet-500/30 bg-violet-500/5">
