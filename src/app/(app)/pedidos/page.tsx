@@ -18,6 +18,12 @@ import { TableSkeleton } from "@/components/data-loading";
 import { ESTADOS_PEDIDO, PRIORIDADES, CANALES_VENTA } from "@/lib/constants";
 import { PedidoDialog } from "./pedido-dialog";
 
+interface VarianteInfo {
+  nombre: string;
+  precioAdicional: number;
+  costoFabAdicional?: number;
+}
+
 interface ItemPedido {
   id: string;
   modeloId: string;
@@ -25,6 +31,7 @@ interface ItemPedido {
   precioUnitario: number;
   costoUnitario: number;
   ajusteManual: number;
+  variantesInfo: VarianteInfo[] | null;
   modelo: {
     id: string;
     nombre: string;
@@ -311,6 +318,16 @@ export default function PedidosPage() {
                                             style={categoria.color ? { backgroundColor: categoria.color, color: "#fff" } : undefined}
                                           >
                                             {categoria.nombre}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {item.variantesInfo && item.variantesInfo.length > 0 && (
+                                      <div className="flex flex-wrap gap-1">
+                                        {item.variantesInfo.map((v, vi) => (
+                                          <Badge key={vi} variant="outline" className="text-[10px] px-1.5 py-0 border-blue-400 text-blue-600 dark:text-blue-400">
+                                            {v.nombre}
+                                            {v.precioAdicional > 0 && ` +$${v.precioAdicional.toLocaleString("es-AR")}`}
                                           </Badge>
                                         ))}
                                       </div>

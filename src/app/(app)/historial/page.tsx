@@ -14,11 +14,18 @@ import { Badge } from "@/components/ui/badge";
 import { TableSkeleton } from "@/components/data-loading";
 import { CANALES_VENTA } from "@/lib/constants";
 
+interface VarianteInfo {
+  nombre: string;
+  precioAdicional: number;
+  costoFabAdicional?: number;
+}
+
 interface ItemPedido {
   cantidad: number;
   precioUnitario: number;
   costoUnitario: number;
   ajusteManual: number;
+  variantesInfo: VarianteInfo[] | null;
   modelo: {
     id: string;
     nombre: string;
@@ -231,18 +238,30 @@ export default function HistorialPage() {
                     </TableCell>
                     <TableCell className="text-sm">
                       {p.items.map((i, idx) => (
-                        <div key={idx} className="flex items-center gap-1 flex-wrap mb-0.5">
-                          <span>{i.cantidad}x {i.modelo.nombre}</span>
-                          {i.modelo.categorias.map(({ categoria }) => (
-                            <Badge
-                              key={categoria.id}
-                              variant="secondary"
-                              className="text-[10px] px-1.5 py-0"
-                              style={categoria.color ? { backgroundColor: categoria.color, color: "#fff" } : undefined}
-                            >
-                              {categoria.nombre}
-                            </Badge>
-                          ))}
+                        <div key={idx} className="mb-0.5">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span>{i.cantidad}x {i.modelo.nombre}</span>
+                            {i.modelo.categorias.map(({ categoria }) => (
+                              <Badge
+                                key={categoria.id}
+                                variant="secondary"
+                                className="text-[10px] px-1.5 py-0"
+                                style={categoria.color ? { backgroundColor: categoria.color, color: "#fff" } : undefined}
+                              >
+                                {categoria.nombre}
+                              </Badge>
+                            ))}
+                          </div>
+                          {i.variantesInfo && i.variantesInfo.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-0.5 ml-4">
+                              {i.variantesInfo.map((v, vi) => (
+                                <Badge key={vi} variant="outline" className="text-[10px] px-1.5 py-0 border-blue-400 text-blue-600 dark:text-blue-400">
+                                  {v.nombre}
+                                  {v.precioAdicional > 0 && ` +$${v.precioAdicional.toLocaleString("es-AR")}`}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </TableCell>

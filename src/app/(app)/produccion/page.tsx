@@ -11,9 +11,16 @@ import {
 import { TableSkeleton } from "@/components/data-loading";
 import { ESTADOS_PEDIDO, PRIORIDADES } from "@/lib/constants";
 
+interface VarianteInfo {
+  nombre: string;
+  precioAdicional: number;
+  costoFabAdicional?: number;
+}
+
 interface ItemPedido {
   id: string;
   cantidad: number;
+  variantesInfo: VarianteInfo[] | null;
   modelo: {
     id: string;
     nombre: string;
@@ -209,19 +216,30 @@ export default function ProduccionPage() {
 
                   <div className="space-y-1">
                     {p.items.map((item) => (
-                      <div key={item.id} className="flex items-center gap-2 text-sm flex-wrap">
-                        <span className="font-medium">{item.cantidad}x</span>
-                        <span>{item.modelo.nombre}</span>
-                        {item.modelo.categorias.map(({ categoria }) => (
-                          <Badge
-                            key={categoria.id}
-                            variant="secondary"
-                            className="text-[10px] px-1.5 py-0"
-                            style={categoria.color ? { backgroundColor: categoria.color, color: "#fff" } : undefined}
-                          >
-                            {categoria.nombre}
-                          </Badge>
-                        ))}
+                      <div key={item.id} className="space-y-0.5">
+                        <div className="flex items-center gap-2 text-sm flex-wrap">
+                          <span className="font-medium">{item.cantidad}x</span>
+                          <span>{item.modelo.nombre}</span>
+                          {item.modelo.categorias.map(({ categoria }) => (
+                            <Badge
+                              key={categoria.id}
+                              variant="secondary"
+                              className="text-[10px] px-1.5 py-0"
+                              style={categoria.color ? { backgroundColor: categoria.color, color: "#fff" } : undefined}
+                            >
+                              {categoria.nombre}
+                            </Badge>
+                          ))}
+                        </div>
+                        {item.variantesInfo && item.variantesInfo.length > 0 && (
+                          <div className="flex flex-wrap gap-1 ml-7">
+                            {item.variantesInfo.map((v, vi) => (
+                              <Badge key={vi} variant="outline" className="text-[10px] px-1.5 py-0 border-blue-400 text-blue-600 dark:text-blue-400">
+                                {v.nombre}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
