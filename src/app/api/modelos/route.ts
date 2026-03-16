@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
       orderBy: { creadoEn: "desc" },
       include: {
         categorias: { include: { categoria: true } },
+        variantes: true,
       },
     });
     return NextResponse.json(modelos);
@@ -59,9 +60,17 @@ export async function POST(request: NextRequest) {
         categorias: categoriaIds.length > 0
           ? { create: categoriaIds.map((catId: string) => ({ categoriaId: catId })) }
           : undefined,
+        variantes: body.variantes?.length > 0
+          ? { create: body.variantes.map((v: { nombre: string; precioAdicional?: number; notas?: string }) => ({
+              nombre: v.nombre,
+              precioAdicional: v.precioAdicional ? parseFloat(String(v.precioAdicional)) : 0,
+              notas: v.notas || null,
+            })) }
+          : undefined,
       },
       include: {
         categorias: { include: { categoria: true } },
+        variantes: true,
       },
     });
     return NextResponse.json(modelo, { status: 201 });

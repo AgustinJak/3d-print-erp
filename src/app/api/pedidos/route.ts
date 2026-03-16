@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
         precioUnitario?: number;
         costoUnitario?: number;
         ajusteManual?: number;
+        variantesInfo?: Array<{ nombre: string; precioAdicional: number }>;
       }) => {
         let precioUnitario = item.precioUnitario;
         let costoUnitario = item.costoUnitario;
@@ -79,6 +80,7 @@ export async function POST(request: NextRequest) {
           precioUnitario: parseFloat(String(precioUnitario ?? 0)),
           costoUnitario: parseFloat(String(costoUnitario ?? 0)),
           ajusteManual: item.ajusteManual ? parseFloat(String(item.ajusteManual)) : 0,
+          variantesInfo: item.variantesInfo ?? null,
         };
       })
     );
@@ -87,7 +89,7 @@ export async function POST(request: NextRequest) {
       data: {
         prioridad: body.prioridad || "MEDIA",
         clienteId: body.clienteId || null,
-        fechaEntrega: body.fechaEntrega ? new Date(body.fechaEntrega) : null,
+        fechaEntrega: body.fechaEntrega ? new Date(body.fechaEntrega + "T12:00:00") : null,
         estado: body.estado || "PENDIENTE_PAGO",
         metodoEnvio: body.metodoEnvio || null,
         metodoPago: body.metodoPago || null,
@@ -98,7 +100,7 @@ export async function POST(request: NextRequest) {
         etiquetas: body.etiquetas || [],
         canalVenta: body.canalVenta || "directa",
         comprobanteUrl: body.comprobanteUrl || null,
-        fechaLiquidacionMl: body.fechaLiquidacionMl ? new Date(body.fechaLiquidacionMl) : null,
+        fechaLiquidacionMl: body.fechaLiquidacionMl ? new Date(body.fechaLiquidacionMl + "T12:00:00") : null,
         idMercadolibre: body.idMercadolibre || null,
         tenantId,
         items: { create: itemsData },

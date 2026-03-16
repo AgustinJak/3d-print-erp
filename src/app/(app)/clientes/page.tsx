@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Pencil, Trash2, ChevronRight } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, ChevronRight, User, MapPin, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -222,53 +222,70 @@ export default function ClientesPage() {
               {editingId ? "Editar Cliente" : "Nuevo Cliente"}
             </DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="nombre">Nombre *</Label>
-              <Input
-                id="nombre"
-                value={form.nombre}
-                onChange={(e) => updateField("nombre", e.target.value)}
-                required
-              />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <User className="h-4 w-4" />
+                Datos personales
+              </h4>
               <div className="space-y-2">
-                <Label htmlFor="telefono">Teléfono</Label>
+                <Label htmlFor="nombre">Nombre <span className="text-destructive">*</span></Label>
                 <Input
-                  id="telefono"
-                  value={form.telefono}
-                  onChange={(e) => updateField("telefono", e.target.value)}
+                  id="nombre"
+                  value={form.nombre}
+                  onChange={(e) => updateField("nombre", e.target.value)}
+                  required
                 />
               </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="telefono">Teléfono</Label>
+                  <Input
+                    id="telefono"
+                    value={form.telefono}
+                    onChange={(e) => updateField("telefono", e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => updateField("email", e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
+                Ubicación
+              </h4>
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="direccion">Dirección</Label>
                 <Input
-                  id="email"
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => updateField("email", e.target.value)}
+                  id="direccion"
+                  value={form.direccion}
+                  onChange={(e) => updateField("direccion", e.target.value)}
                 />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="direccion">Dirección</Label>
-              <Input
-                id="direccion"
-                value={form.direccion}
-                onChange={(e) => updateField("direccion", e.target.value)}
-              />
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Notas
+              </h4>
+              <div className="space-y-2">
+                <Textarea
+                  id="notas"
+                  value={form.notas}
+                  onChange={(e) => updateField("notas", e.target.value)}
+                  rows={3}
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="notas">Notas</Label>
-              <Textarea
-                id="notas"
-                value={form.notas}
-                onChange={(e) => updateField("notas", e.target.value)}
-                rows={3}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 pt-2 border-t">
               <Button
                 type="button"
                 variant="outline"

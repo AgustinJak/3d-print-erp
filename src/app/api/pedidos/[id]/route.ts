@@ -100,7 +100,7 @@ export async function PUT(
       data: {
         prioridad: body.prioridad || "MEDIA",
         clienteId: body.clienteId || null,
-        fechaEntrega: body.fechaEntrega ? new Date(body.fechaEntrega) : null,
+        fechaEntrega: body.fechaEntrega ? new Date(body.fechaEntrega + "T12:00:00") : null,
         estado: body.estado || "PENDIENTE_PAGO",
         metodoEnvio: body.metodoEnvio || null,
         metodoPago: body.metodoPago || null,
@@ -111,7 +111,7 @@ export async function PUT(
         etiquetas: body.etiquetas || [],
         canalVenta: body.canalVenta || "directa",
         comprobanteUrl: body.comprobanteUrl || null,
-        fechaLiquidacionMl: body.fechaLiquidacionMl ? new Date(body.fechaLiquidacionMl) : null,
+        fechaLiquidacionMl: body.fechaLiquidacionMl ? new Date(body.fechaLiquidacionMl + "T12:00:00") : null,
         idMercadolibre: body.idMercadolibre || null,
         items: { create: itemsData },
       },

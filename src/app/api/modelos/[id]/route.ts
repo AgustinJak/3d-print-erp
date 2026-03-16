@@ -15,6 +15,7 @@ export async function GET(
       where: { id, tenantId },
       include: {
         categorias: { include: { categoria: true } },
+        variantes: true,
       },
     });
     if (!modelo) {
@@ -52,6 +53,21 @@ export async function PUT(
         }
       }
 
+      // If variantes provided, delete old and recreate
+      if (body.variantes !== undefined) {
+        await tx.varianteModelo.deleteMany({ where: { modeloId: id } });
+        if (body.variantes.length > 0) {
+          await tx.varianteModelo.createMany({
+            data: body.variantes.map((v: { nombre: string; precioAdicional?: number; notas?: string }) => ({
+              modeloId: id,
+              nombre: v.nombre,
+              precioAdicional: v.precioAdicional ? parseFloat(String(v.precioAdicional)) : 0,
+              notas: v.notas || null,
+            })),
+          });
+        }
+      }
+
       return tx.modelo.update({
         where: { id, tenantId },
         data: {
@@ -71,6 +87,7 @@ export async function PUT(
         },
         include: {
           categorias: { include: { categoria: true } },
+          variantes: true,
         },
       });
     });

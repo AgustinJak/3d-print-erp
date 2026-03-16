@@ -29,6 +29,12 @@ interface Categoria {
   color: string | null;
 }
 
+interface Variante {
+  nombre: string;
+  precioAdicional: number;
+  notas: string;
+}
+
 interface Modelo {
   id: string;
   nombre: string;
@@ -47,6 +53,7 @@ interface Modelo {
   categorias: Array<{
     categoria: Categoria;
   }>;
+  variantes: Variante[];
 }
 
 /* ─── Form ─────────────────────────────────────────────── */
@@ -65,6 +72,7 @@ const emptyForm = {
   imagenUrl: "",
   activo: true,
   categoriaIds: [] as string[],
+  variantes: [] as Variante[],
 };
 
 type ViewMode = "table" | "cards";
@@ -340,6 +348,11 @@ export default function ModelosPage() {
       imagenUrl: m.imagenUrl || "",
       activo: m.activo,
       categoriaIds: m.categorias.map(({ categoria }) => categoria.id),
+      variantes: m.variantes?.map((v: Variante) => ({
+        nombre: v.nombre,
+        precioAdicional: v.precioAdicional || 0,
+        notas: v.notas || "",
+      })) || [],
     });
     setDialogOpen(true);
   };
@@ -373,7 +386,7 @@ export default function ModelosPage() {
     fetchModelos();
   };
 
-  const updateField = (field: string, value: string | boolean | string[]) => {
+  const updateField = (field: string, value: string | boolean | string[] | Variante[]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -691,6 +704,67 @@ export default function ModelosPage() {
                 selected={form.categoriaIds}
                 onChange={(ids) => updateField("categoriaIds", ids)}
               />
+            </div>
+
+            {/* Variantes */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Variantes</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => updateField("variantes", [...(form.variantes || []), { nombre: "", precioAdicional: 0, notas: "" }])}
+                >
+                  <Plus className="mr-1 h-3 w-3" /> Agregar
+                </Button>
+              </div>
+              {form.variantes && form.variantes.length > 0 ? (
+                <div className="space-y-2">
+                  {form.variantes.map((v: Variante, idx: number) => (
+                    <div key={idx} className="flex items-start gap-2 rounded-md border bg-muted/30 p-2">
+                      <div className="flex-1 space-y-1">
+                        <Input
+                          placeholder="Nombre variante"
+                          value={v.nombre}
+                          onChange={(e) => {
+                            const updated = [...form.variantes];
+                            updated[idx] = { ...updated[idx], nombre: e.target.value };
+                            updateField("variantes", updated);
+                          }}
+                        />
+                      </div>
+                      <div className="w-28 space-y-1">
+                        <Input
+                          type="number"
+                          step="1"
+                          placeholder="+$0"
+                          value={v.precioAdicional || ""}
+                          onChange={(e) => {
+                            const updated = [...form.variantes];
+                            updated[idx] = { ...updated[idx], precioAdicional: parseFloat(e.target.value) || 0 };
+                            updateField("variantes", updated);
+                          }}
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => {
+                          const updated = form.variantes.filter((_: Variante, i: number) => i !== idx);
+                          updateField("variantes", updated);
+                        }}
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Sin variantes. Las variantes permiten agregar opciones como &quot;con llavero&quot;, &quot;reforzado&quot;, etc.</p>
+              )}
             </div>
 
             {/* Notas */}

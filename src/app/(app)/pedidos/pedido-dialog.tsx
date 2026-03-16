@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Info, ShoppingCart, Truck, Package, FileText, Calculator, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +18,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { FileUpload } from "@/components/file-upload";
 
+interface Variante {
+  id: string;
+  nombre: string;
+  precioAdicional: number;
+}
+
 interface Modelo {
   id: string;
   nombre: string;
@@ -27,6 +33,7 @@ interface Modelo {
   imagenUrl: string | null;
   activo: boolean;
   categorias: Array<{ categoria: { id: string; nombre: string } }>;
+  variantes: Variante[];
 }
 
 interface Categoria {
@@ -46,6 +53,7 @@ interface ItemForm {
   costoUnitario: string;
   ajusteManual: string;
   categoriaFiltro: string;
+  variantesSeleccionadas: string[];
 }
 
 interface PedidoData {
@@ -81,6 +89,7 @@ const emptyItem: ItemForm = {
   costoUnitario: "",
   ajusteManual: "0",
   categoriaFiltro: "",
+  variantesSeleccionadas: [],
 };
 
 interface Props {
@@ -153,6 +162,7 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
           costoUnitario: i.costoUnitario.toString(),
           ajusteManual: i.ajusteManual.toString(),
           categoriaFiltro: "",
+          variantesSeleccionadas: [], // Variants are saved as info, not re-selectable on edit
         }))
       );
     } else {
@@ -188,6 +198,7 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
         updated[idx].precioUnitario = modelo.precioVenta.toString();
         updated[idx].costoUnitario = modelo.costoFab.toString();
       }
+      updated[idx].variantesSeleccionadas = [];
     }
 
     // Reset model selection when category filter changes
@@ -200,6 +211,7 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
           updated[idx].modeloId = "";
           updated[idx].precioUnitario = "";
           updated[idx].costoUnitario = "";
+          updated[idx].variantesSeleccionadas = [];
         }
       }
     }
@@ -245,13 +257,21 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
       comprobanteUrl: comprobanteUrl || null,
       fechaLiquidacionMl: fechaLiquidacionMl || null,
       idMercadolibre: idMercadolibre || null,
-      items: items.filter((i) => i.modeloId).map((i) => ({
-        modeloId: i.modeloId,
-        cantidad: parseInt(i.cantidad) || 1,
-        precioUnitario: parseFloat(i.precioUnitario) || 0,
-        costoUnitario: parseFloat(i.costoUnitario) || 0,
-        ajusteManual: parseFloat(i.ajusteManual) || 0,
-      })),
+      items: items.filter((i) => i.modeloId).map((i) => {
+        const modelo = modelos.find(m => m.id === i.modeloId);
+        const variantesInfo = i.variantesSeleccionadas
+          .map(vid => modelo?.variantes?.find(v => v.id === vid))
+          .filter(Boolean)
+          .map(v => ({ nombre: v!.nombre, precioAdicional: v!.precioAdicional }));
+        return {
+          modeloId: i.modeloId,
+          cantidad: parseInt(i.cantidad) || 1,
+          precioUnitario: parseFloat(i.precioUnitario) || 0,
+          costoUnitario: parseFloat(i.costoUnitario) || 0,
+          ajusteManual: parseFloat(i.ajusteManual) || 0,
+          variantesInfo: variantesInfo.length > 0 ? variantesInfo : undefined,
+        };
+      }),
     };
 
     const url = pedido ? `/api/pedidos/${pedido.id}` : "/api/pedidos";
@@ -274,6 +294,27 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
     );
   };
 
+  const toggleVariante = (itemIdx: number, varianteId: string) => {
+    const updated = [...items];
+    const current = updated[itemIdx].variantesSeleccionadas;
+    if (current.includes(varianteId)) {
+      updated[itemIdx] = { ...updated[itemIdx], variantesSeleccionadas: current.filter(id => id !== varianteId) };
+    } else {
+      updated[itemIdx] = { ...updated[itemIdx], variantesSeleccionadas: [...current, varianteId] };
+    }
+    // Recalculate price with variants
+    const modelo = modelos.find(m => m.id === updated[itemIdx].modeloId);
+    if (modelo) {
+      const basePrice = modelo.precioVenta;
+      const variantExtra = updated[itemIdx].variantesSeleccionadas.reduce((sum, vid) => {
+        const v = modelo.variantes?.find(v => v.id === vid);
+        return sum + (v?.precioAdicional || 0);
+      }, 0);
+      updated[itemIdx].precioUnitario = (basePrice + variantExtra).toString();
+    }
+    setItems(updated);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -282,6 +323,11 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Info general */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <Info className="h-4 w-4" />
+              Información general
+            </h4>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Prioridad</Label>
@@ -323,8 +369,14 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
               </Select>
             </div>
           </div>
+          </div>
 
           {canalVenta === "mercadolibre" && (
+            <div className="space-y-3">
+            <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <Store className="h-4 w-4" />
+              MercadoLibre
+            </h4>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>ID de MercadoLibre</Label>
@@ -335,8 +387,14 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
                 <Input type="date" value={fechaLiquidacionMl} onChange={(e) => setFechaLiquidacionMl(e.target.value)} />
               </div>
             </div>
+            </div>
           )}
 
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <ShoppingCart className="h-4 w-4" />
+              Cliente y entrega
+            </h4>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Cliente</Label>
@@ -357,7 +415,13 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
               <Input type="date" value={fechaEntrega} onChange={(e) => setFechaEntrega(e.target.value)} />
             </div>
           </div>
+          </div>
 
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <Truck className="h-4 w-4" />
+              Envío y pago
+            </h4>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Método de envío</Label>
@@ -430,9 +494,14 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
               compact
             />
           </div>
+          </div>
 
           {/* Items */}
           <div className="space-y-3">
+            <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <Package className="h-4 w-4" />
+              Artículos
+            </h4>
             <div className="flex items-center justify-between">
               <Label className="text-base font-semibold">Ítems del pedido</Label>
               <Button type="button" variant="outline" size="sm" onClick={addItem}>
@@ -440,7 +509,7 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
               </Button>
             </div>
             {items.map((item, idx) => (
-              <div key={idx} className="rounded-md border p-3 space-y-3">
+              <div key={idx} className="rounded-lg border bg-card p-3 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-muted-foreground">Ítem {idx + 1}</span>
                   {items.length > 1 && (
@@ -472,7 +541,7 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
                     </Select>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-sm">Modelo *</Label>
+                    <Label className="text-sm">Modelo <span className="text-destructive">*</span></Label>
                     <Select
                       value={item.modeloId || "placeholder"}
                       onValueChange={(v) => updateItem(idx, "modeloId", v === "placeholder" ? "" : (v ?? ""))}
@@ -493,6 +562,43 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
                     </Select>
                   </div>
                 </div>
+                {/* Variantes */}
+                {item.modeloId && (() => {
+                  const modelo = modelos.find(m => m.id === item.modeloId);
+                  if (!modelo?.variantes?.length) return null;
+                  return (
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Variantes</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {modelo.variantes.map((v) => {
+                          const selected = item.variantesSeleccionadas.includes(v.id);
+                          return (
+                            <button
+                              key={v.id}
+                              type="button"
+                              onClick={() => toggleVariante(idx, v.id)}
+                              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition-colors ${
+                                selected
+                                  ? "border-primary bg-primary/10 text-primary font-medium"
+                                  : "border-border bg-background hover:bg-muted"
+                              }`}
+                            >
+                              <span className={`h-3.5 w-3.5 rounded border flex items-center justify-center text-xs ${
+                                selected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/30"
+                              }`}>
+                                {selected && "\u2713"}
+                              </span>
+                              {v.nombre}
+                              {v.precioAdicional > 0 && (
+                                <span className="text-muted-foreground text-xs">(+${v.precioAdicional.toLocaleString("es-AR")})</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="space-y-1">
                     <Label className="text-sm">Cantidad</Label>
@@ -519,6 +625,11 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
           </div>
 
           {/* Totales */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <Calculator className="h-4 w-4" />
+              Resumen
+            </h4>
           <div className="rounded-md bg-muted p-4 space-y-1">
             <div className="flex justify-between text-sm">
               <span>Total venta (con envío)</span>
@@ -541,9 +652,13 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
               </div>
             )}
           </div>
+          </div>
 
-          <div className="space-y-2">
-            <Label>Notas</Label>
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Notas
+            </h4>
             <Textarea value={notas} onChange={(e) => setNotas(e.target.value)} rows={2} />
           </div>
 

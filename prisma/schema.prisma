@@ -79,9 +79,25 @@ model Modelo {
   updatedAt         DateTime @updatedAt @map("updated_at")
 
   categorias  CategoriaModelo[]
+  variantes   VarianteModelo[]
   itemsPedido ItemPedido[]
 
   @@map("modelos")
+}
+
+// ==================== VARIANTES DE MODELO ====================
+
+model VarianteModelo {
+  id              String  @id @default(cuid())
+  modeloId        String  @map("modelo_id")
+  nombre          String
+  precioAdicional Float   @default(0) @map("precio_adicional")
+  notas           String?
+  activo          Boolean @default(true)
+
+  modelo Modelo @relation(fields: [modeloId], references: [id], onDelete: Cascade)
+
+  @@map("variantes_modelo")
 }
 
 // ==================== PEDIDOS ====================
@@ -142,6 +158,7 @@ model ItemPedido {
   precioUnitario  Float   @map("precio_unitario")
   costoUnitario   Float   @map("costo_unitario")
   ajusteManual    Float   @default(0) @map("ajuste_manual")
+  variantesInfo   Json?   @map("variantes_info")
 
   pedido   Pedido    @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
   modelo   Modelo    @relation(fields: [modeloId], references: [id])
