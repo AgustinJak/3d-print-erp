@@ -3,7 +3,7 @@ export const ESTADOS_PEDIDO = {
   CONFIRMADO: { label: "Confirmado", color: "bg-blue-500" },
   EN_PRODUCCION: { label: "En producción", color: "bg-orange-500" },
   TERMINADO: { label: "Terminado", color: "bg-emerald-500" },
-  ENTREGADO: { label: "Entregado", color: "bg-green-600" },
+  ENTREGADO: { label: "Esperando retiro", color: "bg-green-600" },
   ESPERANDO_LIQUIDACION_ML: { label: "Esperando liquidación ML", color: "bg-purple-500" },
   COMPLETADO: { label: "Completado", color: "bg-green-700" },
   CANCELADO: { label: "Cancelado", color: "bg-red-500" },
