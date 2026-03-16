@@ -80,6 +80,7 @@ interface PedidoData {
     precioUnitario: number;
     costoUnitario: number;
     ajusteManual: number;
+    variantesInfo?: { nombre: string; precioAdicional: number; costoFabAdicional?: number }[] | null;
   }[];
 }
 
@@ -163,7 +164,7 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
           costoUnitario: i.costoUnitario.toString(),
           ajusteManual: i.ajusteManual.toString(),
           categoriaFiltro: "",
-          variantesSeleccionadas: [], // Variants are saved as info, not re-selectable on edit
+          variantesSeleccionadas: [],
         }))
       );
     } else {
@@ -185,6 +186,26 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
       setItems([{ ...emptyItem }]);
     }
   }, [pedido, open]);
+
+  // Restaurar variantes seleccionadas cuando modelos se cargan
+  useEffect(() => {
+    if (!pedido || modelos.length === 0) return;
+    setItems((prev) =>
+      prev.map((item, idx) => {
+        const pedidoItem = pedido.items[idx];
+        if (!pedidoItem?.variantesInfo?.length) return item;
+        if (item.variantesSeleccionadas.length > 0) return item;
+        const modelo = modelos.find(m => m.id === item.modeloId);
+        if (!modelo) return item;
+        const seleccionadas: string[] = [];
+        for (const vi of pedidoItem.variantesInfo) {
+          const match = modelo.variantes.find(v => v.nombre === vi.nombre);
+          if (match) seleccionadas.push(match.id);
+        }
+        return seleccionadas.length > 0 ? { ...item, variantesSeleccionadas: seleccionadas } : item;
+      })
+    );
+  }, [pedido, modelos]);
 
   const addItem = () => setItems([...items, { ...emptyItem }]);
   const removeItem = (idx: number) => setItems(items.filter((_, i) => i !== idx));
