@@ -130,6 +130,15 @@ export default function PedidosPage() {
     fetchPedidos();
   };
 
+  const handlePrioridadChange = async (id: string, prioridad: string) => {
+    await fetch(`/api/pedidos/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prioridad }),
+    });
+    fetchPedidos();
+  };
+
   const handleSaved = () => {
     setDialogOpen(false);
     fetchPedidos();
@@ -215,11 +224,23 @@ export default function PedidosPage() {
                           className={`h-4 w-4 transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`}
                         />
                       </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="gap-1">
-                          <span className={`h-2 w-2 rounded-full ${prioConfig.color}`} />
-                          {prioConfig.label}
-                        </Badge>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Select value={p.prioridad} onValueChange={(v) => v && handlePrioridadChange(p.id, v)}>
+                          <SelectTrigger className="h-7 w-[110px] px-2 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:ring-0">
+                            <span className={`h-2 w-2 rounded-full mr-1.5 flex-shrink-0 ${prioConfig.color}`} />
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(PRIORIDADES).map(([key, val]) => (
+                              <SelectItem key={key} value={key}>
+                                <span className="flex items-center gap-2">
+                                  <span className={`h-2 w-2 rounded-full ${val.color}`} />
+                                  {val.label}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                       <TableCell className="font-medium">
                         {p.cliente?.nombre || <span className="text-muted-foreground">Sin cliente</span>}
