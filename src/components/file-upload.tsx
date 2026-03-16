@@ -33,6 +33,7 @@ export function FileUpload({
 }: FileUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleUpload = async (file: File) => {
@@ -88,6 +89,35 @@ export function FileUpload({
   const handleRemove = () => {
     if (onRemoved) onRemoved();
     if (inputRef.current) inputRef.current.value = "";
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(false);
+    if (uploading) return;
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    // Validate extension against accept prop
+    const acceptedExts = accept.split(",").map(a => a.trim().toLowerCase());
+    const fileExt = "." + file.name.split(".").pop()?.toLowerCase();
+    if (!acceptedExts.some(ext => ext === fileExt || ext === file.type)) {
+      setError(`Formato no permitido. Se acepta: ${accept}`);
+      return;
+    }
+    handleUpload(file);
   };
 
   const isImage = currentUrl && (currentUrl.match(/\.(jpg|jpeg|png|webp|gif)$/i) || bucket === "imagenes");
@@ -185,20 +215,33 @@ export function FileUpload({
         </div>
       ) : (
         <div
-          className="relative rounded-lg border-2 border-dashed p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
+          className={`relative rounded-lg border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${
+            dragging
+              ? "border-primary bg-primary/5 scale-[1.01]"
+              : "hover:border-primary/50"
+          }`}
           onClick={() => !uploading && inputRef.current?.click()}
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
         >
           {uploading ? (
             <div className="flex flex-col items-center gap-2">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               <p className="text-sm text-muted-foreground">Subiendo...</p>
             </div>
+          ) : dragging ? (
+            <div className="flex flex-col items-center gap-2">
+              <Upload className="h-8 w-8 text-primary" />
+              <p className="text-sm font-medium text-primary">Soltar para subir</p>
+            </div>
           ) : (
             <div className="flex flex-col items-center gap-2">
               <Upload className="h-8 w-8 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">{label}</p>
               <p className="text-xs text-muted-foreground">
-                {accept.replace(/\./g, "").replace(/,/g, ", ").toUpperCase()}
+                {accept.replace(/\./g, "").replace(/,/g, ", ").toUpperCase()} · o hacé click
               </p>
             </div>
           )}
