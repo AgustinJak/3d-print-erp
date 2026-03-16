@@ -114,6 +114,7 @@ enum EstadoPedido {
   ESPERANDO_LIQUIDACION_ML
   COMPLETADO
   CANCELADO
+  RECLAMO_ABIERTO
 }
 
 enum Prioridad {

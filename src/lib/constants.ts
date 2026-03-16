@@ -7,6 +7,7 @@ export const ESTADOS_PEDIDO = {
   ESPERANDO_LIQUIDACION_ML: { label: "Esperando liquidación ML", color: "bg-purple-500" },
   COMPLETADO: { label: "Completado", color: "bg-green-700" },
   CANCELADO: { label: "Cancelado", color: "bg-red-500" },
+  RECLAMO_ABIERTO: { label: "Reclamo abierto", color: "bg-rose-600" },
 } as const;
 
 export const PRIORIDADES = {
