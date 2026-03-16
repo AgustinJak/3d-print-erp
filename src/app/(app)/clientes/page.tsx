@@ -198,7 +198,7 @@ export default function ClientesPage() {
           />
         </div>
 
-        <Select value={sortBy} onValueChange={setSortBy}>
+        <Select value={sortBy} onValueChange={(v) => v && setSortBy(v)}>
           <SelectTrigger className="w-[170px]">
             <ArrowUpDown className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
             <SelectValue />
@@ -213,7 +213,7 @@ export default function ClientesPage() {
           </SelectContent>
         </Select>
 
-        <Select value={filterPlataforma} onValueChange={setFilterPlataforma}>
+        <Select value={filterPlataforma} onValueChange={(v) => v && setFilterPlataforma(v)}>
           <SelectTrigger className="w-[160px]">
             <Filter className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
             <SelectValue placeholder="Plataforma" />
@@ -226,7 +226,7 @@ export default function ClientesPage() {
           </SelectContent>
         </Select>
 
-        <Select value={filterTipo} onValueChange={setFilterTipo}>
+        <Select value={filterTipo} onValueChange={(v) => v && setFilterTipo(v)}>
           <SelectTrigger className="w-[150px]">
             <User className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
             <SelectValue placeholder="Tipo" />
@@ -397,7 +397,7 @@ export default function ClientesPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Plataforma</Label>
-                  <Select value={form.plataforma} onValueChange={(v) => updateField("plataforma", v)}>
+                  <Select value={form.plataforma} onValueChange={(v) => updateField("plataforma", v ?? "")}>
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar..." />
                     </SelectTrigger>
@@ -411,7 +411,7 @@ export default function ClientesPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Tipo de cliente</Label>
-                  <Select value={form.tipoCliente} onValueChange={(v) => updateField("tipoCliente", v)}>
+                  <Select value={form.tipoCliente} onValueChange={(v) => updateField("tipoCliente", v ?? "")}>
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar..." />
                     </SelectTrigger>
