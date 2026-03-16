@@ -68,13 +68,8 @@ export async function PUT(
 
     // Resolve pricing from Modelo when not explicitly provided
     const itemsData = await Promise.all(
-      (body.items || []).map(async (item: {
-        modeloId: string;
-        cantidad?: number;
-        precioUnitario?: number;
-        costoUnitario?: number;
-        ajusteManual?: number;
-      }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (body.items || []).map(async (item: any) => {
         let precioUnitario = item.precioUnitario;
         let costoUnitario = item.costoUnitario;
 
@@ -96,6 +91,7 @@ export async function PUT(
           precioUnitario: parseFloat(String(precioUnitario ?? 0)),
           costoUnitario: parseFloat(String(costoUnitario ?? 0)),
           ajusteManual: item.ajusteManual ? parseFloat(String(item.ajusteManual)) : 0,
+          variantesInfo: item.variantesInfo || undefined,
         };
       })
     );
