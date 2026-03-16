@@ -15,7 +15,7 @@ export async function getTenantId(userId: string): Promise<string> {
     .single();
 
   if (error || !data) {
-    return "sendero3d";
+    return "demo";
   }
 
   return data.tenant_id as string;
