@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
     const where: Prisma.PedidoWhereInput = {
       tenantId,
-      estado: { in: ["COMPLETADO", "ENTREGADO"] },
+      estado: { in: ["COMPLETADO"] },
     };
 
     if (mes && anio) {

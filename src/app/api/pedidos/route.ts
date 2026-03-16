@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
-const ESTADOS_FINALIZADOS = ["COMPLETADO", "ENTREGADO", "CANCELADO"];
+const ESTADOS_FINALIZADOS = ["COMPLETADO", "CANCELADO"];
 
 const itemsInclude = {
   modelo: {
