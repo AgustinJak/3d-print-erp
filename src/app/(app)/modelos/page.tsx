@@ -32,6 +32,7 @@ interface Categoria {
 interface Variante {
   nombre: string;
   precioAdicional: number;
+  costoFabAdicional: number;
   notas: string;
 }
 
@@ -351,6 +352,7 @@ export default function ModelosPage() {
       variantes: m.variantes?.map((v: Variante) => ({
         nombre: v.nombre,
         precioAdicional: v.precioAdicional || 0,
+        costoFabAdicional: v.costoFabAdicional || 0,
         notas: v.notas || "",
       })) || [],
     });
@@ -714,7 +716,7 @@ export default function ModelosPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => updateField("variantes", [...(form.variantes || []), { nombre: "", precioAdicional: 0, notas: "" }])}
+                  onClick={() => updateField("variantes", [...(form.variantes || []), { nombre: "", precioAdicional: 0, costoFabAdicional: 0, notas: "" }])}
                 >
                   <Plus className="mr-1 h-3 w-3" /> Agregar
                 </Button>
@@ -734,15 +736,30 @@ export default function ModelosPage() {
                           }}
                         />
                       </div>
-                      <div className="w-28 space-y-1">
+                      <div className="w-24 space-y-1">
                         <Input
                           type="number"
                           step="1"
-                          placeholder="+$0"
+                          placeholder="+$ venta"
+                          title="Precio adicional de venta"
                           value={v.precioAdicional || ""}
                           onChange={(e) => {
                             const updated = [...form.variantes];
                             updated[idx] = { ...updated[idx], precioAdicional: parseFloat(e.target.value) || 0 };
+                            updateField("variantes", updated);
+                          }}
+                        />
+                      </div>
+                      <div className="w-24 space-y-1">
+                        <Input
+                          type="number"
+                          step="1"
+                          placeholder="+$ costo"
+                          title="Costo de fabricación adicional"
+                          value={v.costoFabAdicional || ""}
+                          onChange={(e) => {
+                            const updated = [...form.variantes];
+                            updated[idx] = { ...updated[idx], costoFabAdicional: parseFloat(e.target.value) || 0 };
                             updateField("variantes", updated);
                           }}
                         />

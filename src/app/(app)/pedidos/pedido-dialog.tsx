@@ -22,6 +22,7 @@ interface Variante {
   id: string;
   nombre: string;
   precioAdicional: number;
+  costoFabAdicional: number;
 }
 
 interface Modelo {
@@ -262,7 +263,7 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
         const variantesInfo = i.variantesSeleccionadas
           .map(vid => modelo?.variantes?.find(v => v.id === vid))
           .filter(Boolean)
-          .map(v => ({ nombre: v!.nombre, precioAdicional: v!.precioAdicional }));
+          .map(v => ({ nombre: v!.nombre, precioAdicional: v!.precioAdicional, costoFabAdicional: v!.costoFabAdicional }));
         return {
           modeloId: i.modeloId,
           cantidad: parseInt(i.cantidad) || 1,
@@ -302,15 +303,20 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
     } else {
       updated[itemIdx] = { ...updated[itemIdx], variantesSeleccionadas: [...current, varianteId] };
     }
-    // Recalculate price with variants
+    // Recalculate price and cost with variants
     const modelo = modelos.find(m => m.id === updated[itemIdx].modeloId);
     if (modelo) {
-      const basePrice = modelo.precioVenta;
-      const variantExtra = updated[itemIdx].variantesSeleccionadas.reduce((sum, vid) => {
+      const selectedVariants = updated[itemIdx].variantesSeleccionadas;
+      const variantPriceExtra = selectedVariants.reduce((sum, vid) => {
         const v = modelo.variantes?.find(v => v.id === vid);
         return sum + (v?.precioAdicional || 0);
       }, 0);
-      updated[itemIdx].precioUnitario = (basePrice + variantExtra).toString();
+      const variantCostExtra = selectedVariants.reduce((sum, vid) => {
+        const v = modelo.variantes?.find(v => v.id === vid);
+        return sum + (v?.costoFabAdicional || 0);
+      }, 0);
+      updated[itemIdx].precioUnitario = (modelo.precioVenta + variantPriceExtra).toString();
+      updated[itemIdx].costoUnitario = (modelo.costoFab + variantCostExtra).toString();
     }
     setItems(updated);
   };
@@ -589,8 +595,12 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
                                 {selected && "\u2713"}
                               </span>
                               {v.nombre}
-                              {v.precioAdicional > 0 && (
-                                <span className="text-muted-foreground text-xs">(+${v.precioAdicional.toLocaleString("es-AR")})</span>
+                              {(v.precioAdicional > 0 || v.costoFabAdicional > 0) && (
+                                <span className="text-muted-foreground text-xs">
+                                  {v.precioAdicional > 0 && `+$${v.precioAdicional.toLocaleString("es-AR")}`}
+                                  {v.precioAdicional > 0 && v.costoFabAdicional > 0 && " · "}
+                                  {v.costoFabAdicional > 0 && `costo +$${v.costoFabAdicional.toLocaleString("es-AR")}`}
+                                </span>
                               )}
                             </button>
                           );

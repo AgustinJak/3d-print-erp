@@ -58,10 +58,11 @@ export async function PUT(
         await tx.varianteModelo.deleteMany({ where: { modeloId: id } });
         if (body.variantes.length > 0) {
           await tx.varianteModelo.createMany({
-            data: body.variantes.map((v: { nombre: string; precioAdicional?: number; notas?: string }) => ({
+            data: body.variantes.map((v: { nombre: string; precioAdicional?: number; costoFabAdicional?: number; notas?: string }) => ({
               modeloId: id,
               nombre: v.nombre,
               precioAdicional: v.precioAdicional ? parseFloat(String(v.precioAdicional)) : 0,
+              costoFabAdicional: v.costoFabAdicional ? parseFloat(String(v.costoFabAdicional)) : 0,
               notas: v.notas || null,
             })),
           });

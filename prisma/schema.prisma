@@ -91,8 +91,9 @@ model VarianteModelo {
   id              String  @id @default(cuid())
   modeloId        String  @map("modelo_id")
   nombre          String
-  precioAdicional Float   @default(0) @map("precio_adicional")
-  notas           String?
+  precioAdicional    Float   @default(0) @map("precio_adicional")
+  costoFabAdicional  Float   @default(0) @map("costo_fab_adicional")
+  notas              String?
   activo          Boolean @default(true)
 
   modelo Modelo @relation(fields: [modeloId], references: [id], onDelete: Cascade)

@@ -61,9 +61,10 @@ export async function POST(request: NextRequest) {
           ? { create: categoriaIds.map((catId: string) => ({ categoriaId: catId })) }
           : undefined,
         variantes: body.variantes?.length > 0
-          ? { create: body.variantes.map((v: { nombre: string; precioAdicional?: number; notas?: string }) => ({
+          ? { create: body.variantes.map((v: { nombre: string; precioAdicional?: number; costoFabAdicional?: number; notas?: string }) => ({
               nombre: v.nombre,
               precioAdicional: v.precioAdicional ? parseFloat(String(v.precioAdicional)) : 0,
+              costoFabAdicional: v.costoFabAdicional ? parseFloat(String(v.costoFabAdicional)) : 0,
               notas: v.notas || null,
             })) }
           : undefined,
