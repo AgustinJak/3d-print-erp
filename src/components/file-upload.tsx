@@ -20,6 +20,7 @@ interface FileUploadProps {
   onRemoved?: () => void;
   label?: string;
   compact?: boolean;
+  squareCompact?: boolean; // square slot for multi-image grid
 }
 
 export function FileUpload({
@@ -30,6 +31,7 @@ export function FileUpload({
   onRemoved,
   label = "Subir archivo",
   compact = false,
+  squareCompact = false,
 }: FileUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -122,6 +124,43 @@ export function FileUpload({
 
   const isImage = currentUrl && (currentUrl.match(/\.(jpg|jpeg|png|webp|gif)$/i) || bucket === "imagenes");
   const is3mf = currentUrl && (currentUrl.endsWith(".3mf") || bucket === "modelos-3d");
+
+  // Square compact mode: used for multi-image grids
+  if (squareCompact) {
+    return (
+      <div className="aspect-square w-full">
+        <div
+          className={`h-full w-full rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer transition-colors ${
+            dragging ? "border-primary bg-primary/5" : "hover:border-primary/50"
+          }`}
+          onClick={() => !uploading && inputRef.current?.click()}
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {uploading ? (
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          ) : dragging ? (
+            <Upload className="h-5 w-5 text-primary" />
+          ) : (
+            <>
+              <Upload className="h-4 w-4 text-muted-foreground" />
+              <span className="text-[10px] text-muted-foreground text-center leading-tight px-1">{label}</span>
+            </>
+          )}
+        </div>
+        <input
+          ref={inputRef}
+          type="file"
+          accept={accept}
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }}
+        />
+        {error && <p className="text-[10px] text-red-500 mt-1">{error}</p>}
+      </div>
+    );
+  }
 
   if (compact) {
     return (

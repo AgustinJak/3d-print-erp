@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   Plus, Search, Pencil, Trash2, FileBox, Download,
-  LayoutGrid, TableIcon, ChevronDown, X,
+  LayoutGrid, TableIcon, ChevronDown, X, ImagePlus,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -71,6 +71,7 @@ const emptyForm = {
   notas: "",
   archivo3mfUrl: "",
   imagenUrl: "",
+  imagenesUrls: [] as string[],
   activo: true,
   categoriaIds: [] as string[],
   variantes: [] as Variante[],
@@ -347,6 +348,10 @@ export default function ModelosPage() {
       notas: m.notas || "",
       archivo3mfUrl: m.archivo3mfUrl || "",
       imagenUrl: m.imagenUrl || "",
+      imagenesUrls: [
+        ...(m.imagenUrl ? [m.imagenUrl] : []),
+        ...((m.imagenesUrls || []).filter((u: string) => u !== m.imagenUrl)),
+      ],
       activo: m.activo,
       categoriaIds: m.categorias.map(({ categoria }) => categoria.id),
       variantes: m.variantes?.map((v: Variante) => ({
@@ -369,6 +374,8 @@ export default function ModelosPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...form,
+        imagenUrl: form.imagenesUrls[0] || "",
+        imagenesUrls: form.imagenesUrls,
         pesoGr: form.pesoGr ? parseFloat(form.pesoGr) : null,
         costoFab: parseFloat(form.costoFab) || 0,
         precioVenta: parseFloat(form.precioVenta) || 0,
@@ -796,7 +803,8 @@ export default function ModelosPage() {
             </div>
 
             {/* File uploads */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-4">
+              {/* 3MF */}
               <div className="space-y-2">
                 <Label>Archivo 3MF</Label>
                 <FileUpload
@@ -808,16 +816,64 @@ export default function ModelosPage() {
                   label="Subir .3mf"
                 />
               </div>
+
+              {/* Multi-image up to 5 */}
               <div className="space-y-2">
-                <Label>Imagen de referencia</Label>
-                <FileUpload
-                  bucket="imagenes"
-                  accept=".jpg,.jpeg,.png,.webp"
-                  currentUrl={form.imagenUrl || null}
-                  onUploaded={(url) => updateField("imagenUrl", url)}
-                  onRemoved={() => updateField("imagenUrl", "")}
-                  label="Subir imagen"
-                />
+                <div className="flex items-center justify-between">
+                  <Label>
+                    Imágenes{" "}
+                    <span className="text-muted-foreground font-normal">
+                      ({form.imagenesUrls.length}/5) — la primera es la principal
+                    </span>
+                  </Label>
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  {Array.from({ length: 5 }).map((_, idx) => {
+                    const url = form.imagenesUrls[idx];
+                    return url ? (
+                      /* Slot con imagen */
+                      <div key={idx} className="relative group aspect-square rounded-lg overflow-hidden border bg-muted">
+                        <img src={url} alt="" className="w-full h-full object-cover" />
+                        {idx === 0 && (
+                          <div className="absolute top-1 left-1 bg-primary text-primary-foreground text-[9px] px-1 rounded font-medium leading-4">
+                            Principal
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = form.imagenesUrls.filter((_, i) => i !== idx);
+                            updateField("imagenesUrls", updated);
+                          }}
+                          className="absolute top-1 right-1 h-5 w-5 rounded-full bg-destructive text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ) : form.imagenesUrls.length === idx ? (
+                      /* Slot de upload (solo el siguiente disponible) */
+                      <div key={idx} className="aspect-square">
+                        <FileUpload
+                          bucket="imagenes"
+                          accept=".jpg,.jpeg,.png,.webp"
+                          currentUrl={null}
+                          onUploaded={(url) => {
+                            const updated = [...form.imagenesUrls, url];
+                            updateField("imagenesUrls", updated);
+                          }}
+                          label={idx === 0 ? "Principal" : `Foto ${idx + 1}`}
+                          compact={false}
+                          squareCompact
+                        />
+                      </div>
+                    ) : (
+                      /* Slot vacío bloqueado */
+                      <div key={idx} className="aspect-square rounded-lg border-2 border-dashed border-muted flex items-center justify-center opacity-30">
+                        <ImagePlus className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
