@@ -1,26 +1,27 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Pencil, Trash2, ChevronRight, User, MapPin, FileText } from "lucide-react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Plus, Search, Pencil, Trash2, ChevronRight, User, MapPin, FileText,
+  Filter, ArrowUpDown, DollarSign, ShoppingCart,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { TableSkeleton } from "@/components/data-loading";
+import { PLATAFORMAS_CLIENTE, TIPOS_CLIENTE } from "@/lib/constants";
 
 interface Cliente {
   id: string;
@@ -29,6 +30,11 @@ interface Cliente {
   email: string | null;
   direccion: string | null;
   notas: string | null;
+  plataforma: string | null;
+  tipoCliente: string | null;
+  creadoEn: string;
+  totalGastado: number;
+  pedidosCount: number;
 }
 
 const emptyForm = {
@@ -37,9 +43,20 @@ const emptyForm = {
   email: "",
   direccion: "",
   notas: "",
+  plataforma: "",
+  tipoCliente: "",
 };
 
+function formatMoney(n: number) {
+  return new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
 export default function ClientesPage() {
+  const router = useRouter();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -47,7 +64,11 @@ export default function ClientesPage() {
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Filters
+  const [filterPlataforma, setFilterPlataforma] = useState("todos");
+  const [filterTipo, setFilterTipo] = useState("todos");
+  const [sortBy, setSortBy] = useState("reciente");
 
   const fetchClientes = useCallback(async () => {
     const res = await fetch("/api/clientes");
@@ -60,13 +81,45 @@ export default function ClientesPage() {
     fetchClientes();
   }, [fetchClientes]);
 
-  if (initialLoading) return <TableSkeleton cols={5} />;
+  const filtered = useMemo(() => {
+    let result = clientes.filter((c) =>
+      c.nombre.toLowerCase().includes(search.toLowerCase()) ||
+      c.email?.toLowerCase().includes(search.toLowerCase()) ||
+      c.telefono?.includes(search)
+    );
 
-  const filtered = clientes.filter((c) =>
-    c.nombre.toLowerCase().includes(search.toLowerCase()) ||
-    c.email?.toLowerCase().includes(search.toLowerCase()) ||
-    c.telefono?.includes(search)
-  );
+    if (filterPlataforma !== "todos") {
+      result = result.filter((c) => c.plataforma === filterPlataforma);
+    }
+    if (filterTipo !== "todos") {
+      result = result.filter((c) => c.tipoCliente === filterTipo);
+    }
+
+    switch (sortBy) {
+      case "a-z":
+        result.sort((a, b) => a.nombre.localeCompare(b.nombre));
+        break;
+      case "z-a":
+        result.sort((a, b) => b.nombre.localeCompare(a.nombre));
+        break;
+      case "mas-gastado":
+        result.sort((a, b) => b.totalGastado - a.totalGastado);
+        break;
+      case "mas-pedidos":
+        result.sort((a, b) => b.pedidosCount - a.pedidosCount);
+        break;
+      case "antiguo":
+        result.sort((a, b) => new Date(a.creadoEn).getTime() - new Date(b.creadoEn).getTime());
+        break;
+      default: // reciente
+        result.sort((a, b) => new Date(b.creadoEn).getTime() - new Date(a.creadoEn).getTime());
+        break;
+    }
+
+    return result;
+  }, [clientes, search, filterPlataforma, filterTipo, sortBy]);
+
+  if (initialLoading) return <TableSkeleton cols={5} />;
 
   const openCreate = () => {
     setEditingId(null);
@@ -82,6 +135,8 @@ export default function ClientesPage() {
       email: cliente.email || "",
       direccion: cliente.direccion || "",
       notas: cliente.notas || "",
+      plataforma: cliente.plataforma || "",
+      tipoCliente: cliente.tipoCliente || "",
     });
     setDialogOpen(true);
   };
@@ -119,6 +174,8 @@ export default function ClientesPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const hasActiveFilters = filterPlataforma !== "todos" || filterTipo !== "todos";
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -129,52 +186,139 @@ export default function ClientesPage() {
         </Button>
       </div>
 
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Buscar por nombre, email o teléfono..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      {/* Search + Sort + Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nombre, email o teléfono..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+
+        <Select value={sortBy} onValueChange={setSortBy}>
+          <SelectTrigger className="w-[170px]">
+            <ArrowUpDown className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="reciente">Más reciente</SelectItem>
+            <SelectItem value="antiguo">Más antiguo</SelectItem>
+            <SelectItem value="a-z">A → Z</SelectItem>
+            <SelectItem value="z-a">Z → A</SelectItem>
+            <SelectItem value="mas-gastado">Mayor gasto</SelectItem>
+            <SelectItem value="mas-pedidos">Más pedidos</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={filterPlataforma} onValueChange={setFilterPlataforma}>
+          <SelectTrigger className="w-[160px]">
+            <Filter className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+            <SelectValue placeholder="Plataforma" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todas las plataformas</SelectItem>
+            {PLATAFORMAS_CLIENTE.map((p) => (
+              <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterTipo} onValueChange={setFilterTipo}>
+          <SelectTrigger className="w-[150px]">
+            <User className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+            <SelectValue placeholder="Tipo" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos los tipos</SelectItem>
+            {TIPOS_CLIENTE.map((t) => (
+              <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setFilterPlataforma("todos"); setFilterTipo("todos"); }}
+          >
+            Limpiar filtros
+          </Button>
+        )}
       </div>
+
+      <p className="text-xs text-muted-foreground">
+        {filtered.length} de {clientes.length} clientes
+      </p>
 
       <div className="rounded-md border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="min-w-[120px]">Nombre</TableHead>
+              <TableHead className="min-w-[140px]">Nombre</TableHead>
+              <TableHead>Etiquetas</TableHead>
               <TableHead>Teléfono</TableHead>
               <TableHead>Email</TableHead>
-              <TableHead className="min-w-[120px]">Dirección</TableHead>
+              <TableHead className="text-right">Gastado</TableHead>
+              <TableHead className="text-right">Pedidos</TableHead>
               <TableHead className="w-[100px]">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                   {clientes.length === 0
                     ? "No hay clientes registrados."
                     : "No se encontraron resultados."}
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((cliente) => (
-                <React.Fragment key={cliente.id}>
+              filtered.map((cliente) => {
+                const plataformaLabel = PLATAFORMAS_CLIENTE.find(
+                  (p) => p.value === cliente.plataforma
+                )?.label;
+                const tipoLabel = TIPOS_CLIENTE.find(
+                  (t) => t.value === cliente.tipoCliente
+                )?.label;
+
+                return (
                   <TableRow
+                    key={cliente.id}
                     className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => setExpandedId(expandedId === cliente.id ? null : cliente.id)}
+                    onClick={() => router.push(`/clientes/${cliente.id}`)}
                   >
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
-                        <ChevronRight className={`h-4 w-4 shrink-0 transition-transform ${expandedId === cliente.id ? "rotate-90" : ""}`} />
+                        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                         {cliente.nombre}
                       </div>
                     </TableCell>
-                    <TableCell>{cliente.telefono || "—"}</TableCell>
-                    <TableCell>{cliente.email || "—"}</TableCell>
-                    <TableCell>{cliente.direccion || "—"}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {plataformaLabel && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-500/10 text-blue-600 border-blue-300">
+                            {plataformaLabel}
+                          </Badge>
+                        )}
+                        {tipoLabel && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-purple-500/10 text-purple-600 border-purple-300">
+                            {tipoLabel}
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm">{cliente.telefono || "—"}</TableCell>
+                    <TableCell className="text-sm">{cliente.email || "—"}</TableCell>
+                    <TableCell className="text-right text-sm font-medium">
+                      {cliente.totalGastado > 0 ? formatMoney(cliente.totalGastado) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right text-sm">
+                      {cliente.pedidosCount || "—"}
+                    </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
                         <Button
@@ -194,22 +338,8 @@ export default function ClientesPage() {
                       </div>
                     </TableCell>
                   </TableRow>
-                  {expandedId === cliente.id && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="bg-muted/30 p-4">
-                        <div className="space-y-1">
-                          <span className="text-sm font-medium">Notas</span>
-                          {cliente.notas ? (
-                            <p className="text-sm">{cliente.notas}</p>
-                          ) : (
-                            <p className="text-sm text-muted-foreground">Sin notas</p>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </React.Fragment>
-              ))
+                );
+              })
             )}
           </TableBody>
         </Table>
@@ -257,6 +387,45 @@ export default function ClientesPage() {
                 </div>
               </div>
             </div>
+
+            {/* Tags */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <ShoppingCart className="h-4 w-4" />
+                Clasificación
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Plataforma</Label>
+                  <Select value={form.plataforma} onValueChange={(v) => updateField("plataforma", v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Sin plataforma</SelectItem>
+                      {PLATAFORMAS_CLIENTE.map((p) => (
+                        <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Tipo de cliente</Label>
+                  <Select value={form.tipoCliente} onValueChange={(v) => updateField("tipoCliente", v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Sin tipo</SelectItem>
+                      {TIPOS_CLIENTE.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
             <div className="space-y-3">
               <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                 <MapPin className="h-4 w-4" />

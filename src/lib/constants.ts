@@ -41,3 +41,20 @@ export const ETIQUETAS_SUGERIDAS = [
   "mayorista",
   "cliente recurrente",
 ] as const;
+
+export const PLATAFORMAS_CLIENTE = [
+  { value: "mercadolibre", label: "MercadoLibre" },
+  { value: "facebook", label: "Facebook" },
+  { value: "instagram", label: "Instagram" },
+  { value: "web", label: "Web" },
+  { value: "local", label: "Local" },
+  { value: "whatsapp", label: "WhatsApp" },
+] as const;
+
+export const TIPOS_CLIENTE = [
+  { value: "minorista", label: "Minorista" },
+  { value: "mayorista", label: "Mayorista" },
+  { value: "feriante", label: "Feriante" },
+  { value: "revendedor", label: "Revendedor" },
+  { value: "empresa", label: "Empresa" },
+] as const;

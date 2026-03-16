@@ -13,15 +13,17 @@ datasource db {
 // ==================== CLIENTES ====================
 
 model Cliente {
-  id        String   @id @default(cuid())
-  nombre    String
-  telefono  String?
-  email     String?
-  direccion String?
-  notas     String?
-  tenantId  String   @default("sendero3d") @map("tenant_id")
-  creadoEn  DateTime @default(now()) @map("creado_en")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id          String   @id @default(cuid())
+  nombre      String
+  telefono    String?
+  email       String?
+  direccion   String?
+  notas       String?
+  plataforma  String?
+  tipoCliente String?  @map("tipo_cliente")
+  tenantId    String   @default("sendero3d") @map("tenant_id")
+  creadoEn    DateTime @default(now()) @map("creado_en")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   pedidos Pedido[]
 

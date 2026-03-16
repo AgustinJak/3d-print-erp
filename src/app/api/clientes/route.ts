@@ -10,8 +10,56 @@ export async function GET() {
     const clientes = await prisma.cliente.findMany({
       where: { tenantId },
       orderBy: { creadoEn: "desc" },
+      include: {
+        pedidos: {
+          select: {
+            id: true,
+            estado: true,
+            metodoPago: true,
+            fechaPedido: true,
+            precioEnvio: true,
+            senia: true,
+            items: {
+              select: {
+                precioUnitario: true,
+                cantidad: true,
+                ajusteManual: true,
+              },
+            },
+          },
+        },
+      },
     });
-    return NextResponse.json(clientes);
+
+    const result = clientes.map((c) => {
+      const totalGastado = c.pedidos
+        .filter((p) => p.estado !== "CANCELADO")
+        .reduce((sum, p) => {
+          const itemsTotal = p.items.reduce(
+            (s, i) => s + i.precioUnitario * i.cantidad + i.ajusteManual,
+            0
+          );
+          return sum + itemsTotal + p.precioEnvio;
+        }, 0);
+
+      const pedidosCount = c.pedidos.filter((p) => p.estado !== "CANCELADO").length;
+
+      return {
+        id: c.id,
+        nombre: c.nombre,
+        telefono: c.telefono,
+        email: c.email,
+        direccion: c.direccion,
+        notas: c.notas,
+        plataforma: c.plataforma,
+        tipoCliente: c.tipoCliente,
+        creadoEn: c.creadoEn,
+        totalGastado,
+        pedidosCount,
+      };
+    });
+
+    return NextResponse.json(result);
   } catch (e) {
     if (e instanceof NextResponse) return e;
     throw e;
@@ -29,6 +77,8 @@ export async function POST(request: NextRequest) {
         email: body.email || null,
         direccion: body.direccion || null,
         notas: body.notas || null,
+        plataforma: body.plataforma || null,
+        tipoCliente: body.tipoCliente || null,
         tenantId,
       },
     });
