@@ -137,14 +137,19 @@ export async function GET(request: NextRequest) {
     });
 
     let totalEnCurso = 0;
-    let cobradoEnCurso = 0; // señas ya recibidas
+    let costoEnCurso = 0;
+    let cobradoEnCurso = 0;
     const enCursoPorEstado: Record<string, { cantidad: number; total: number }> = {};
 
     pedidosEnCurso.forEach((p) => {
       const totalPedido = p.items.reduce(
         (s, item) => s + item.precioUnitario * item.cantidad + item.ajusteManual, 0
       ) + p.precioEnvio;
+      const costoPedido = p.items.reduce(
+        (s, item) => s + item.costoUnitario * item.cantidad, 0
+      );
       totalEnCurso += totalPedido;
+      costoEnCurso += costoPedido;
       cobradoEnCurso += p.senia;
       if (!enCursoPorEstado[p.estado]) enCursoPorEstado[p.estado] = { cantidad: 0, total: 0 };
       enCursoPorEstado[p.estado].cantidad += 1;
@@ -178,6 +183,8 @@ export async function GET(request: NextRequest) {
       anioActual: anioNum,
       pedidosEnCurso: {
         total: totalEnCurso,
+        costoFab: costoEnCurso,
+        ganancia: totalEnCurso - costoEnCurso,
         cobrado: cobradoEnCurso,
         pendiente: totalEnCurso - cobradoEnCurso,
         cantidad: pedidosEnCurso.length,

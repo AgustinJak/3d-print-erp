@@ -37,6 +37,8 @@ interface FinanzasData {
   gastosPorCategoria: Record<string, number>;
   pedidosEnCurso: {
     total: number;
+    costoFab: number;
+    ganancia: number;
     cobrado: number;
     pendiente: number;
     cantidad: number;
@@ -157,10 +159,15 @@ export default function FinanzasPage() {
               </p>
             </div>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div>
               <p className="text-xs text-muted-foreground">Total a cobrar</p>
               <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{formatMoney(data.pedidosEnCurso.total)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Ganancia proyectada</p>
+              <p className="text-lg font-semibold text-green-600">{formatMoney(data.pedidosEnCurso.ganancia)}</p>
+              <p className="text-xs text-muted-foreground">Costo fab: {formatMoney(data.pedidosEnCurso.costoFab)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Ya cobrado (señas)</p>
