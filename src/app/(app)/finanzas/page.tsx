@@ -1,11 +1,17 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, ArrowLeft, ArrowRight, Wallet } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, ArrowLeft, ArrowRight, Wallet, Users, Save } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/data-loading";
+
+interface Socio {
+  nombre: string;
+  porcentaje: number;
+}
 
 interface FinanzasData {
   mes: {
@@ -54,6 +60,9 @@ export default function FinanzasPage() {
   const [mes, setMes] = useState(new Date().getMonth() + 1);
   const [anio, setAnio] = useState(new Date().getFullYear());
   const [initialLoading, setInitialLoading] = useState(true);
+  const [socios, setSocios] = useState<Socio[]>([]);
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [configDirty, setConfigDirty] = useState(false);
 
   const fetchData = useCallback(async () => {
     const res = await fetch(`/api/finanzas?mes=${mes}&anio=${anio}`);
@@ -62,6 +71,32 @@ export default function FinanzasPage() {
   }, [mes, anio]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    fetch("/api/config")
+      .then(r => r.json())
+      .then(cfg => { if (cfg?.socios) setSocios(cfg.socios); });
+  }, []);
+
+  const handlePorcentaje = (idx: number, val: string) => {
+    const n = Math.min(100, Math.max(0, parseFloat(val) || 0));
+    const otro = 100 - n;
+    setSocios(prev => prev.map((s, i) =>
+      i === idx ? { ...s, porcentaje: n } : { ...s, porcentaje: otro }
+    ));
+    setConfigDirty(true);
+  };
+
+  const saveConfig = async () => {
+    setSavingConfig(true);
+    await fetch("/api/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ socios }),
+    });
+    setSavingConfig(false);
+    setConfigDirty(false);
+  };
 
   const prevMonth = () => {
     if (mes === 1) { setMes(12); setAnio(anio - 1); }
@@ -270,6 +305,73 @@ export default function FinanzasPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Sueldos */}
+      {socios.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-medium text-muted-foreground">Sueldos del mes</h2>
+            </div>
+            {configDirty && (
+              <Button size="sm" variant="outline" onClick={saveConfig} disabled={savingConfig} className="gap-1.5">
+                <Save className="h-3.5 w-3.5" />
+                {savingConfig ? "Guardando..." : "Guardar porcentajes"}
+              </Button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {socios.map((socio, idx) => {
+              const ganancia = data.mes.ganancia;
+              const sueldo = ganancia > 0 ? ganancia * (socio.porcentaje / 100) : 0;
+              const initials = socio.nombre.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+              const colors = ["bg-blue-500", "bg-emerald-500"];
+              return (
+                <Card key={idx} className="border-primary/10">
+                  <CardContent className="pt-4 pb-4">
+                    <div className="flex items-start gap-3">
+                      <div className={`w-10 h-10 rounded-full ${colors[idx % 2]} flex items-center justify-center text-white text-sm font-bold shrink-0`}>
+                        {initials}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold truncate">{socio.nombre}</p>
+                        <p className="text-3xl font-bold mt-1 text-green-600">
+                          {formatMoney(sueldo)}
+                        </p>
+                        {ganancia <= 0 && (
+                          <p className="text-xs text-muted-foreground mt-1">Sin ganancia este mes</p>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <p className="text-xs text-muted-foreground">% de ganancia</p>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={socio.porcentaje}
+                            onChange={e => handlePorcentaje(idx, e.target.value)}
+                            className="w-16 h-8 text-sm text-center"
+                          />
+                          <span className="text-sm text-muted-foreground">%</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          de {formatMoney(Math.max(0, ganancia))}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            Los porcentajes se suman al 100%. Basado en la ganancia del mes seleccionado.
+          </p>
+        </div>
       )}
     </div>
   );

@@ -188,6 +188,16 @@ model Filamento {
   @@map("filamentos")
 }
 
+// ==================== CONFIGURACIÓN DEL TENANT ====================
+
+model ConfigTenant {
+  id       String @id @default(cuid())
+  tenantId String @unique @map("tenant_id")
+  data     Json   @default("{}")
+
+  @@map("config_tenant")
+}
+
 // ==================== GASTOS ====================
 
 model Gasto {
