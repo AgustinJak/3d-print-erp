@@ -177,7 +177,7 @@ export default function PedidosPage() {
               <TableHead className="w-[40px]"></TableHead>
               <TableHead>Prioridad</TableHead>
               <TableHead className="min-w-[120px]">Cliente</TableHead>
-              <TableHead>Items</TableHead>
+              <TableHead className="min-w-[160px]">Modelos</TableHead>
               <TableHead>Total</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Fecha</TableHead>
@@ -224,8 +224,32 @@ export default function PedidosPage() {
                       <TableCell className="font-medium">
                         {p.cliente?.nombre || <span className="text-muted-foreground">Sin cliente</span>}
                       </TableCell>
-                      <TableCell>
-                        {p.items.length} {p.items.length === 1 ? "ítem" : "ítems"}
+                      <TableCell className="max-w-[260px]">
+                        <div className="flex flex-col gap-0.5">
+                          {p.items.map((item) => (
+                            <div key={item.id} className="flex flex-col">
+                              <span className="text-sm font-medium truncate">
+                                {item.cantidad > 1 && (
+                                  <span className="text-muted-foreground mr-1">{item.cantidad}×</span>
+                                )}
+                                {item.modelo.nombre}
+                              </span>
+                              {item.variantesInfo && item.variantesInfo.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-0.5">
+                                  {item.variantesInfo.map((v, vi) => (
+                                    <Badge
+                                      key={vi}
+                                      variant="outline"
+                                      className="text-[10px] px-1.5 py-0 border-blue-400/60 text-blue-500 dark:text-blue-400 font-normal"
+                                    >
+                                      {v.nombre}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </TableCell>
                       <TableCell className="font-medium">${total.toFixed(0)}</TableCell>
                       <TableCell>
