@@ -226,15 +226,18 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
     );
   };
 
+  // Elimina puntos de miles antes de parsear (ej: "30.995" → 30995)
+  const parsePrice = (s: string) => parseFloat(s.replace(/\./g, "").replace(",", ".")) || 0;
+
   const calcSubtotal = (item: ItemForm) => {
     const qty = parseInt(item.cantidad) || 0;
-    const price = parseFloat(item.precioUnitario) || 0;
-    const adj = parseFloat(item.ajusteManual) || 0;
+    const price = parsePrice(item.precioUnitario);
+    const adj = parsePrice(item.ajusteManual);
     return qty * price + adj;
   };
 
-  const totalVenta = items.reduce((s, i) => s + calcSubtotal(i), 0) + (parseFloat(precioEnvio) || 0);
-  const totalCosto = items.reduce((s, i) => s + (parseInt(i.cantidad) || 0) * (parseFloat(i.costoUnitario) || 0), 0);
+  const totalVenta = items.reduce((s, i) => s + calcSubtotal(i), 0) + parsePrice(precioEnvio);
+  const totalCosto = items.reduce((s, i) => s + (parseInt(i.cantidad) || 0) * parsePrice(i.costoUnitario), 0);
   const ganancia = totalVenta - totalCosto;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -249,8 +252,8 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
       estado,
       metodoEnvio: metodoEnvio || null,
       metodoPago: metodoPago || null,
-      precioEnvio,
-      senia,
+      precioEnvio: parsePrice(precioEnvio),
+      senia: parsePrice(senia),
       contacto: contacto || null,
       notas: notas || null,
       etiquetas,
@@ -267,9 +270,9 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
         return {
           modeloId: i.modeloId,
           cantidad: parseInt(i.cantidad) || 1,
-          precioUnitario: parseFloat(i.precioUnitario) || 0,
-          costoUnitario: parseFloat(i.costoUnitario) || 0,
-          ajusteManual: parseFloat(i.ajusteManual) || 0,
+          precioUnitario: parsePrice(i.precioUnitario),
+          costoUnitario: parsePrice(i.costoUnitario),
+          ajusteManual: parsePrice(i.ajusteManual),
           variantesInfo: variantesInfo.length > 0 ? variantesInfo : undefined,
         };
       }),
@@ -655,10 +658,10 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
                 ${ganancia.toFixed(0)}
               </span>
             </div>
-            {parseFloat(senia) > 0 && (
+            {parsePrice(senia) > 0 && (
               <div className="flex justify-between text-sm text-muted-foreground">
                 <span>Restante a cobrar</span>
-                <span>${(totalVenta - parseFloat(senia)).toFixed(0)}</span>
+                <span>${(totalVenta - parsePrice(senia)).toFixed(0)}</span>
               </div>
             )}
           </div>
