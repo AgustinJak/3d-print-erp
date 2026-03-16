@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   Plus, Search, Pencil, Trash2, FileBox, Download,
-  LayoutGrid, TableIcon, ChevronDown, X, ImagePlus,
+  LayoutGrid, TableIcon, ChevronDown, X, ImagePlus, SlidersHorizontal, ArrowUpDown,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -51,6 +51,7 @@ interface Modelo {
   imagenUrl: string | null;
   imagenesUrls: string[];
   activo: boolean;
+  creadoEn: string;
   categorias: Array<{
     categoria: Categoria;
   }>;
@@ -289,6 +290,10 @@ export default function ModelosPage() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [search, setSearch] = useState("");
   const [filterCategoriaIds, setFilterCategoriaIds] = useState<string[]>([]);
+  const [filterEstado, setFilterEstado] = useState<"todos" | "activos" | "inactivos">("activos");
+  const [filterExtras, setFilterExtras] = useState<{ con3mf: boolean; conImagen: boolean; conVariantes: boolean }>({ con3mf: false, conImagen: false, conVariantes: false });
+  const [sortBy, setSortBy] = useState<"nuevo" | "antiguo" | "az" | "za" | "precioAsc" | "precioDesc" | "margen">("nuevo");
+  const [showExtraFilters, setShowExtraFilters] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -316,15 +321,34 @@ export default function ModelosPage() {
 
   /* ─── Filter ──────────────────────────────────────── */
 
-  const filtered = modelos.filter((m) => {
-    const matchSearch =
-      m.nombre.toLowerCase().includes(search.toLowerCase()) ||
-      m.serie?.toLowerCase().includes(search.toLowerCase());
-    const matchCategoria =
-      filterCategoriaIds.length === 0 ||
-      m.categorias.some(({ categoria }) => filterCategoriaIds.includes(categoria.id));
-    return matchSearch && matchCategoria;
-  });
+  const filtered = modelos
+    .filter((m) => {
+      const matchSearch =
+        m.nombre.toLowerCase().includes(search.toLowerCase()) ||
+        m.serie?.toLowerCase().includes(search.toLowerCase());
+      const matchCategoria =
+        filterCategoriaIds.length === 0 ||
+        m.categorias.some(({ categoria }) => filterCategoriaIds.includes(categoria.id));
+      const matchEstado =
+        filterEstado === "todos" ? true :
+        filterEstado === "activos" ? m.activo :
+        !m.activo;
+      const match3mf = !filterExtras.con3mf || !!m.archivo3mfUrl;
+      const matchImagen = !filterExtras.conImagen || !!m.imagenUrl;
+      const matchVariantes = !filterExtras.conVariantes || (m.variantes && m.variantes.length > 0);
+      return matchSearch && matchCategoria && matchEstado && match3mf && matchImagen && matchVariantes;
+    })
+    .sort((a, b) => {
+      switch (sortBy) {
+        case "az": return a.nombre.localeCompare(b.nombre, "es");
+        case "za": return b.nombre.localeCompare(a.nombre, "es");
+        case "precioAsc": return a.precioVenta - b.precioVenta;
+        case "precioDesc": return b.precioVenta - a.precioVenta;
+        case "margen": return (b.precioVenta - b.costoFab) - (a.precioVenta - a.costoFab);
+        case "antiguo": return new Date(a.creadoEn).getTime() - new Date(b.creadoEn).getTime();
+        default: return new Date(b.creadoEn).getTime() - new Date(a.creadoEn).getTime();
+      }
+    });
 
   /* ─── CRUD ────────────────────────────────────────── */
 
@@ -412,45 +436,137 @@ export default function ModelosPage() {
         </Button>
       </div>
 
-      {/* Toolbar: search, category filter, view mode */}
-      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2 items-start">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar modelo o serie..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
+      {/* Toolbar */}
+      <div className="space-y-2">
+        {/* Row 1: search + sort + view toggle */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar modelo o serie..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+
+          {/* Sort */}
+          <div className="relative">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+              className="h-9 rounded-md border border-input bg-background px-3 pr-8 text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring min-w-[170px]"
+            >
+              <option value="nuevo">⬇ Más reciente</option>
+              <option value="antiguo">⬆ Más antiguo</option>
+              <option value="az">A → Z</option>
+              <option value="za">Z → A</option>
+              <option value="precioAsc">Precio: menor a mayor</option>
+              <option value="precioDesc">Precio: mayor a menor</option>
+              <option value="margen">Mayor margen</option>
+            </select>
+            <ArrowUpDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          </div>
+
+          {/* Estado filter */}
+          <div className="inline-flex rounded-md border text-sm overflow-hidden">
+            {(["todos", "activos", "inactivos"] as const).map((e) => (
+              <button
+                key={e}
+                type="button"
+                onClick={() => setFilterEstado(e)}
+                className={`px-3 h-9 capitalize transition-colors ${
+                  filterEstado === e
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background hover:bg-muted"
+                } ${e !== "todos" ? "border-l" : ""}`}
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+
+          {/* Extra filters toggle */}
+          <Button
+            variant={showExtraFilters ? "default" : "outline"}
+            size="sm"
+            className="gap-1.5 h-9"
+            onClick={() => setShowExtraFilters(!showExtraFilters)}
+            type="button"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Filtros
+            {(filterExtras.con3mf || filterExtras.conImagen || filterExtras.conVariantes) && (
+              <span className="ml-0.5 h-2 w-2 rounded-full bg-primary-foreground" />
+            )}
+          </Button>
+
+          {/* View mode */}
+          <div className="inline-flex rounded-md border ml-auto">
+            <Button
+              variant={viewMode === "table" ? "default" : "ghost"}
+              size="icon"
+              className="rounded-r-none h-9 w-9"
+              onClick={() => setViewMode("table")}
+              title="Vista tabla"
+            >
+              <TableIcon className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={viewMode === "cards" ? "default" : "ghost"}
+              size="icon"
+              className="rounded-l-none h-9 w-9"
+              onClick={() => setViewMode("cards")}
+              title="Vista tarjetas"
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
-        <div className="w-full sm:w-56">
-          <CategoryFilter
-            categorias={categorias}
-            selected={filterCategoriaIds}
-            onChange={setFilterCategoriaIds}
-          />
-        </div>
+        {/* Row 2: category filter + extra filters (collapsible) */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="w-56">
+            <CategoryFilter
+              categorias={categorias}
+              selected={filterCategoriaIds}
+              onChange={setFilterCategoriaIds}
+            />
+          </div>
 
-        <div className="inline-flex rounded-md border">
-          <Button
-            variant={viewMode === "table" ? "default" : "ghost"}
-            size="icon"
-            className="rounded-r-none"
-            onClick={() => setViewMode("table")}
-            title="Vista tabla"
-          >
-            <TableIcon className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === "cards" ? "default" : "ghost"}
-            size="icon"
-            className="rounded-l-none"
-            onClick={() => setViewMode("cards")}
-            title="Vista tarjetas"
-          >
-            <LayoutGrid className="h-4 w-4" />
-          </Button>
+          {showExtraFilters && (
+            <div className="flex flex-wrap gap-3 items-center">
+              {([
+                { key: "con3mf", label: "Con archivo 3MF" },
+                { key: "conImagen", label: "Con imagen" },
+                { key: "conVariantes", label: "Con variantes" },
+              ] as const).map(({ key, label }) => (
+                <label key={key} className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={filterExtras[key]}
+                    onChange={() => setFilterExtras(prev => ({ ...prev, [key]: !prev[key] }))}
+                    className="h-4 w-4 rounded border-input accent-primary"
+                  />
+                  {label}
+                </label>
+              ))}
+              {(filterExtras.con3mf || filterExtras.conImagen || filterExtras.conVariantes) && (
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-foreground underline"
+                  onClick={() => setFilterExtras({ con3mf: false, conImagen: false, conVariantes: false })}
+                >
+                  Limpiar
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Results count */}
+          <span className="text-xs text-muted-foreground ml-auto">
+            {filtered.length} modelo{filtered.length !== 1 ? "s" : ""}
+          </span>
         </div>
       </div>
 
