@@ -80,9 +80,10 @@ model Modelo {
   creadoEn          DateTime @default(now()) @map("creado_en")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  categorias  CategoriaModelo[]
-  variantes   VarianteModelo[]
-  itemsPedido ItemPedido[]
+  categorias           CategoriaModelo[]
+  variantes            VarianteModelo[]
+  itemsPedido          ItemPedido[]
+  sugerenciasTendencia SugerenciaProducto[]
 
   @@map("modelos")
 }
@@ -199,6 +200,48 @@ model ConfigTenant {
   data     Json   @default("{}")
 
   @@map("config_tenant")
+}
+
+// ==================== RADAR DE TENDENCIAS ====================
+
+model EventoTendencia {
+  id          String    @id @default(cuid())
+  tenantId    String    @default("sendero3d") @map("tenant_id")
+  titulo      String
+  tipo        String    // pelicula, serie, anime, concierto, fecha_comercial, gaming, evento
+  fecha       DateTime
+  fechaFin    DateTime? @map("fecha_fin")
+  descripcion String?
+  imagenUrl   String?   @map("imagen_url")
+  nivelViral  String    @default("medio") // bajo, medio, alto, explosivo
+  fuente      String    @default("manual") // tmdb, anilist, manual
+  fuenteId    String?   @map("fuente_id") // ID externo (ej: TMDB movie ID)
+  activo      Boolean   @default(true)
+  creadoEn    DateTime  @default(now()) @map("creado_en")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  sugerencias SugerenciaProducto[]
+
+  @@unique([tenantId, fuente, fuenteId])
+  @@map("eventos_tendencia")
+}
+
+model SugerenciaProducto {
+  id             String  @id @default(cuid())
+  eventoId          String  @map("evento_id")
+  nombre            String
+  descripcion       String?
+  tipoProducto      String  @default("replica") @map("tipo_producto") // replica, accesorio, decoracion, funcional, soporte, llavero
+  dificultad        String  @default("media") // baja, media, alta
+  potencialVenta    Int     @default(2) @map("potencial_venta") // 1-3
+  ventanaInicio     String? @map("ventana_inicio") // "2 semanas antes"
+  imagenRef         String? @map("imagen_ref")
+  modeloVinculadoId String? @map("modelo_vinculado_id")
+
+  evento          EventoTendencia @relation(fields: [eventoId], references: [id], onDelete: Cascade)
+  modeloVinculado Modelo?         @relation(fields: [modeloVinculadoId], references: [id], onDelete: SetNull)
+
+  @@map("sugerencias_producto")
 }
 
 // ==================== GASTOS ====================

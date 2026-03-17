@@ -14,6 +14,7 @@ import {
   Receipt,
   History,
   LogOut,
+  Radar,
 } from "lucide-react";
 import {
   Sidebar,
@@ -45,6 +46,7 @@ const navCatalogo = [
 
 const navNegocio = [
   { title: "Clientes", href: "/clientes", icon: Users },
+  { title: "Tendencias", href: "/tendencias", icon: Radar },
   { title: "Finanzas", href: "/finanzas", icon: DollarSign },
   { title: "Gastos", href: "/gastos", icon: Receipt },
   { title: "Historial", href: "/historial", icon: History },
