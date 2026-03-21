@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import {
   Zap, Search, Plus, Trash2, ChevronDown, ChevronUp,
   Calendar, Flame, Pencil, Loader2, RefreshCw, Link2, X,
+  ExternalLink, Box,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +57,17 @@ interface Evento {
   nivelViral: string;
   fuente: string;
   sugerencias: Sugerencia[];
+}
+
+interface STLModel {
+  id: string;
+  name: string;
+  author: string;
+  imageUrl: string | null;
+  url: string;
+  source: string;
+  likes?: number;
+  downloads?: number;
 }
 
 /* ────────── constants ────────── */
@@ -268,6 +280,156 @@ function VincularModeloPopover({
 
 /* ────────── Event card ────────── */
 
+/* ────────── STL Search Panel ────────── */
+
+function STLSearchPanel({ titulo }: { titulo: string }) {
+  const [stlResults, setStlResults] = useState<STLModel[]>([]);
+  const [stlLoading, setStlLoading] = useState(false);
+  const [stlExpanded, setStlExpanded] = useState(false);
+  const [stlQuery, setStlQuery] = useState("");
+  const [searched, setSearched] = useState(false);
+
+  const searchSTL = async (query: string) => {
+    if (!query || query.length < 2) return;
+    setStlLoading(true);
+    setSearched(true);
+    try {
+      const res = await fetch(`/api/tendencias/stl-search?q=${encodeURIComponent(query)}&limit=6`);
+      if (res.ok) {
+        const data = await res.json();
+        setStlResults(data);
+      }
+    } catch {
+      console.error("Error buscando STLs");
+    } finally {
+      setStlLoading(false);
+    }
+  };
+
+  const handleExpand = () => {
+    if (!stlExpanded && !searched) {
+      // Auto-search con el título del evento
+      const cleanTitle = titulo.replace(/[-–—:()]/g, " ").replace(/\s+/g, " ").trim();
+      const words = cleanTitle.split(" ").slice(0, 3).join(" ");
+      setStlQuery(words);
+      searchSTL(words);
+    }
+    setStlExpanded(!stlExpanded);
+  };
+
+  const sourceLabel = (s: string) => {
+    switch (s) {
+      case "printables": return "Printables";
+      case "thingiverse": return "Thingiverse";
+      case "myminifactory": return "MyMiniFactory";
+      case "cults3d": return "Cults3D";
+      default: return s;
+    }
+  };
+
+  const sourceColor = (s: string) => {
+    switch (s) {
+      case "printables": return "bg-orange-500/20 text-orange-400 border-orange-500/30";
+      case "thingiverse": return "bg-blue-500/20 text-blue-400 border-blue-500/30";
+      case "myminifactory": return "bg-green-500/20 text-green-400 border-green-500/30";
+      case "cults3d": return "bg-purple-500/20 text-purple-400 border-purple-500/30";
+      default: return "bg-gray-500/20 text-gray-400";
+    }
+  };
+
+  return (
+    <div className="mt-2">
+      <button
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        onClick={handleExpand}
+      >
+        {stlExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+        <Box className="h-3.5 w-3.5" />
+        Buscar modelos STL
+      </button>
+
+      {stlExpanded && (
+        <div className="mt-2 space-y-2">
+          {/* Search bar */}
+          <div className="flex gap-2">
+            <Input
+              value={stlQuery}
+              onChange={(e) => setStlQuery(e.target.value)}
+              placeholder="Buscar modelos 3D..."
+              className="h-8 text-sm"
+              onKeyDown={(e) => e.key === "Enter" && searchSTL(stlQuery)}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-3"
+              onClick={() => searchSTL(stlQuery)}
+              disabled={stlLoading}
+            >
+              {stlLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+            </Button>
+          </div>
+
+          {/* Results */}
+          {stlLoading && (
+            <div className="text-center py-3 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
+              Buscando en marketplaces...
+            </div>
+          )}
+
+          {!stlLoading && searched && stlResults.length === 0 && (
+            <p className="text-xs text-muted-foreground text-center py-2">
+              No se encontraron modelos. Probá con otro término.
+            </p>
+          )}
+
+          {stlResults.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {stlResults.map((stl) => (
+                <a
+                  key={stl.id}
+                  href={stl.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg border p-2 hover:bg-accent/50 transition-colors block"
+                >
+                  {stl.imageUrl && (
+                    <img
+                      src={stl.imageUrl}
+                      alt={stl.name}
+                      className="w-full h-24 object-cover rounded-md mb-1.5"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                    />
+                  )}
+                  <p className="text-xs font-medium line-clamp-2 leading-tight">{stl.name}</p>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[10px] text-muted-foreground truncate">{stl.author}</span>
+                    <Badge variant="outline" className={`text-[10px] px-1 py-0 ${sourceColor(stl.source)}`}>
+                      {sourceLabel(stl.source)}
+                    </Badge>
+                  </div>
+                  {(stl.likes || stl.downloads) ? (
+                    <div className="flex gap-2 mt-1 text-[10px] text-muted-foreground">
+                      {stl.likes ? <span>❤️ {stl.likes}</span> : null}
+                      {stl.downloads ? <span>⬇️ {stl.downloads}</span> : null}
+                    </div>
+                  ) : null}
+                  <div className="flex items-center gap-1 mt-1 text-[10px] text-primary">
+                    <ExternalLink className="h-2.5 w-2.5" /> Ver modelo
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ────────── Event Card ────────── */
+
 function EventoCard({
   evento,
   modelos,
@@ -372,6 +534,9 @@ function EventoCard({
             )}
           </div>
         )}
+
+        {/* STL Search */}
+        <STLSearchPanel titulo={evento.titulo} />
       </CardContent>
     </Card>
   );
