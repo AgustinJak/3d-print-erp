@@ -114,16 +114,120 @@ export async function searchThingiverse(query: string, limit = 6): Promise<STLMo
   }
 }
 
+// ─── CULTS3D (GraphQL, con API key) ────────────────────────────────
+
+const CULTS3D_GQL = "https://cults3d.com/graphql";
+const CULTS3D_KEY = process.env.CULTS3D_API_KEY;
+
+const CULTS3D_SEARCH_QUERY = `
+  query SearchCreations($query: String!, $limit: Int!) {
+    creationsSearchBatch(query: $query, limit: $limit) {
+      total
+      creations {
+        name(locale: ES)
+        shortUrl
+        creator { nick }
+        illustrationImageUrl
+        likesCount
+      }
+    }
+  }
+`;
+
+export async function searchCults3D(query: string, limit = 6): Promise<STLModel[]> {
+  if (!CULTS3D_KEY) return [];
+
+  try {
+    const response = await fetch(CULTS3D_GQL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Basic " + Buffer.from(`${CULTS3D_KEY}:`).toString("base64"),
+      },
+      body: JSON.stringify({
+        query: CULTS3D_SEARCH_QUERY,
+        variables: { query, limit },
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn(`Cults3D API error: ${response.status}`);
+      return [];
+    }
+
+    const json = await response.json();
+    const creations = json?.data?.creationsSearchBatch?.creations || [];
+
+    return creations.map((item: any, idx: number) => ({
+      id: `cults3d-${idx}-${item.shortUrl || ""}`,
+      name: item.name || "Sin nombre",
+      author: item.creator?.nick || "Desconocido",
+      imageUrl: item.illustrationImageUrl || null,
+      url: item.shortUrl
+        ? `https://cults3d.com${item.shortUrl}`
+        : "https://cults3d.com",
+      source: "cults3d" as const,
+      likes: item.likesCount || 0,
+    }));
+  } catch (error) {
+    console.warn("Error buscando en Cults3D:", error);
+    return [];
+  }
+}
+
+// ─── MYMINIFACTORY (REST, con API key) ─────────────────────────────
+
+const MMF_API = "https://www.myminifactory.com/api/v2";
+const MMF_KEY = process.env.MYMINIFACTORY_API_KEY;
+
+export async function searchMyMiniFactory(query: string, limit = 6): Promise<STLModel[]> {
+  if (!MMF_KEY) return [];
+
+  try {
+    const params = new URLSearchParams({
+      q: query,
+      key: MMF_KEY,
+      per_page: String(limit),
+    });
+
+    const response = await fetch(`${MMF_API}/search?${params}`);
+
+    if (!response.ok) {
+      console.warn(`MyMiniFactory API error: ${response.status}`);
+      return [];
+    }
+
+    const json = await response.json();
+    const items = json?.items || json?.objects || [];
+
+    return (Array.isArray(items) ? items : []).slice(0, limit).map((item: any) => ({
+      id: `mmf-${item.id}`,
+      name: item.name || "Sin nombre",
+      author: item.designer?.username || item.designer?.name || "Desconocido",
+      imageUrl: item.images?.[0]?.thumbnail?.url || item.images?.[0]?.standard?.url || null,
+      url: item.url || `https://www.myminifactory.com/object/${item.id}`,
+      source: "myminifactory" as const,
+      likes: item.likes || 0,
+      downloads: item.views || 0,
+    }));
+  } catch (error) {
+    console.warn("Error buscando en MyMiniFactory:", error);
+    return [];
+  }
+}
+
 // ─── BÚSQUEDA COMBINADA ────────────────────────────────────────────
 
 /**
  * Busca modelos STL en todas las fuentes disponibles.
- * Retorna resultados combinados, ordenados por fuente.
+ * Retorna resultados combinados de todas las fuentes.
  */
 export async function searchSTLModels(query: string, limit = 6): Promise<STLModel[]> {
   const results = await Promise.allSettled([
     searchPrintables(query, limit),
     searchThingiverse(query, limit),
+    searchCults3D(query, limit),
+    searchMyMiniFactory(query, limit),
   ]);
 
   const combined: STLModel[] = [];
