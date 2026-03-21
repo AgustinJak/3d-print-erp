@@ -37,6 +37,7 @@ interface ItemPedido {
 interface Pedido {
   id: string;
   fechaPedido: string;
+  updatedAt: string;
   precioEnvio: number;
   canalVenta: string;
   cliente: { id: string; nombre: string } | null;
@@ -231,7 +232,7 @@ export default function HistorialPage() {
                 return (
                   <TableRow key={p.id}>
                     <TableCell className="text-sm">
-                      {new Date(p.fechaPedido).toLocaleDateString("es-AR")}
+                      {new Date(p.updatedAt).toLocaleDateString("es-AR")}
                     </TableCell>
                     <TableCell className="font-medium">
                       {p.cliente?.nombre || "Sin cliente"}

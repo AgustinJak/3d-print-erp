@@ -24,11 +24,11 @@ export async function GET(request: NextRequest) {
     if (mes && anio) {
       const inicio = new Date(parseInt(anio), parseInt(mes) - 1, 1);
       const fin = new Date(parseInt(anio), parseInt(mes), 1);
-      where.fechaPedido = { gte: inicio, lt: fin };
+      where.updatedAt = { gte: inicio, lt: fin };
     } else if (anio) {
       const inicio = new Date(parseInt(anio), 0, 1);
       const fin = new Date(parseInt(anio) + 1, 0, 1);
-      where.fechaPedido = { gte: inicio, lt: fin };
+      where.updatedAt = { gte: inicio, lt: fin };
     }
 
     if (clienteId) where.clienteId = clienteId;
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
 
     const pedidos = await prisma.pedido.findMany({
       where,
-      orderBy: { fechaPedido: "desc" },
+      orderBy: { updatedAt: "desc" },
       include: {
         cliente: { select: { id: true, nombre: true } },
         items: {
