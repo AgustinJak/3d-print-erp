@@ -118,12 +118,13 @@ export async function searchThingiverse(query: string, limit = 6): Promise<STLMo
 
 const CULTS3D_GQL = "https://cults3d.com/graphql";
 const CULTS3D_KEY = process.env.CULTS3D_API_KEY;
+const CULTS3D_USER = process.env.CULTS3D_USERNAME || "sendero3d";
 
 const CULTS3D_SEARCH_QUERY = `
   query SearchCreations($query: String!, $limit: Int!) {
     creationsSearchBatch(query: $query, limit: $limit) {
       total
-      creations {
+      results {
         name(locale: ES)
         shortUrl
         creator { nick }
@@ -142,7 +143,7 @@ export async function searchCults3D(query: string, limit = 6): Promise<STLModel[
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": "Basic " + Buffer.from(`${CULTS3D_KEY}:`).toString("base64"),
+        "Authorization": "Basic " + Buffer.from(`${CULTS3D_USER}:${CULTS3D_KEY}`).toString("base64"),
       },
       body: JSON.stringify({
         query: CULTS3D_SEARCH_QUERY,
@@ -156,7 +157,7 @@ export async function searchCults3D(query: string, limit = 6): Promise<STLModel[
     }
 
     const json = await response.json();
-    const creations = json?.data?.creationsSearchBatch?.creations || [];
+    const creations = json?.data?.creationsSearchBatch?.results || [];
 
     return creations.map((item: any, idx: number) => ({
       id: `cults3d-${idx}-${item.shortUrl || ""}`,
