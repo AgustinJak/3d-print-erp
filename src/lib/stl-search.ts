@@ -165,7 +165,7 @@ export async function searchCults3D(query: string, limit = 6): Promise<STLModel[
       author: item.creator?.nick || "Desconocido",
       imageUrl: item.illustrationImageUrl || null,
       url: item.shortUrl
-        ? `https://cults3d.com${item.shortUrl}`
+        ? (item.shortUrl.startsWith("http") ? item.shortUrl : `https://cults3d.com${item.shortUrl}`)
         : "https://cults3d.com",
       source: "cults3d" as const,
       likes: item.likesCount || 0,
