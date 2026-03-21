@@ -159,7 +159,11 @@ export default function ProduccionPage() {
             const prioConfig = PRIORIDADES[p.prioridad];
             const estadoConfig = ESTADOS_PEDIDO[p.estado];
             const diasRestantes = p.fechaEntrega
-              ? Math.ceil((new Date(p.fechaEntrega).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+              ? (() => {
+                  const entrega = new Date(p.fechaEntrega);
+                  entrega.setHours(23, 59, 59, 999); // vence al FINAL del día de entrega
+                  return Math.ceil((entrega.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                })()
               : null;
 
             return (
@@ -181,13 +185,15 @@ export default function ProduccionPage() {
                     <div className="flex items-center gap-2">
                       {diasRestantes !== null && (
                         <Badge
-                          variant={diasRestantes <= 1 ? "destructive" : diasRestantes <= 3 ? "default" : "outline"}
+                          variant={diasRestantes < 0 ? "destructive" : diasRestantes === 0 ? "destructive" : diasRestantes <= 3 ? "default" : "outline"}
                           className="gap-1"
                         >
                           <Clock className="h-3 w-3" />
-                          {diasRestantes <= 0
+                          {diasRestantes < 0
                             ? "Vencido"
-                            : `${diasRestantes}d restantes`}
+                            : diasRestantes === 0
+                              ? "Hoy"
+                              : `${diasRestantes}d restantes`}
                         </Badge>
                       )}
                       <DropdownMenu>

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -213,6 +213,10 @@ export default function PedidosPage() {
                   p.estado === "ESPERANDO_LIQUIDACION_ML" &&
                   p.fechaLiquidacionMl &&
                   new Date(p.fechaLiquidacionMl) <= new Date();
+                const faltaLiquidacionMl =
+                  p.canalVenta === "mercadolibre" &&
+                  !p.fechaLiquidacionMl &&
+                  p.estado !== "COMPLETADO";
                 return (
                   <React.Fragment key={p.id}>
                     <TableRow
@@ -274,7 +278,7 @@ export default function PedidosPage() {
                       </TableCell>
                       <TableCell className="font-medium">${total.toFixed(0)}</TableCell>
                       <TableCell>
-                        <div onClick={(e) => e.stopPropagation()}>
+                        <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1">
                           <DropdownMenu>
                             <DropdownMenuTrigger
                               render={<Button variant="ghost" size="sm" className="gap-1 h-7 px-2" />}
@@ -296,6 +300,11 @@ export default function PedidosPage() {
                               ))}
                             </DropdownMenuContent>
                           </DropdownMenu>
+                          {faltaLiquidacionMl && (
+                            <span title="Falta asignar fecha de liquidación ML">
+                              <AlertTriangle className="h-4 w-4 text-amber-500" />
+                            </span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="text-sm">
