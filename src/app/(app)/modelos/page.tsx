@@ -3,8 +3,9 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   Plus, Search, Pencil, Trash2, FileBox, Download,
-  LayoutGrid, TableIcon, ChevronDown, X, ImagePlus, SlidersHorizontal, ArrowUpDown,
+  LayoutGrid, TableIcon, ChevronDown, X, ImagePlus, SlidersHorizontal, ArrowUpDown, Box,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/data-loading";
+import { EmptyState } from "@/components/empty-state";
 import { FileUpload } from "@/components/file-upload";
 
 /* ─── Types ────────────────────────────────────────────── */
@@ -410,12 +412,14 @@ export default function ModelosPage() {
     });
     setDialogOpen(false);
     setLoading(false);
+    toast.success(editingId ? "Modelo actualizado" : "Modelo creado");
     fetchModelos();
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("¿Eliminar este modelo?")) return;
     await fetch(`/api/modelos/${id}`, { method: "DELETE" });
+    toast.success("Modelo eliminado");
     fetchModelos();
   };
 
@@ -572,9 +576,21 @@ export default function ModelosPage() {
 
       {/* Content */}
       {filtered.length === 0 ? (
-        <div className="text-center text-muted-foreground py-12">
-          {modelos.length === 0 ? "No hay modelos registrados." : "Sin resultados."}
-        </div>
+        modelos.length === 0 ? (
+          <EmptyState
+            icon={Box}
+            title="Sin modelos registrados"
+            description="Agrega tus modelos 3D para gestionar catálogo, precios y variantes."
+            actionLabel="Nuevo Modelo"
+            onAction={openCreate}
+          />
+        ) : (
+          <EmptyState
+            icon={Search}
+            title="Sin resultados"
+            description="No se encontraron modelos con esos filtros."
+          />
+        )
       ) : viewMode === "cards" ? (
         /* ─── Card View ─────────────────────────────── */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -618,8 +634,8 @@ export default function ModelosPage() {
           ))}
         </div>
       ) : (
-        /* ─── Table View ────────────────────────────── */
-        <div className="rounded-md border overflow-x-auto">
+        <div>
+        <div className="hidden md:block rounded-md border overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -712,6 +728,35 @@ export default function ModelosPage() {
               })}
             </TableBody>
           </Table>
+        </div>
+        {/* Mobile fallback: show cards when table mode on small screens */}
+        <div className="md:hidden grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {filtered.map((m) => (
+            <Card
+              key={m.id}
+              className="cursor-pointer overflow-hidden transition-shadow hover:shadow-lg"
+              onClick={() => router.push(`/modelos/${m.id}`)}
+            >
+              <div className="relative aspect-square w-full bg-muted">
+                {m.imagenUrl ? (
+                  <img src={m.imagenUrl} alt={m.nombre} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center">
+                    <FileBox className="h-12 w-12 text-muted-foreground/30" />
+                  </div>
+                )}
+                {!m.activo && (
+                  <Badge variant="destructive" className="absolute top-2 right-2 text-[10px]">Inactivo</Badge>
+                )}
+              </div>
+              <div className="p-3 space-y-1">
+                <h3 className="font-medium text-sm truncate">{m.nombre}</h3>
+                <p className="text-lg font-bold text-primary">{formatPrice(m.precioVenta)}</p>
+                <CategoriaBadges categorias={m.categorias} />
+              </div>
+            </Card>
+          ))}
+        </div>
         </div>
       )}
 

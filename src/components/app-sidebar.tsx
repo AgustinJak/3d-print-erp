@@ -27,6 +27,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
@@ -55,6 +56,7 @@ const navNegocio = [
 export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { isMobile, setOpenMobile } = useSidebar();
 
   const handleLogout = async () => {
     const supabase = createClient();
@@ -68,6 +70,11 @@ export function AppSidebar() {
     return pathname.startsWith(href);
   };
 
+  const handleNav = (href: string) => {
+    if (isMobile) setOpenMobile(false);
+    router.push(href);
+  };
+
   const renderGroup = (label: string, items: typeof navPrincipal) => (
     <SidebarGroup>
       <SidebarGroupLabel>{label}</SidebarGroupLabel>
@@ -77,7 +84,7 @@ export function AppSidebar() {
             <SidebarMenuItem key={item.href}>
               <SidebarMenuButton
                 isActive={isActive(item.href)}
-                render={<Link href={item.href} />}
+                onClick={() => handleNav(item.href)}
               >
                 <item.icon className="h-4 w-4" />
                 <span>{item.title}</span>

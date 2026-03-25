@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import {
   Plus, Search, Pencil, Trash2, ChevronRight, User, MapPin, FileText,
-  Filter, ArrowUpDown, DollarSign, ShoppingCart, Users,
+  Filter, ArrowUpDown, DollarSign, ShoppingCart, Users, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/data-loading";
 import { EmptyState } from "@/components/empty-state";
 import { PLATAFORMAS_CLIENTE, TIPOS_CLIENTE } from "@/lib/constants";
@@ -66,6 +67,12 @@ export default function ClientesPage() {
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [navigatingId, setNavigatingId] = useState<string | null>(null);
+
+  const navigateToCliente = (id: string) => {
+    setNavigatingId(id);
+    router.push(`/clientes/${id}`);
+  };
 
   // Filters
   const [filterPlataforma, setFilterPlataforma] = useState("todos");
@@ -258,62 +265,54 @@ export default function ClientesPage() {
         {filtered.length} de {clientes.length} clientes
       </p>
 
-      <div className="rounded-md border overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="min-w-[140px]">Nombre</TableHead>
-              <TableHead>Etiquetas</TableHead>
-              <TableHead>Teléfono</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead className="text-right">Gastado</TableHead>
-              <TableHead className="text-right">Pedidos</TableHead>
-              <TableHead className="w-[100px]">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="py-0">
-                  {clientes.length === 0 ? (
-                    <EmptyState
-                      icon={Users}
-                      title="Sin clientes registrados"
-                      description="Agrega tu primer cliente para asociarlo a pedidos y ver su historial de compras."
-                      actionLabel="Agregar cliente"
-                      onAction={openCreate}
-                    />
-                  ) : (
-                    <EmptyState
-                      icon={Search}
-                      title="Sin resultados"
-                      description="No se encontraron clientes con esa busqueda."
-                    />
-                  )}
-                </TableCell>
-              </TableRow>
-            ) : (
-              filtered.map((cliente) => {
-                const plataformaLabel = PLATAFORMAS_CLIENTE.find(
-                  (p) => p.value === cliente.plataforma
-                )?.label;
-                const tipoLabel = TIPOS_CLIENTE.find(
-                  (t) => t.value === cliente.tipoCliente
-                )?.label;
-
-                return (
-                  <TableRow
-                    key={cliente.id}
-                    className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => router.push(`/clientes/${cliente.id}`)}
-                  >
-                    <TableCell className="font-medium">
+      {filtered.length === 0 ? (
+        clientes.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title="Sin clientes registrados"
+            description="Agrega tu primer cliente para asociarlo a pedidos y ver su historial de compras."
+            actionLabel="Agregar cliente"
+            onAction={openCreate}
+          />
+        ) : (
+          <EmptyState
+            icon={Search}
+            title="Sin resultados"
+            description="No se encontraron clientes con esa busqueda."
+          />
+        )
+      ) : (
+        <>
+          {/* Mobile cards */}
+          <div className="md:hidden space-y-3">
+            {filtered.map((cliente) => {
+              const plataformaLabel = PLATAFORMAS_CLIENTE.find((p) => p.value === cliente.plataforma)?.label;
+              const tipoLabel = TIPOS_CLIENTE.find((t) => t.value === cliente.tipoCliente)?.label;
+              const isNavigating = navigatingId === cliente.id;
+              return (
+                <Card
+                  key={cliente.id}
+                  className={`cursor-pointer transition-colors hover:bg-muted/30 ${isNavigating ? "opacity-60" : ""}`}
+                  onClick={() => navigateToCliente(cliente.id)}
+                >
+                  <CardContent className="pt-4 pb-3 space-y-2">
+                    <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2">
-                        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        {cliente.nombre}
+                        {isNavigating ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <div>
+                          <p className="font-semibold">{cliente.nombre}</p>
+                          {cliente.telefono && <p className="text-xs text-muted-foreground">{cliente.telefono}</p>}
+                        </div>
                       </div>
-                    </TableCell>
-                    <TableCell>
+                      {cliente.totalGastado > 0 && (
+                        <p className="text-sm font-bold">{formatMoney(cliente.totalGastado)}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between">
                       <div className="flex flex-wrap gap-1">
                         {plataformaLabel && (
                           <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-500/10 text-blue-600 border-blue-300">
@@ -326,40 +325,96 @@ export default function ClientesPage() {
                           </Badge>
                         )}
                       </div>
-                    </TableCell>
-                    <TableCell className="text-sm">{cliente.telefono || "—"}</TableCell>
-                    <TableCell className="text-sm">{cliente.email || "—"}</TableCell>
-                    <TableCell className="text-right text-sm font-medium">
-                      {cliente.totalGastado > 0 ? formatMoney(cliente.totalGastado) : "—"}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {cliente.pedidosCount || "—"}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => { e.stopPropagation(); openEdit(cliente); }}
-                        >
-                          <Pencil className="h-4 w-4" />
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); openEdit(cliente); }}>
+                          <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => { e.stopPropagation(); handleDelete(cliente.id); }}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); handleDelete(cliente.id); }}>
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
                         </Button>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden md:block rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-[140px]">Nombre</TableHead>
+                  <TableHead>Etiquetas</TableHead>
+                  <TableHead>Telefono</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead className="text-right">Gastado</TableHead>
+                  <TableHead className="text-right">Pedidos</TableHead>
+                  <TableHead className="w-[100px]">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((cliente) => {
+                  const plataformaLabel = PLATAFORMAS_CLIENTE.find((p) => p.value === cliente.plataforma)?.label;
+                  const tipoLabel = TIPOS_CLIENTE.find((t) => t.value === cliente.tipoCliente)?.label;
+                  const isNavigating = navigatingId === cliente.id;
+                  return (
+                    <TableRow
+                      key={cliente.id}
+                      className={`cursor-pointer hover:bg-muted/50 ${isNavigating ? "opacity-60" : ""}`}
+                      onClick={() => navigateToCliente(cliente.id)}
+                    >
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {isNavigating ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          )}
+                          {cliente.nombre}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {plataformaLabel && (
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-500/10 text-blue-600 border-blue-300">
+                              {plataformaLabel}
+                            </Badge>
+                          )}
+                          {tipoLabel && (
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-purple-500/10 text-purple-600 border-purple-300">
+                              {tipoLabel}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm">{cliente.telefono || "\u2014"}</TableCell>
+                      <TableCell className="text-sm">{cliente.email || "\u2014"}</TableCell>
+                      <TableCell className="text-right text-sm font-medium">
+                        {cliente.totalGastado > 0 ? formatMoney(cliente.totalGastado) : "\u2014"}
+                      </TableCell>
+                      <TableCell className="text-right text-sm">
+                        {cliente.pedidosCount || "\u2014"}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); openEdit(cliente); }}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleDelete(cliente.id); }}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
