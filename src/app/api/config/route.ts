@@ -11,6 +11,12 @@ const DEFAULT_CONFIG_SENDERO3D = {
   ],
 };
 
+const DEFAULT_CONFIG_SHAYJUGUETES = {
+  socios: [
+    { nombre: "ShayJuguetes", porcentaje: 100 },
+  ],
+};
+
 const DEFAULT_CONFIG_DEMO = {
   socios: [
     { nombre: "Lucas Fernández", porcentaje: 50 },
@@ -19,7 +25,9 @@ const DEFAULT_CONFIG_DEMO = {
 };
 
 function getDefaultConfig(tenantId: string) {
-  return tenantId === "sendero3d" ? DEFAULT_CONFIG_SENDERO3D : DEFAULT_CONFIG_DEMO;
+  if (tenantId === "sendero3d") return DEFAULT_CONFIG_SENDERO3D;
+  if (tenantId === "shayjuguetes") return DEFAULT_CONFIG_SHAYJUGUETES;
+  return DEFAULT_CONFIG_DEMO;
 }
 
 export async function GET() {
