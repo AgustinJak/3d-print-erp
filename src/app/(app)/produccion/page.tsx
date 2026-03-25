@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Factory, Clock, ChevronDown } from "lucide-react";
+import { Factory, Clock, ChevronDown, Inbox } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +10,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TableSkeleton } from "@/components/data-loading";
+import { EmptyState } from "@/components/empty-state";
 import { ESTADOS_PEDIDO, PRIORIDADES } from "@/lib/constants";
 
 interface VarianteInfo {
@@ -57,6 +59,8 @@ export default function ProduccionPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ estado }),
     });
+    const label = ESTADOS_PEDIDO[estado as keyof typeof ESTADOS_PEDIDO]?.label ?? estado;
+    toast.success(`Estado actualizado a "${label}"`);
     fetchPedidos();
   };
 
@@ -148,11 +152,11 @@ export default function ProduccionPage() {
 
       {/* Lista de pedidos en producción */}
       {pedidos.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            No hay pedidos en producción. Los pedidos confirmados o en producción aparecerán acá.
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={Inbox}
+          title="Cola de produccion vacia"
+          description="No hay pedidos en produccion. Cuando confirmes un pedido, aparecera aca para imprimir."
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {pedidos.map((p) => {

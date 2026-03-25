@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronRight, AlertTriangle, ShoppingCart } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -14,7 +15,9 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Card, CardContent } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/data-loading";
+import { EmptyState } from "@/components/empty-state";
 import { ESTADOS_PEDIDO, PRIORIDADES, CANALES_VENTA } from "@/lib/constants";
 import { PedidoDialog } from "./pedido-dialog";
 
@@ -118,6 +121,7 @@ export default function PedidosPage() {
   const handleDelete = async (id: string) => {
     if (!confirm("¿Eliminar este pedido?")) return;
     await fetch(`/api/pedidos/${id}`, { method: "DELETE" });
+    toast.success("Pedido eliminado");
     fetchPedidos();
   };
 
@@ -127,6 +131,8 @@ export default function PedidosPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ estado }),
     });
+    const label = ESTADOS_PEDIDO[estado as keyof typeof ESTADOS_PEDIDO]?.label ?? estado;
+    toast.success(`Estado actualizado a "${label}"`);
     fetchPedidos();
   };
 
@@ -136,11 +142,13 @@ export default function PedidosPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prioridad }),
     });
+    toast.success("Prioridad actualizada");
     fetchPedidos();
   };
 
   const handleSaved = () => {
     setDialogOpen(false);
+    toast.success(editingPedido ? "Pedido actualizado" : "Pedido creado");
     fetchPedidos();
   };
 
@@ -179,295 +187,399 @@ export default function PedidosPage() {
         </Select>
       </div>
 
-      <div className="rounded-md border overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[40px]"></TableHead>
-              <TableHead>Prioridad</TableHead>
-              <TableHead className="min-w-[120px]">Cliente</TableHead>
-              <TableHead className="min-w-[160px]">Modelos</TableHead>
-              <TableHead>Total</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead>Fecha</TableHead>
-              <TableHead>Entrega</TableHead>
-              <TableHead className="w-[100px]">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
-                  {pedidos.length === 0 ? "No hay pedidos registrados." : "Sin resultados."}
-                </TableCell>
-              </TableRow>
-            ) : (
-              filtered.map((p) => {
-                const total = calcTotal(p.items);
-                const costo = calcCosto(p.items);
-                const ganancia = total - costo;
-                const isExpanded = expandedId === p.id;
-                const prioConfig = PRIORIDADES[p.prioridad];
-                const estadoConfig = ESTADOS_PEDIDO[p.estado];
-                const liquidacionVencida =
-                  p.estado === "ESPERANDO_LIQUIDACION_ML" &&
-                  p.fechaLiquidacionMl &&
-                  new Date(p.fechaLiquidacionMl) <= new Date();
-                const faltaLiquidacionMl =
-                  p.canalVenta === "mercadolibre" &&
-                  !p.fechaLiquidacionMl &&
-                  p.estado !== "COMPLETADO";
-                return (
-                  <React.Fragment key={p.id}>
-                    <TableRow
-                      className={`cursor-pointer hover:bg-muted/50 ${liquidacionVencida ? "bg-emerald-50 dark:bg-emerald-950/30" : ""}`}
-                      onClick={() => setExpandedId(isExpanded ? null : p.id)}
-                    >
-                      <TableCell className="w-[40px] px-2">
-                        <ChevronRight
-                          className={`h-4 w-4 transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`}
-                        />
-                      </TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <Select value={p.prioridad} onValueChange={(v) => v && handlePrioridadChange(p.id, v)}>
-                          <SelectTrigger className="h-7 w-[110px] px-2 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:ring-0">
-                            <span className={`h-2 w-2 rounded-full mr-1.5 flex-shrink-0 ${prioConfig.color}`} />
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(PRIORIDADES).map(([key, val]) => (
-                              <SelectItem key={key} value={key}>
-                                <span className="flex items-center gap-2">
-                                  <span className={`h-2 w-2 rounded-full ${val.color}`} />
-                                  {val.label}
-                                </span>
-                              </SelectItem>
+      {/* Empty state */}
+      {filtered.length === 0 ? (
+        pedidos.length === 0 ? (
+          <EmptyState
+            icon={ShoppingCart}
+            title="Sin pedidos todavia"
+            description="Crea tu primer pedido para empezar a gestionar ventas, produccion y entregas."
+            actionLabel="Crear pedido"
+            onAction={openCreate}
+          />
+        ) : (
+          <EmptyState
+            icon={Search}
+            title="Sin resultados"
+            description="No se encontraron pedidos con estos filtros. Proba cambiando la busqueda o el estado."
+          />
+        )
+      ) : (
+        <>
+          {/* Mobile cards */}
+          <div className="md:hidden space-y-3">
+            {filtered.map((p) => {
+              const total = calcTotal(p.items);
+              const costo = calcCosto(p.items);
+              const ganancia = total - costo;
+              const prioConfig = PRIORIDADES[p.prioridad];
+              const estadoConfig = ESTADOS_PEDIDO[p.estado];
+              const faltaLiquidacionMl =
+                p.canalVenta === "mercadolibre" &&
+                !p.fechaLiquidacionMl &&
+                p.estado !== "COMPLETADO";
+              return (
+                <Card key={p.id} className={p.prioridad === "URGENTE" ? "border-red-500 border-2" : ""}>
+                  <CardContent className="pt-4 pb-3 space-y-3">
+                    {/* Header: client + total */}
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="font-semibold">
+                          {p.cliente?.nombre || <span className="text-muted-foreground">Sin cliente</span>}
+                        </p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <Badge variant="outline" className="gap-1 text-xs">
+                            <span className={`h-2 w-2 rounded-full ${prioConfig.color}`} />
+                            {prioConfig.label}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(p.fechaPedido).toLocaleDateString("es-AR")}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-lg font-bold">${total.toFixed(0)}</p>
+                    </div>
+
+                    {/* Items */}
+                    <div className="space-y-1">
+                      {p.items.map((item) => (
+                        <div key={item.id} className="text-sm">
+                          <span className="text-muted-foreground mr-1">{item.cantidad}×</span>
+                          <span className="font-medium">{item.modelo.nombre}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Footer: estado + actions */}
+                    <div className="flex items-center justify-between pt-2 border-t">
+                      <div className="flex items-center gap-1">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={<Button variant="ghost" size="sm" className="gap-1 h-7 px-2" />}
+                          >
+                            <span className={`h-2 w-2 rounded-full ${estadoConfig.color}`} />
+                            {estadoConfig.label}
+                            <ChevronDown className="h-3 w-3" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent>
+                            {Object.entries(ESTADOS_PEDIDO).map(([key, val]) => (
+                              <DropdownMenuItem
+                                key={key}
+                                onClick={() => handleStatusChange(p.id, key)}
+                                className="gap-2"
+                              >
+                                <span className={`h-2 w-2 rounded-full ${val.color}`} />
+                                {val.label}
+                              </DropdownMenuItem>
                             ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {p.cliente?.nombre || <span className="text-muted-foreground">Sin cliente</span>}
-                      </TableCell>
-                      <TableCell className="max-w-[260px]">
-                        <div className="flex flex-col gap-0.5">
-                          {p.items.map((item) => (
-                            <div key={item.id} className="flex flex-col">
-                              <span className="text-sm font-medium truncate">
-                                {item.cantidad > 1 && (
-                                  <span className="text-muted-foreground mr-1">{item.cantidad}×</span>
-                                )}
-                                {item.modelo.nombre}
-                              </span>
-                              {item.variantesInfo && item.variantesInfo.length > 0 && (
-                                <div className="flex flex-wrap gap-1 mt-0.5">
-                                  {item.variantesInfo.map((v, vi) => (
-                                    <Badge
-                                      key={vi}
-                                      variant="outline"
-                                      className="text-[10px] px-1.5 py-0 border-blue-400/60 text-blue-500 dark:text-blue-400 font-normal"
-                                    >
-                                      {v.nombre}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-medium">${total.toFixed(0)}</TableCell>
-                      <TableCell>
-                        <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              render={<Button variant="ghost" size="sm" className="gap-1 h-7 px-2" />}
-                            >
-                              <span className={`h-2 w-2 rounded-full ${estadoConfig.color}`} />
-                              {estadoConfig.label}
-                              <ChevronDown className="h-3 w-3" />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent>
-                              {Object.entries(ESTADOS_PEDIDO).map(([key, val]) => (
-                                <DropdownMenuItem
-                                  key={key}
-                                  onClick={() => handleStatusChange(p.id, key)}
-                                  className="gap-2"
-                                >
-                                  <span className={`h-2 w-2 rounded-full ${val.color}`} />
-                                  {val.label}
-                                </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        {faltaLiquidacionMl && (
+                          <AlertTriangle className="h-4 w-4 text-amber-500" />
+                        )}
+                      </div>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(p)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete(p.id)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Summary */}
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <span>Ganancia: <strong className={ganancia >= 0 ? "text-green-600" : "text-red-500"}>${ganancia.toFixed(0)}</strong></span>
+                      {p.senia > 0 && <span>Restante: <strong>${(total + p.precioEnvio - p.senia).toFixed(0)}</strong></span>}
+                      {p.fechaEntrega && <span>Entrega: {new Date(p.fechaEntrega).toLocaleDateString("es-AR")}</span>}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden md:block rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[40px]"></TableHead>
+                  <TableHead>Prioridad</TableHead>
+                  <TableHead className="min-w-[120px]">Cliente</TableHead>
+                  <TableHead className="min-w-[160px]">Modelos</TableHead>
+                  <TableHead>Total</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Entrega</TableHead>
+                  <TableHead className="w-[100px]">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((p) => {
+                  const total = calcTotal(p.items);
+                  const costo = calcCosto(p.items);
+                  const ganancia = total - costo;
+                  const isExpanded = expandedId === p.id;
+                  const prioConfig = PRIORIDADES[p.prioridad];
+                  const estadoConfig = ESTADOS_PEDIDO[p.estado];
+                  const liquidacionVencida =
+                    p.estado === "ESPERANDO_LIQUIDACION_ML" &&
+                    p.fechaLiquidacionMl &&
+                    new Date(p.fechaLiquidacionMl) <= new Date();
+                  const faltaLiquidacionMl =
+                    p.canalVenta === "mercadolibre" &&
+                    !p.fechaLiquidacionMl &&
+                    p.estado !== "COMPLETADO";
+                  return (
+                    <React.Fragment key={p.id}>
+                      <TableRow
+                        className={`cursor-pointer hover:bg-muted/50 ${liquidacionVencida ? "bg-emerald-50 dark:bg-emerald-950/30" : ""}`}
+                        onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                      >
+                        <TableCell className="w-[40px] px-2">
+                          <ChevronRight
+                            className={`h-4 w-4 transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`}
+                          />
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Select value={p.prioridad} onValueChange={(v) => v && handlePrioridadChange(p.id, v)}>
+                            <SelectTrigger className="h-7 w-[110px] px-2 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:ring-0">
+                              <span className={`h-2 w-2 rounded-full mr-1.5 flex-shrink-0 ${prioConfig.color}`} />
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(PRIORIDADES).map(([key, val]) => (
+                                <SelectItem key={key} value={key}>
+                                  <span className="flex items-center gap-2">
+                                    <span className={`h-2 w-2 rounded-full ${val.color}`} />
+                                    {val.label}
+                                  </span>
+                                </SelectItem>
                               ))}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                          {faltaLiquidacionMl && (
-                            <span title="Falta asignar fecha de liquidación ML">
-                              <AlertTriangle className="h-4 w-4 text-amber-500" />
-                            </span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {new Date(p.fechaPedido).toLocaleDateString("es-AR")}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {p.fechaEntrega
-                          ? new Date(p.fechaEntrega).toLocaleDateString("es-AR")
-                          : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)}>
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                    {isExpanded && (
-                      <TableRow className="bg-muted/30 hover:bg-muted/30">
-                        <TableCell colSpan={9} className="p-4">
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            {/* Left: Contact & payment info */}
-                            <div className="space-y-2">
-                              <h4 className="font-semibold text-sm">Información de contacto</h4>
-                              <div className="text-sm space-y-1">
-                                <p><span className="text-muted-foreground">Contacto:</span> {p.contacto || "—"}</p>
-                                <p><span className="text-muted-foreground">Método de envío:</span> {p.metodoEnvio || "—"}</p>
-                                <p><span className="text-muted-foreground">Método de pago:</span> {p.metodoPago || "—"}</p>
-                                <p><span className="text-muted-foreground">Seña:</span> ${p.senia.toFixed(0)}</p>
-                                <p><span className="text-muted-foreground">Precio envío:</span> ${p.precioEnvio.toFixed(0)}</p>
-                                <p><span className="text-muted-foreground">Canal de venta:</span> {getCanalLabel(p.canalVenta)}</p>
-                                {p.idMercadolibre && (
-                                  <p><span className="text-muted-foreground">ID MercadoLibre:</span> {p.idMercadolibre}</p>
-                                )}
-                                {p.fechaLiquidacionMl && (
-                                  <p>
-                                    <span className="text-muted-foreground">Liquidación ML:</span>{" "}
-                                    {new Date(p.fechaLiquidacionMl).toLocaleDateString("es-AR")}
-                                    {liquidacionVencida && (
-                                      <Badge className="ml-2 bg-emerald-600 text-white text-xs">Liquidado</Badge>
-                                    )}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Middle: Items detail */}
-                            <div className="space-y-2">
-                              <h4 className="font-semibold text-sm">Detalle de ítems</h4>
-                              <div className="space-y-1">
-                                {p.items.map((item) => (
-                                  <div key={item.id} className="text-sm border rounded-md p-2 space-y-0.5">
-                                    <p className="font-medium">{item.modelo.nombre}</p>
-                                    {item.modelo.categorias.length > 0 && (
-                                      <div className="flex flex-wrap gap-1">
-                                        {item.modelo.categorias.map(({ categoria }) => (
-                                          <Badge
-                                            key={categoria.id}
-                                            variant="secondary"
-                                            className="text-[10px] px-1.5 py-0"
-                                            style={categoria.color ? { backgroundColor: categoria.color, color: "#fff" } : undefined}
-                                          >
-                                            {categoria.nombre}
-                                          </Badge>
-                                        ))}
-                                      </div>
-                                    )}
-                                    {item.variantesInfo && item.variantesInfo.length > 0 && (
-                                      <div className="flex flex-wrap gap-1">
-                                        {item.variantesInfo.map((v, vi) => (
-                                          <Badge key={vi} variant="outline" className="text-[10px] px-1.5 py-0 border-blue-400 text-blue-600 dark:text-blue-400">
-                                            {v.nombre}
-                                            {v.precioAdicional > 0 && ` +$${v.precioAdicional.toLocaleString("es-AR")}`}
-                                          </Badge>
-                                        ))}
-                                      </div>
-                                    )}
-                                    <div className="flex gap-3 text-xs text-muted-foreground">
-                                      <span>Cant: {item.cantidad}</span>
-                                      <span>Precio: ${item.precioUnitario.toFixed(0)}</span>
-                                      <span>Costo: ${item.costoUnitario.toFixed(0)}</span>
-                                      {item.ajusteManual !== 0 && (
-                                        <span>Ajuste: ${item.ajusteManual.toFixed(0)}</span>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-
-                            {/* Right: Notes, tags, receipt */}
-                            <div className="space-y-2">
-                              <h4 className="font-semibold text-sm">Notas y etiquetas</h4>
-                              <div className="text-sm space-y-2">
-                                <div>
-                                  <span className="text-muted-foreground">Notas:</span>
-                                  <p className="whitespace-pre-wrap">{p.notas || "—"}</p>
-                                </div>
-                                {p.etiquetas.length > 0 && (
-                                  <div className="flex flex-wrap gap-1">
-                                    {p.etiquetas.map((tag) => (
-                                      <Badge key={tag} variant="secondary" className="text-xs">
-                                        {tag}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {p.cliente?.nombre || <span className="text-muted-foreground">Sin cliente</span>}
+                        </TableCell>
+                        <TableCell className="max-w-[260px]">
+                          <div className="flex flex-col gap-0.5">
+                            {p.items.map((item) => (
+                              <div key={item.id} className="flex flex-col">
+                                <span className="text-sm font-medium truncate">
+                                  {item.cantidad > 1 && (
+                                    <span className="text-muted-foreground mr-1">{item.cantidad}×</span>
+                                  )}
+                                  {item.modelo.nombre}
+                                </span>
+                                {item.variantesInfo && item.variantesInfo.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-0.5">
+                                    {item.variantesInfo.map((v, vi) => (
+                                      <Badge
+                                        key={vi}
+                                        variant="outline"
+                                        className="text-[10px] px-1.5 py-0 border-blue-400/60 text-blue-500 dark:text-blue-400 font-normal"
+                                      >
+                                        {v.nombre}
                                       </Badge>
                                     ))}
                                   </div>
                                 )}
-                                {p.comprobanteUrl && (
-                                  <div>
-                                    <span className="text-muted-foreground text-sm">Comprobante:</span>
-                                    <a
-                                      href={p.comprobanteUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="block mt-1"
-                                    >
-                                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                                      <img
-                                        src={p.comprobanteUrl}
-                                        alt="Comprobante"
-                                        className="max-h-24 rounded border object-cover hover:opacity-80 transition-opacity"
-                                      />
-                                    </a>
-                                  </div>
-                                )}
                               </div>
-                            </div>
+                            ))}
                           </div>
-
-                          {/* Profit summary */}
-                          <div className="mt-3 pt-3 border-t flex flex-wrap gap-4 text-sm">
-                            <span><span className="text-muted-foreground">Total:</span> <strong>${total.toFixed(0)}</strong></span>
-                            <span><span className="text-muted-foreground">Costo:</span> <strong>${costo.toFixed(0)}</strong></span>
-                            <span><span className="text-muted-foreground">Envío:</span> <strong>${p.precioEnvio.toFixed(0)}</strong></span>
-                            <span><span className="text-muted-foreground">Seña:</span> <strong>-${p.senia.toFixed(0)}</strong></span>
-                            <span>
-                              <span className="text-muted-foreground">Ganancia estimada:</span>{" "}
-                              <strong className={ganancia >= 0 ? "text-green-600" : "text-red-500"}>
-                                ${ganancia.toFixed(0)}
-                              </strong>
-                            </span>
-                            {p.senia > 0 && (
-                              <span>
-                                <span className="text-muted-foreground">Restante a cobrar:</span>{" "}
-                                <strong>${(total + p.precioEnvio - p.senia).toFixed(0)}</strong>
+                        </TableCell>
+                        <TableCell className="font-medium">${total.toFixed(0)}</TableCell>
+                        <TableCell>
+                          <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                render={<Button variant="ghost" size="sm" className="gap-1 h-7 px-2" />}
+                              >
+                                <span className={`h-2 w-2 rounded-full ${estadoConfig.color}`} />
+                                {estadoConfig.label}
+                                <ChevronDown className="h-3 w-3" />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent>
+                                {Object.entries(ESTADOS_PEDIDO).map(([key, val]) => (
+                                  <DropdownMenuItem
+                                    key={key}
+                                    onClick={() => handleStatusChange(p.id, key)}
+                                    className="gap-2"
+                                  >
+                                    <span className={`h-2 w-2 rounded-full ${val.color}`} />
+                                    {val.label}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                            {faltaLiquidacionMl && (
+                              <span title="Falta asignar fecha de liquidacion ML">
+                                <AlertTriangle className="h-4 w-4 text-amber-500" />
                               </span>
                             )}
                           </div>
                         </TableCell>
+                        <TableCell className="text-sm">
+                          {new Date(p.fechaPedido).toLocaleDateString("es-AR")}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {p.fechaEntrega
+                            ? new Date(p.fechaEntrega).toLocaleDateString("es-AR")
+                            : "\u2014"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)}>
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
                       </TableRow>
-                    )}
-                  </React.Fragment>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                      {isExpanded && (
+                        <TableRow className="bg-muted/30 hover:bg-muted/30">
+                          <TableCell colSpan={9} className="p-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div className="space-y-2">
+                                <h4 className="font-semibold text-sm">Informacion de contacto</h4>
+                                <div className="text-sm space-y-1">
+                                  <p><span className="text-muted-foreground">Contacto:</span> {p.contacto || "\u2014"}</p>
+                                  <p><span className="text-muted-foreground">Metodo de envio:</span> {p.metodoEnvio || "\u2014"}</p>
+                                  <p><span className="text-muted-foreground">Metodo de pago:</span> {p.metodoPago || "\u2014"}</p>
+                                  <p><span className="text-muted-foreground">Sena:</span> ${p.senia.toFixed(0)}</p>
+                                  <p><span className="text-muted-foreground">Precio envio:</span> ${p.precioEnvio.toFixed(0)}</p>
+                                  <p><span className="text-muted-foreground">Canal de venta:</span> {getCanalLabel(p.canalVenta)}</p>
+                                  {p.idMercadolibre && (
+                                    <p><span className="text-muted-foreground">ID MercadoLibre:</span> {p.idMercadolibre}</p>
+                                  )}
+                                  {p.fechaLiquidacionMl && (
+                                    <p>
+                                      <span className="text-muted-foreground">Liquidacion ML:</span>{" "}
+                                      {new Date(p.fechaLiquidacionMl).toLocaleDateString("es-AR")}
+                                      {liquidacionVencida && (
+                                        <Badge className="ml-2 bg-emerald-600 text-white text-xs">Liquidado</Badge>
+                                      )}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="space-y-2">
+                                <h4 className="font-semibold text-sm">Detalle de items</h4>
+                                <div className="space-y-1">
+                                  {p.items.map((item) => (
+                                    <div key={item.id} className="text-sm border rounded-md p-2 space-y-0.5">
+                                      <p className="font-medium">{item.modelo.nombre}</p>
+                                      {item.modelo.categorias.length > 0 && (
+                                        <div className="flex flex-wrap gap-1">
+                                          {item.modelo.categorias.map(({ categoria }) => (
+                                            <Badge
+                                              key={categoria.id}
+                                              variant="secondary"
+                                              className="text-[10px] px-1.5 py-0"
+                                              style={categoria.color ? { backgroundColor: categoria.color, color: "#fff" } : undefined}
+                                            >
+                                              {categoria.nombre}
+                                            </Badge>
+                                          ))}
+                                        </div>
+                                      )}
+                                      {item.variantesInfo && item.variantesInfo.length > 0 && (
+                                        <div className="flex flex-wrap gap-1">
+                                          {item.variantesInfo.map((v, vi) => (
+                                            <Badge key={vi} variant="outline" className="text-[10px] px-1.5 py-0 border-blue-400 text-blue-600 dark:text-blue-400">
+                                              {v.nombre}
+                                              {v.precioAdicional > 0 && ` +$${v.precioAdicional.toLocaleString("es-AR")}`}
+                                            </Badge>
+                                          ))}
+                                        </div>
+                                      )}
+                                      <div className="flex gap-3 text-xs text-muted-foreground">
+                                        <span>Cant: {item.cantidad}</span>
+                                        <span>Precio: ${item.precioUnitario.toFixed(0)}</span>
+                                        <span>Costo: ${item.costoUnitario.toFixed(0)}</span>
+                                        {item.ajusteManual !== 0 && (
+                                          <span>Ajuste: ${item.ajusteManual.toFixed(0)}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="space-y-2">
+                                <h4 className="font-semibold text-sm">Notas y etiquetas</h4>
+                                <div className="text-sm space-y-2">
+                                  <div>
+                                    <span className="text-muted-foreground">Notas:</span>
+                                    <p className="whitespace-pre-wrap">{p.notas || "\u2014"}</p>
+                                  </div>
+                                  {p.etiquetas.length > 0 && (
+                                    <div className="flex flex-wrap gap-1">
+                                      {p.etiquetas.map((tag) => (
+                                        <Badge key={tag} variant="secondary" className="text-xs">
+                                          {tag}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {p.comprobanteUrl && (
+                                    <div>
+                                      <span className="text-muted-foreground text-sm">Comprobante:</span>
+                                      <a
+                                        href={p.comprobanteUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="block mt-1"
+                                      >
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img
+                                          src={p.comprobanteUrl}
+                                          alt="Comprobante"
+                                          className="max-h-24 rounded border object-cover hover:opacity-80 transition-opacity"
+                                        />
+                                      </a>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-3 pt-3 border-t flex flex-wrap gap-4 text-sm">
+                              <span><span className="text-muted-foreground">Total:</span> <strong>${total.toFixed(0)}</strong></span>
+                              <span><span className="text-muted-foreground">Costo:</span> <strong>${costo.toFixed(0)}</strong></span>
+                              <span><span className="text-muted-foreground">Envio:</span> <strong>${p.precioEnvio.toFixed(0)}</strong></span>
+                              <span><span className="text-muted-foreground">Sena:</span> <strong>-${p.senia.toFixed(0)}</strong></span>
+                              <span>
+                                <span className="text-muted-foreground">Ganancia estimada:</span>{" "}
+                                <strong className={ganancia >= 0 ? "text-green-600" : "text-red-500"}>
+                                  ${ganancia.toFixed(0)}
+                                </strong>
+                              </span>
+                              {p.senia > 0 && (
+                                <span>
+                                  <span className="text-muted-foreground">Restante a cobrar:</span>{" "}
+                                  <strong>${(total + p.precioEnvio - p.senia).toFixed(0)}</strong>
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
 
       <PedidoDialog
         open={dialogOpen}

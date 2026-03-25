@@ -1,6 +1,7 @@
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Separator } from "@/components/ui/separator";
+import { CommandPalette } from "@/components/command-palette";
 
 export default function AppLayout({
   children,
@@ -17,6 +18,7 @@ export default function AppLayout({
         </header>
         <main className="flex-1 p-4 md:p-6">{children}</main>
       </SidebarInset>
+      <CommandPalette />
     </SidebarProvider>
   );
 }

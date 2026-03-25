@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Pencil, Trash2 } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Receipt } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { TableSkeleton } from "@/components/data-loading";
+import { EmptyState } from "@/components/empty-state";
 
 interface Gasto {
   id: string;
@@ -96,12 +98,14 @@ export default function GastosPage() {
     });
     setDialogOpen(false);
     setLoading(false);
+    toast.success(editingId ? "Gasto actualizado" : "Gasto registrado");
     fetchGastos();
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("¿Eliminar este gasto?")) return;
     await fetch(`/api/gastos/${id}`, { method: "DELETE" });
+    toast.success("Gasto eliminado");
     fetchGastos();
   };
 
@@ -152,8 +156,22 @@ export default function GastosPage() {
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                  {gastos.length === 0 ? "No hay gastos registrados." : "Sin resultados."}
+                <TableCell colSpan={5} className="py-0">
+                  {gastos.length === 0 ? (
+                    <EmptyState
+                      icon={Receipt}
+                      title="Sin gastos registrados"
+                      description="Registra tus gastos para trackear costos operativos y ver el impacto en tus finanzas."
+                      actionLabel="Registrar gasto"
+                      onAction={openCreate}
+                    />
+                  ) : (
+                    <EmptyState
+                      icon={Search}
+                      title="Sin resultados"
+                      description="No se encontraron gastos con esa busqueda."
+                    />
+                  )}
                 </TableCell>
               </TableRow>
             ) : (

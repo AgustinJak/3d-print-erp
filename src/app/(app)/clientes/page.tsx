@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import {
   Plus, Search, Pencil, Trash2, ChevronRight, User, MapPin, FileText,
-  Filter, ArrowUpDown, DollarSign, ShoppingCart,
+  Filter, ArrowUpDown, DollarSign, ShoppingCart, Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { TableSkeleton } from "@/components/data-loading";
+import { EmptyState } from "@/components/empty-state";
 import { PLATAFORMAS_CLIENTE, TIPOS_CLIENTE } from "@/lib/constants";
 
 interface Cliente {
@@ -161,12 +163,14 @@ export default function ClientesPage() {
 
     setDialogOpen(false);
     setLoading(false);
+    toast.success(editingId ? "Cliente actualizado" : "Cliente creado");
     fetchClientes();
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("¿Estás seguro de eliminar este cliente?")) return;
     await fetch(`/api/clientes/${id}`, { method: "DELETE" });
+    toast.success("Cliente eliminado");
     fetchClientes();
   };
 
@@ -270,10 +274,22 @@ export default function ClientesPage() {
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                  {clientes.length === 0
-                    ? "No hay clientes registrados."
-                    : "No se encontraron resultados."}
+                <TableCell colSpan={7} className="py-0">
+                  {clientes.length === 0 ? (
+                    <EmptyState
+                      icon={Users}
+                      title="Sin clientes registrados"
+                      description="Agrega tu primer cliente para asociarlo a pedidos y ver su historial de compras."
+                      actionLabel="Agregar cliente"
+                      onAction={openCreate}
+                    />
+                  ) : (
+                    <EmptyState
+                      icon={Search}
+                      title="Sin resultados"
+                      description="No se encontraron clientes con esa busqueda."
+                    />
+                  )}
                 </TableCell>
               </TableRow>
             ) : (

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Pencil, Trash2 } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Palette } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -17,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { TableSkeleton } from "@/components/data-loading";
+import { EmptyState } from "@/components/empty-state";
 
 interface Filamento {
   id: string;
@@ -105,12 +107,14 @@ export default function FilamentosPage() {
     });
     setDialogOpen(false);
     setLoading(false);
+    toast.success(editingId ? "Filamento actualizado" : "Filamento creado");
     fetchFilamentos();
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("¿Eliminar este filamento?")) return;
     await fetch(`/api/filamentos/${id}`, { method: "DELETE" });
+    toast.success("Filamento eliminado");
     fetchFilamentos();
   };
 
@@ -161,8 +165,22 @@ export default function FilamentosPage() {
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                  {filamentos.length === 0 ? "No hay filamentos registrados." : "Sin resultados."}
+                <TableCell colSpan={7} className="py-0">
+                  {filamentos.length === 0 ? (
+                    <EmptyState
+                      icon={Palette}
+                      title="Sin filamentos registrados"
+                      description="Agrega tus filamentos para trackear stock, costos y colores disponibles."
+                      actionLabel="Agregar filamento"
+                      onAction={openCreate}
+                    />
+                  ) : (
+                    <EmptyState
+                      icon={Search}
+                      title="Sin resultados"
+                      description="No se encontraron filamentos con esa busqueda."
+                    />
+                  )}
                 </TableCell>
               </TableRow>
             ) : (

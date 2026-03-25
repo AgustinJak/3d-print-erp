@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Sans, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -39,6 +40,7 @@ export default function RootLayout({
         >
           <TooltipProvider>
             {children}
+            <Toaster richColors position="bottom-right" />
           </TooltipProvider>
         </ThemeProvider>
       </body>
