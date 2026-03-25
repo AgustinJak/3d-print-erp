@@ -83,6 +83,7 @@ export function AppSidebar() {
           {items.map((item) => (
             <SidebarMenuItem key={item.href}>
               <SidebarMenuButton
+                className="cursor-pointer"
                 isActive={isActive(item.href)}
                 onClick={() => handleNav(item.href)}
               >
