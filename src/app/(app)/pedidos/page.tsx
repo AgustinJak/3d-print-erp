@@ -205,7 +205,7 @@ export default function PedidosPage() {
               filtered.map((p) => {
                 const total = calcTotal(p.items);
                 const costo = calcCosto(p.items);
-                const ganancia = total - costo + p.precioEnvio - p.senia;
+                const ganancia = total - costo;
                 const isExpanded = expandedId === p.id;
                 const prioConfig = PRIORIDADES[p.prioridad];
                 const estadoConfig = ESTADOS_PEDIDO[p.estado];
@@ -451,6 +451,12 @@ export default function PedidosPage() {
                                 ${ganancia.toFixed(0)}
                               </strong>
                             </span>
+                            {p.senia > 0 && (
+                              <span>
+                                <span className="text-muted-foreground">Restante a cobrar:</span>{" "}
+                                <strong>${(total + p.precioEnvio - p.senia).toFixed(0)}</strong>
+                              </span>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
