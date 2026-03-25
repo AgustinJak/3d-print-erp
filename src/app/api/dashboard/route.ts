@@ -54,12 +54,12 @@ export async function GET() {
     const confirmados = pedidos.filter((p) => p.estado === "CONFIRMADO").length;
     const entregados = pedidos.filter((p) => p.estado === "ENTREGADO").length;
 
-    // Finanzas del mes (pedidos completados)
+    // Finanzas del mes (pedidos completados por fecha de completado)
     const pedidosCompletadosMes = await prisma.pedido.findMany({
       where: {
         tenantId,
         estado: "COMPLETADO",
-        fechaPedido: { gte: inicioMes, lt: finMes },
+        updatedAt: { gte: inicioMes, lt: finMes },
       },
       include: { items: true },
     });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, ArrowLeft, ArrowRight, Wallet, Users, Save, Clock } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, ArrowLeft, ArrowRight, Wallet, Users, Save, Clock, Download } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -120,13 +120,62 @@ export default function FinanzasPage() {
   if (initialLoading) return <TableSkeleton cols={4} />;
   if (!data) return null;
 
-  const maxGanancia = Math.max(...data.datosMensuales.map((d) => Math.max(d.ingresos, 1)));
+  const exportarCSV = () => {
+    const sep = ";";
+    const lines: string[] = [];
+    lines.push(`Resumen Financiero - ${MESES[mes - 1]} ${anio}`);
+    lines.push("");
+    lines.push(["Concepto", "Monto"].join(sep));
+    lines.push(["Ingresos del mes", data.mes.ingresos].join(sep));
+    lines.push(["Costo de fabricación", data.mes.costoFab].join(sep));
+    lines.push(["Ganancia bruta", data.mes.ganancia].join(sep));
+    lines.push(["Gastos operativos", data.mes.gastos].join(sep));
+    lines.push(["Ganancia neta", data.mes.ganancia - data.mes.gastos].join(sep));
+    lines.push(["Pedidos completados", data.mes.totalPedidos].join(sep));
+    lines.push("");
+    lines.push("Pedidos en curso");
+    lines.push(["Total a cobrar", data.pedidosEnCurso.total].join(sep));
+    lines.push(["Ya cobrado (señas)", data.pedidosEnCurso.cobrado].join(sep));
+    lines.push(["Pendiente de cobro", data.pedidosEnCurso.pendiente].join(sep));
+    lines.push(["Costo fab. en curso", data.pedidosEnCurso.costoFab].join(sep));
+    lines.push("");
+    lines.push("Billetera de fabricación");
+    lines.push(["Disponible", data.billeteraFab.disponible].join(sep));
+    lines.push(["Acumulado total", data.billeteraFab.acumulado].join(sep));
+    lines.push(["Gastado en reinversión", data.billeteraFab.gastado].join(sep));
+    if (Object.keys(data.gastosPorCategoria).length > 0) {
+      lines.push("");
+      lines.push("Gastos por categoría");
+      lines.push(["Categoría", "Monto"].join(sep));
+      Object.entries(data.gastosPorCategoria)
+        .sort(([, a], [, b]) => b - a)
+        .forEach(([cat, monto]) => lines.push([cat, monto].join(sep)));
+    }
+    lines.push("");
+    lines.push("Resumen anual " + anio);
+    lines.push(["Mes", "Ingresos", "Costo fab.", "Gastos", "Ganancia"].join(sep));
+    data.datosMensuales.forEach((d) => {
+      lines.push([d.mes, d.ingresos, d.costoFab, d.gastos, d.ganancia].join(sep));
+    });
+
+    const BOM = "\uFEFF";
+    const blob = new Blob([BOM + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `finanzas_${MESES[mes - 1].toLowerCase()}_${anio}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Finanzas</h1>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={exportarCSV} className="gap-1.5 mr-2" title="Exportar resumen">
+            <Download className="h-4 w-4" /> Exportar
+          </Button>
           <Button variant="outline" size="icon" onClick={() => setAnio(anio - 1)} title="Año anterior">
             <ArrowLeft className="h-4 w-4" />
           </Button>
@@ -321,31 +370,69 @@ export default function FinanzasPage() {
         </div>
       </div>
 
-      {/* Gráfico de barras simple */}
+      {/* Gráfico de barras: Ingresos, Costo fab, Gastos, Ganancia */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Ingresos mensuales ({anio})</CardTitle>
+          <CardTitle className="text-base">Resumen mensual ({anio})</CardTitle>
+          <div className="flex flex-wrap gap-4 mt-2">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <div className="w-3 h-3 rounded-sm bg-primary" /> Ingresos
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <div className="w-3 h-3 rounded-sm bg-orange-500" /> Costo fab.
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <div className="w-3 h-3 rounded-sm bg-red-400" /> Gastos
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <div className="w-3 h-3 rounded-sm bg-green-500" /> Ganancia
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="flex items-end gap-2 h-60">
-            {data.datosMensuales.map((d, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <div className="w-full flex flex-col items-center">
-                  {d.ingresos > 0 && (
-                    <span className="text-xs text-muted-foreground mb-1">
-                      ${(d.ingresos / 1000).toFixed(0)}k
-                    </span>
-                  )}
-                  <div
-                    className={`w-full rounded-t ${i + 1 === mes ? "bg-primary" : "bg-primary/30"}`}
-                    style={{ height: `${Math.max((d.ingresos / maxGanancia) * 200, d.ingresos > 0 ? 4 : 0)}px` }}
-                  />
+          <div className="flex items-end gap-1.5 h-60">
+            {data.datosMensuales.map((d, i) => {
+              const maxVal = Math.max(...data.datosMensuales.map(m => Math.max(m.ingresos, m.costoFab + m.gastos, 1)));
+              const barH = (val: number) => Math.max((val / maxVal) * 200, val > 0 ? 3 : 0);
+              const isActive = i + 1 === mes;
+              return (
+                <div key={i} className={`flex-1 flex flex-col items-center gap-1 ${isActive ? "opacity-100" : "opacity-60"}`}>
+                  <div className="w-full flex gap-[2px] items-end justify-center" style={{ height: 210 }}>
+                    <div className="flex-1 flex flex-col items-stretch justify-end gap-[1px]">
+                      <div
+                        className="rounded-t bg-primary"
+                        style={{ height: `${barH(d.ingresos)}px` }}
+                        title={`Ingresos: $${(d.ingresos / 1000).toFixed(0)}k`}
+                      />
+                    </div>
+                    <div className="flex-1 flex flex-col items-stretch justify-end gap-[1px]">
+                      <div
+                        className="bg-orange-500 rounded-t"
+                        style={{ height: `${barH(d.costoFab)}px` }}
+                        title={`Costo fab: $${(d.costoFab / 1000).toFixed(0)}k`}
+                      />
+                      {d.gastos > 0 && (
+                        <div
+                          className="bg-red-400"
+                          style={{ height: `${barH(d.gastos)}px` }}
+                          title={`Gastos: $${(d.gastos / 1000).toFixed(0)}k`}
+                        />
+                      )}
+                    </div>
+                    <div className="flex-1 flex flex-col items-stretch justify-end">
+                      <div
+                        className={`rounded-t ${d.ganancia >= 0 ? "bg-green-500" : "bg-red-500"}`}
+                        style={{ height: `${barH(Math.abs(d.ganancia))}px` }}
+                        title={`Ganancia: $${(d.ganancia / 1000).toFixed(0)}k`}
+                      />
+                    </div>
+                  </div>
+                  <span className={`text-xs ${isActive ? "font-bold" : "text-muted-foreground"}`}>
+                    {d.mes}
+                  </span>
                 </div>
-                <span className={`text-xs ${i + 1 === mes ? "font-bold" : "text-muted-foreground"}`}>
-                  {d.mes}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>

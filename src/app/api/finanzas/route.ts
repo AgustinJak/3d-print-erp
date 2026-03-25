@@ -20,12 +20,12 @@ export async function GET(request: NextRequest) {
     const inicioAnio = new Date(anioNum, 0, 1);
     const finAnio = new Date(anioNum + 1, 0, 1);
 
-    // Pedidos completados del mes
+    // Pedidos completados del mes (por fecha de completado, no de creación)
     const pedidosMes = await prisma.pedido.findMany({
       where: {
         tenantId,
         estado: "COMPLETADO",
-        fechaPedido: { gte: inicioMes, lt: finMes },
+        updatedAt: { gte: inicioMes, lt: finMes },
       },
       include: { items: true },
     });
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
       where: {
         tenantId,
         estado: "COMPLETADO",
-        fechaPedido: { gte: inicioAnio, lt: finAnio },
+        updatedAt: { gte: inicioAnio, lt: finAnio },
       },
       include: { items: true },
     });
