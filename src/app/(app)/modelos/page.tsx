@@ -762,11 +762,12 @@ export default function ModelosPage() {
 
       {/* ─── Create / Edit Dialog ───────────────────── */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden p-0">
+          <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
             <DialogTitle>{editingId ? "Editar Modelo" : "Nuevo Modelo"}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-4">
             {/* Nombre */}
             <div className="space-y-2">
               <Label htmlFor="nombre">Nombre *</Label>
@@ -1058,8 +1059,9 @@ export default function ModelosPage() {
               <span className="text-sm font-medium">Activo</span>
             </label>
 
-            {/* Actions */}
-            <div className="flex justify-end gap-2">
+            </div>
+            {/* Actions — fixed at bottom */}
+            <div className="flex justify-end gap-2 px-6 py-4 border-t shrink-0 bg-background">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                 Cancelar
               </Button>

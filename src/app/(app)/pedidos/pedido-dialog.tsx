@@ -347,11 +347,12 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden p-0">
+        <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
           <DialogTitle>{pedido ? "Editar Pedido" : "Nuevo Pedido"}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+        <div className="flex-1 overflow-y-auto px-6 space-y-6">
           {/* Info general */}
           <div className="space-y-3">
             <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
@@ -696,11 +697,10 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
             <Textarea value={notas} onChange={(e) => setNotas(e.target.value)} rows={2} />
           </div>
 
-          <div className="sticky bottom-0 bg-background pt-4 border-t">
-            <div className="flex justify-end gap-2">
+          </div>
+          <div className="flex justify-end gap-2 px-6 py-4 border-t shrink-0 bg-background">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
               <Button type="submit" disabled={loading}>{loading ? "Guardando..." : "Guardar"}</Button>
-            </div>
           </div>
         </form>
       </DialogContent>
