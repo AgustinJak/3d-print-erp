@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 
     const pedidos = await prisma.pedido.findMany({
       where: { tenantId, ...estadoWhere },
-      orderBy: [{ prioridad: "desc" }, { fechaPedido: "desc" }],
+      orderBy: [{ ordenProduccion: { sort: "asc", nulls: "last" } }, { prioridad: "desc" }, { fechaPedido: "desc" }],
       include: {
         cliente: { select: { id: true, nombre: true } },
         items: { include: itemsInclude },
