@@ -201,8 +201,10 @@ export default function ProduccionPage() {
                   const diasRestantes = p.fechaEntrega
                     ? (() => {
                         const entrega = new Date(p.fechaEntrega);
-                        entrega.setHours(23, 59, 59, 999);
-                        return Math.ceil((entrega.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                        const hoy = new Date();
+                        entrega.setHours(0, 0, 0, 0);
+                        hoy.setHours(0, 0, 0, 0);
+                        return Math.round((entrega.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
                       })()
                     : null;
 
