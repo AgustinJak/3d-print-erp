@@ -1,8 +1,14 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Factory, Clock, ChevronDown, Inbox } from "lucide-react";
+import { Factory, Clock, ChevronDown, Inbox, GripVertical } from "lucide-react";
 import { toast } from "sonner";
+import {
+  DragDropContext,
+  Droppable,
+  Draggable,
+  type DropResult,
+} from "@hello-pangea/dnd";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -64,6 +70,29 @@ export default function ProduccionPage() {
     fetchPedidos();
   };
 
+  const handleDragEnd = async (result: DropResult) => {
+    if (!result.destination || result.source.index === result.destination.index) return;
+
+    const reordered = Array.from(pedidos);
+    const [moved] = reordered.splice(result.source.index, 1);
+    reordered.splice(result.destination.index, 0, moved);
+
+    // Optimistic update
+    setPedidos(reordered);
+
+    try {
+      await fetch("/api/produccion/reorder", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orden: reordered.map((p) => p.id) }),
+      });
+      toast.success("Orden actualizado");
+    } catch {
+      toast.error("Error al reordenar");
+      fetchPedidos(); // Revert
+    }
+  };
+
   if (initialLoading) return <TableSkeleton cols={4} />;
 
   // Agrupar items para ver qué hay que imprimir
@@ -95,7 +124,7 @@ export default function ProduccionPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-bold">Cola de Producción</h1>
         <div className="flex gap-3">
           <Badge variant="outline" className="text-sm py-1 px-3">
@@ -158,110 +187,146 @@ export default function ProduccionPage() {
           description="No hay pedidos en produccion. Cuando confirmes un pedido, aparecera aca para imprimir."
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {pedidos.map((p) => {
-            const prioConfig = PRIORIDADES[p.prioridad];
-            const estadoConfig = ESTADOS_PEDIDO[p.estado];
-            const diasRestantes = p.fechaEntrega
-              ? (() => {
-                  const entrega = new Date(p.fechaEntrega);
-                  entrega.setHours(23, 59, 59, 999); // vence al FINAL del día de entrega
-                  return Math.ceil((entrega.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-                })()
-              : null;
+        <DragDropContext onDragEnd={handleDragEnd}>
+          <Droppable droppableId="produccion">
+            {(provided) => (
+              <div
+                ref={provided.innerRef}
+                {...provided.droppableProps}
+                className="grid grid-cols-1 gap-3"
+              >
+                {pedidos.map((p, index) => {
+                  const prioConfig = PRIORIDADES[p.prioridad];
+                  const estadoConfig = ESTADOS_PEDIDO[p.estado];
+                  const diasRestantes = p.fechaEntrega
+                    ? (() => {
+                        const entrega = new Date(p.fechaEntrega);
+                        entrega.setHours(23, 59, 59, 999);
+                        return Math.ceil((entrega.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                      })()
+                    : null;
 
-            return (
-              <Card key={p.id} className={p.prioridad === "URGENTE" ? "border-red-500 border-2 bg-red-500/5" : ""}>
-                <CardContent className="pt-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="gap-1">
-                          <span className={`h-2 w-2 rounded-full ${prioConfig.color}`} />
-                          {prioConfig.label}
-                        </Badge>
-                        <span className="text-sm text-muted-foreground">#{p.id.slice(-6)}</span>
-                      </div>
-                      <p className="font-medium">
-                        {p.cliente?.nombre || "Sin cliente"}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {diasRestantes !== null && (
-                        <Badge
-                          variant={diasRestantes < 0 ? "destructive" : diasRestantes === 0 ? "destructive" : diasRestantes <= 3 ? "default" : "outline"}
-                          className="gap-1"
+                  return (
+                    <Draggable key={p.id} draggableId={p.id} index={index}>
+                      {(provided, snapshot) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.draggableProps}
+                          className={snapshot.isDragging ? "opacity-90" : ""}
                         >
-                          <Clock className="h-3 w-3" />
-                          {diasRestantes < 0
-                            ? "Vencido"
-                            : diasRestantes === 0
-                              ? "Hoy"
-                              : `${diasRestantes}d restantes`}
-                        </Badge>
-                      )}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          render={<Button variant="outline" size="sm" className="gap-1" />}
-                        >
-                          <span className={`h-2 w-2 rounded-full ${estadoConfig.color}`} />
-                          {estadoConfig.label}
-                          <ChevronDown className="h-3 w-3" />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent>
-                          {Object.entries(ESTADOS_PEDIDO).map(([key, val]) => (
-                            <DropdownMenuItem
-                              key={key}
-                              onClick={() => handleStatusChange(p.id, key)}
-                              className="gap-2"
-                            >
-                              <span className={`h-2 w-2 rounded-full ${val.color}`} />
-                              {val.label}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
+                          <Card className={`${p.prioridad === "URGENTE" ? "border-red-500 border-2 bg-red-500/5" : ""} ${snapshot.isDragging ? "ring-2 ring-primary shadow-lg" : ""}`}>
+                            <CardContent className="pt-4">
+                              <div className="flex items-start gap-3">
+                                {/* Drag handle */}
+                                <div
+                                  {...provided.dragHandleProps}
+                                  className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground transition-colors"
+                                >
+                                  <GripVertical className="h-5 w-5" />
+                                </div>
 
-                  <div className="space-y-1">
-                    {p.items.map((item) => (
-                      <div key={item.id} className="space-y-0.5">
-                        <div className="flex items-center gap-2 text-sm flex-wrap">
-                          <span className="font-medium">{item.cantidad}x</span>
-                          <span>{item.modelo.nombre}</span>
-                          {item.modelo.categorias.map(({ categoria }) => (
-                            <Badge
-                              key={categoria.id}
-                              variant="secondary"
-                              className="text-[10px] px-1.5 py-0"
-                              style={categoria.color ? { backgroundColor: categoria.color, color: "#fff" } : undefined}
-                            >
-                              {categoria.nombre}
-                            </Badge>
-                          ))}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-start justify-between mb-3">
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <Badge variant="outline" className="text-xs text-muted-foreground">
+                                          #{index + 1}
+                                        </Badge>
+                                        <Badge variant="outline" className="gap-1">
+                                          <span className={`h-2 w-2 rounded-full ${prioConfig.color}`} />
+                                          {prioConfig.label}
+                                        </Badge>
+                                        <span className="text-sm text-muted-foreground">#{p.id.slice(-6)}</span>
+                                      </div>
+                                      <p className="font-medium">
+                                        {p.cliente?.nombre || "Sin cliente"}
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {diasRestantes !== null && (
+                                        <Badge
+                                          variant={diasRestantes < 0 ? "destructive" : diasRestantes === 0 ? "destructive" : diasRestantes <= 3 ? "default" : "outline"}
+                                          className="gap-1"
+                                        >
+                                          <Clock className="h-3 w-3" />
+                                          {diasRestantes < 0
+                                            ? "Vencido"
+                                            : diasRestantes === 0
+                                              ? "Hoy"
+                                              : `${diasRestantes}d restantes`}
+                                        </Badge>
+                                      )}
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger
+                                          render={<Button variant="outline" size="sm" className="gap-1" />}
+                                        >
+                                          <span className={`h-2 w-2 rounded-full ${estadoConfig.color}`} />
+                                          {estadoConfig.label}
+                                          <ChevronDown className="h-3 w-3" />
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent>
+                                          {Object.entries(ESTADOS_PEDIDO).map(([key, val]) => (
+                                            <DropdownMenuItem
+                                              key={key}
+                                              onClick={() => handleStatusChange(p.id, key)}
+                                              className="gap-2"
+                                            >
+                                              <span className={`h-2 w-2 rounded-full ${val.color}`} />
+                                              {val.label}
+                                            </DropdownMenuItem>
+                                          ))}
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    {p.items.map((item) => (
+                                      <div key={item.id} className="space-y-0.5">
+                                        <div className="flex items-center gap-2 text-sm flex-wrap">
+                                          <span className="font-medium">{item.cantidad}x</span>
+                                          <span>{item.modelo.nombre}</span>
+                                          {item.modelo.categorias.map(({ categoria }) => (
+                                            <Badge
+                                              key={categoria.id}
+                                              variant="secondary"
+                                              className="text-[10px] px-1.5 py-0"
+                                              style={categoria.color ? { backgroundColor: categoria.color, color: "#fff" } : undefined}
+                                            >
+                                              {categoria.nombre}
+                                            </Badge>
+                                          ))}
+                                        </div>
+                                        {item.variantesInfo && item.variantesInfo.length > 0 && (
+                                          <div className="flex flex-wrap gap-1 ml-7">
+                                            {item.variantesInfo.map((v, vi) => (
+                                              <Badge key={vi} variant="outline" className="text-[10px] px-1.5 py-0 border-blue-400 text-blue-600 dark:text-blue-400">
+                                                {v.nombre}
+                                              </Badge>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  {p.notas && (
+                                    <p className="mt-2 text-sm text-muted-foreground border-t pt-2">{p.notas}</p>
+                                  )}
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
                         </div>
-                        {item.variantesInfo && item.variantesInfo.length > 0 && (
-                          <div className="flex flex-wrap gap-1 ml-7">
-                            {item.variantesInfo.map((v, vi) => (
-                              <Badge key={vi} variant="outline" className="text-[10px] px-1.5 py-0 border-blue-400 text-blue-600 dark:text-blue-400">
-                                {v.nombre}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  {p.notas && (
-                    <p className="mt-2 text-sm text-muted-foreground border-t pt-2">{p.notas}</p>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                      )}
+                    </Draggable>
+                  );
+                })}
+                {provided.placeholder}
+              </div>
+            )}
+          </Droppable>
+        </DragDropContext>
       )}
     </div>
   );

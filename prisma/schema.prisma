@@ -143,6 +143,7 @@ model Pedido {
   notas               String?
   etiquetas           String[]     @default([])
   canalVenta          String       @default("directa") @map("canal_venta")
+  ordenProduccion     Int?         @map("orden_produccion")
   tenantId            String       @default("sendero3d") @map("tenant_id")
   creadoEn            DateTime     @default(now()) @map("creado_en")
   updatedAt           DateTime     @updatedAt @map("updated_at")

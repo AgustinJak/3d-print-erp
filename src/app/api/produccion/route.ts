@@ -14,7 +14,7 @@ export async function GET() {
         tenantId,
         estado: { in: ["CONFIRMADO", "EN_PRODUCCION"] },
       },
-      orderBy: [{ prioridad: "desc" }, { fechaEntrega: "asc" }],
+      orderBy: [{ ordenProduccion: { sort: "asc", nulls: "last" } }, { prioridad: "desc" }, { fechaEntrega: "asc" }],
       include: {
         cliente: { select: { id: true, nombre: true } },
         items: {
