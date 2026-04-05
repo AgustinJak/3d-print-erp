@@ -257,9 +257,10 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
     return qty * price + adj;
   };
 
-  const totalVenta = items.reduce((s, i) => s + calcSubtotal(i), 0) + parsePrice(precioEnvio);
+  const totalProductos = items.reduce((s, i) => s + calcSubtotal(i), 0);
+  const totalVenta = totalProductos + parsePrice(precioEnvio);
   const totalCosto = items.reduce((s, i) => s + (parseInt(i.cantidad) || 0) * parsePrice(i.costoUnitario), 0);
-  const ganancia = totalVenta - totalCosto;
+  const ganancia = totalProductos - totalCosto;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
