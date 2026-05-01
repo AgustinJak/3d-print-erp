@@ -1001,10 +1001,11 @@ export default function ModelosPage() {
               {form.variantes && form.variantes.length > 0 ? (
                 <div className="space-y-2">
                   {form.variantes.map((v: Variante, idx: number) => (
-                    <div key={idx} className="flex items-start gap-2 rounded-md border bg-muted/30 p-2">
-                      <div className="flex-1 space-y-1">
+                    <div key={idx} className="rounded-md border bg-muted/30 p-2 space-y-2">
+                      {/* Nombre + delete */}
+                      <div className="flex items-center gap-2">
                         <Input
-                          placeholder="Nombre variante"
+                          placeholder="Nombre de la variante (ej: 65cm, Con Funda)"
                           value={v.nombre}
                           onChange={(e) => {
                             const updated = [...form.variantes];
@@ -1012,47 +1013,53 @@ export default function ModelosPage() {
                             updateField("variantes", updated);
                           }}
                         />
-                      </div>
-                      <div className="w-24 space-y-1">
-                        <Input
-                          type="number"
-                          step="1"
-                          placeholder="+$ venta"
-                          title="Precio adicional de venta"
-                          value={v.precioAdicional || ""}
-                          onChange={(e) => {
-                            const updated = [...form.variantes];
-                            updated[idx] = { ...updated[idx], precioAdicional: parseFloat(e.target.value) || 0 };
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 shrink-0"
+                          onClick={() => {
+                            const updated = form.variantes.filter((_: Variante, i: number) => i !== idx);
                             updateField("variantes", updated);
                           }}
-                        />
+                          title="Eliminar variante"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
                       </div>
-                      <div className="w-24 space-y-1">
-                        <Input
-                          type="number"
-                          step="1"
-                          placeholder="+$ costo"
-                          title="Costo de fabricación adicional"
-                          value={v.costoFabAdicional || ""}
-                          onChange={(e) => {
-                            const updated = [...form.variantes];
-                            updated[idx] = { ...updated[idx], costoFabAdicional: parseFloat(e.target.value) || 0 };
-                            updateField("variantes", updated);
-                          }}
-                        />
+                      {/* Precio + costo */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">+$ venta</Label>
+                          <Input
+                            type="number"
+                            step="1"
+                            placeholder="0"
+                            title="Precio adicional de venta"
+                            value={v.precioAdicional || ""}
+                            onChange={(e) => {
+                              const updated = [...form.variantes];
+                              updated[idx] = { ...updated[idx], precioAdicional: parseFloat(e.target.value) || 0 };
+                              updateField("variantes", updated);
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">+$ costo</Label>
+                          <Input
+                            type="number"
+                            step="1"
+                            placeholder="0"
+                            title="Costo de fabricación adicional"
+                            value={v.costoFabAdicional || ""}
+                            onChange={(e) => {
+                              const updated = [...form.variantes];
+                              updated[idx] = { ...updated[idx], costoFabAdicional: parseFloat(e.target.value) || 0 };
+                              updateField("variantes", updated);
+                            }}
+                          />
+                        </div>
                       </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 shrink-0"
-                        onClick={() => {
-                          const updated = form.variantes.filter((_: Variante, i: number) => i !== idx);
-                          updateField("variantes", updated);
-                        }}
-                      >
-                        <Trash2 className="h-3 w-3 text-destructive" />
-                      </Button>
                     </div>
                   ))}
                 </div>
