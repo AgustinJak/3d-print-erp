@@ -279,3 +279,23 @@ model Gasto {
 
   @@map("gastos")
 }
+
+// ==================== INTEGRACIÓN / WEBHOOKS ====================
+
+model WebhookLog {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  origen      String                              // ej: "shop"
+  evento      String                              // ej: "pedido.confirmado"
+  externoId   String?  @map("externo_id")         // ej: "SS-00001"
+  estado      String                              // "ok", "error", "ignorado"
+  errorMsg    String?  @map("error_msg")
+  pedidoId    String?  @map("pedido_id")          // pedido creado/relacionado
+  payload     Json
+  ipAddress   String?  @map("ip_address")
+  recibidoEn  DateTime @default(now()) @map("recibido_en")
+
+  @@index([tenantId, recibidoEn])
+  @@index([tenantId, externoId])
+  @@map("webhook_logs")
+}
