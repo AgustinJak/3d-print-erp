@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Package, Clock, CheckCircle, Truck, DollarSign, TrendingUp,
-  AlertCircle, Loader2, CalendarDays, ShoppingCart, ArrowRight, Wallet,
+  AlertCircle, Loader2, CalendarDays, ShoppingCart, ArrowRight, Wallet, FileWarning,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -65,12 +65,17 @@ function diasRestantes(fecha: string) {
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pedidosRevision, setPedidosRevision] = useState<number>(0);
 
   useEffect(() => {
     fetch("/api/dashboard")
       .then((r) => r.json())
       .then((d) => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
+    fetch("/api/integraciones/status")
+      .then((r) => r.json())
+      .then((d) => setPedidosRevision(d?.shop?.totalRevision || 0))
+      .catch(() => {});
   }, []);
 
   if (loading) {
@@ -95,6 +100,28 @@ export default function DashboardPage() {
           {new Date().toLocaleDateString("es-AR", { month: "long", year: "numeric" })}
         </Badge>
       </div>
+
+      {/* Banner: pedidos en revisión */}
+      {pedidosRevision > 0 && (
+        <Link href="/integraciones" className="block">
+          <Card className="border-amber-500/40 bg-amber-500/5 hover:bg-amber-500/10 transition-colors">
+            <CardContent className="flex items-center gap-3 p-4">
+              <div className="rounded-lg bg-amber-500/20 p-2">
+                <FileWarning className="h-5 w-5 text-amber-500" />
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-sm">
+                  {pedidosRevision} {pedidosRevision === 1 ? "pedido del shop necesita" : "pedidos del shop necesitan"} revisión manual
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Algunos productos o variantes no se mapearon automáticamente. Revisalos en Integraciones.
+                </p>
+              </div>
+              <ArrowRight className="h-4 w-4 text-muted-foreground" />
+            </CardContent>
+          </Card>
+        </Link>
+      )}
 
       {/* Estado operativo */}
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Command } from "cmdk";
 import {
   LayoutDashboard, Tag, Box, ShoppingCart, Factory, Users, Palette,
-  DollarSign, Receipt, History, Radar, Search,
+  DollarSign, Receipt, History, Radar, Search, Plug,
 } from "lucide-react";
 
 const pages = [
@@ -20,6 +20,7 @@ const pages = [
   { name: "Finanzas", href: "/finanzas", icon: DollarSign, keywords: "finanzas dinero ingresos ganancia" },
   { name: "Gastos", href: "/gastos", icon: Receipt, keywords: "gastos costos compras" },
   { name: "Historial", href: "/historial", icon: History, keywords: "historial completados archivo" },
+  { name: "Integraciones", href: "/integraciones", icon: Plug, keywords: "integraciones webhook shop sendero api logs" },
 ];
 
 export function CommandPalette() {
