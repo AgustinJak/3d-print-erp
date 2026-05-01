@@ -41,6 +41,7 @@ interface Variante {
 interface Modelo {
   id: string;
   nombre: string;
+  sku: string | null;
   serie: string | null;
   pesoGr: number | null;
   costoFab: number;
@@ -64,6 +65,7 @@ interface Modelo {
 
 const emptyForm = {
   nombre: "",
+  sku: "",
   serie: "",
   pesoGr: "",
   costoFab: "",
@@ -364,6 +366,7 @@ export default function ModelosPage() {
     setEditingId(m.id);
     setForm({
       nombre: m.nombre,
+      sku: m.sku || "",
       serie: m.serie || "",
       pesoGr: m.pesoGr?.toString() || "",
       costoFab: m.costoFab.toString(),
@@ -769,14 +772,28 @@ export default function ModelosPage() {
           <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-4">
             {/* Nombre */}
-            <div className="space-y-2">
-              <Label htmlFor="nombre">Nombre *</Label>
-              <Input
-                id="nombre"
-                value={form.nombre}
-                onChange={(e) => updateField("nombre", e.target.value)}
-                required
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="nombre">Nombre *</Label>
+                <Input
+                  id="nombre"
+                  value={form.nombre}
+                  onChange={(e) => updateField("nombre", e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="sku">
+                  SKU
+                  <span className="ml-1 text-xs text-muted-foreground">(opcional, para integración con Shop)</span>
+                </Label>
+                <Input
+                  id="sku"
+                  value={form.sku}
+                  onChange={(e) => updateField("sku", e.target.value)}
+                  placeholder="Ej: SS-BTS-LLA-044"
+                />
+              </div>
             </div>
 
             {/* Serie + Peso */}

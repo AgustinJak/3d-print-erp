@@ -73,6 +73,7 @@ export async function PUT(
         where: { id, tenantId },
         data: {
           nombre: body.nombre,
+          sku: body.sku !== undefined ? (body.sku?.trim() ? body.sku.trim() : null) : undefined,
           serie: body.serie || null,
           pesoGr: body.pesoGr ? parseFloat(body.pesoGr) : null,
           costoFab: body.costoFab != null ? parseFloat(body.costoFab) : undefined,

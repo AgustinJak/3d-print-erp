@@ -10,6 +10,21 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ==================== PERFILES (auth) ====================
+
+model Perfil {
+  id        String   @id
+  userId    String   @unique @map("user_id")
+  nombre    String?
+  email     String?
+  tenantId  String   @map("tenant_id")
+  rol       String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("perfiles")
+}
+
 // ==================== CLIENTES ====================
 
 model Cliente {
@@ -64,6 +79,7 @@ model CategoriaModelo {
 model Modelo {
   id                String   @id @default(cuid())
   nombre            String
+  sku               String?
   serie             String?
   pesoGr            Float?   @map("peso_gr")
   costoFab          Float    @default(0) @map("costo_fab")
@@ -85,6 +101,7 @@ model Modelo {
   itemsPedido          ItemPedido[]
   sugerenciasTendencia SugerenciaProducto[]
 
+  @@unique([tenantId, sku])
   @@map("modelos")
 }
 
@@ -144,6 +161,8 @@ model Pedido {
   etiquetas           String[]     @default([])
   canalVenta          String       @default("directa") @map("canal_venta")
   ordenProduccion     Int?         @map("orden_produccion")
+  origenExterno       Json?        @map("origen_externo")
+  externoId           String?      @map("externo_id")
   tenantId            String       @default("sendero3d") @map("tenant_id")
   creadoEn            DateTime     @default(now()) @map("creado_en")
   updatedAt           DateTime     @updatedAt @map("updated_at")
@@ -151,6 +170,7 @@ model Pedido {
   cliente Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
   items   ItemPedido[]
 
+  @@unique([tenantId, externoId])
   @@map("pedidos")
 }
 

@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
     const modelo = await prisma.modelo.create({
       data: {
         nombre: body.nombre,
+        sku: body.sku?.trim() ? body.sku.trim() : null,
         serie: body.serie || null,
         pesoGr: body.pesoGr ? parseFloat(body.pesoGr) : null,
         costoFab: body.costoFab ? parseFloat(body.costoFab) : 0,
