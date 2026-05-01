@@ -216,15 +216,16 @@ export async function POST(request: NextRequest) {
         let modelo = null;
         if (item.sku) {
           modelo = await tx.modelo.findFirst({
-            where: { tenantId, sku: item.sku },
+            where: { tenantId, sku: item.sku, consolidadoEnId: null },
             include: { variantes: true },
           });
         }
-        // Fallback: buscar por nombre exacto (case-insensitive)
+        // Fallback: buscar por nombre exacto (case-insensitive), excluyendo consolidados
         if (!modelo) {
           modelo = await tx.modelo.findFirst({
             where: {
               tenantId,
+              consolidadoEnId: null,
               nombre: { equals: item.nombre_producto, mode: "insensitive" },
             },
             include: { variantes: true },

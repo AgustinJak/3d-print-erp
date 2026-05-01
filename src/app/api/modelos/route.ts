@@ -10,6 +10,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const categoriaId = searchParams.get("categoriaId");
     const activoParam = searchParams.get("activo");
+    // consolidados: "ocultar" (default) | "solo" | "incluir"
+    const consolidados = searchParams.get("consolidados") || "ocultar";
 
     const where: Record<string, unknown> = { tenantId };
     if (categoriaId) {
@@ -18,6 +20,11 @@ export async function GET(request: NextRequest) {
     if (activoParam !== null) {
       where.activo = activoParam === "true";
     }
+    if (consolidados === "ocultar") {
+      where.consolidadoEnId = null;
+    } else if (consolidados === "solo") {
+      where.consolidadoEnId = { not: null };
+    }
 
     const modelos = await prisma.modelo.findMany({
       where,
@@ -25,6 +32,7 @@ export async function GET(request: NextRequest) {
       include: {
         categorias: { include: { categoria: true } },
         variantes: true,
+        consolidadoEn: { select: { id: true, nombre: true } },
       },
     });
     return NextResponse.json(modelos);

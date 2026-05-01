@@ -92,6 +92,7 @@ model Modelo {
   imagenUrl         String?  @map("imagen_url")
   imagenesUrls      String[] @default([]) @map("imagenes_urls")
   activo            Boolean  @default(true)
+  consolidadoEnId   String?  @map("consolidado_en_id")
   tenantId          String   @default("sendero3d") @map("tenant_id")
   creadoEn          DateTime @default(now()) @map("creado_en")
   updatedAt         DateTime @updatedAt @map("updated_at")
@@ -100,6 +101,9 @@ model Modelo {
   variantes            VarianteModelo[]
   itemsPedido          ItemPedido[]
   sugerenciasTendencia SugerenciaProducto[]
+
+  consolidadoEn        Modelo?  @relation("Consolidacion", fields: [consolidadoEnId], references: [id], onDelete: SetNull)
+  consolidaciones      Modelo[] @relation("Consolidacion")
 
   @@unique([tenantId, sku])
   @@map("modelos")

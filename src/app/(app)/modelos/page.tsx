@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   Plus, Search, Pencil, Trash2, FileBox, Download,
-  LayoutGrid, TableIcon, ChevronDown, X, ImagePlus, SlidersHorizontal, ArrowUpDown, Box,
+  LayoutGrid, TableIcon, ChevronDown, X, ImagePlus, SlidersHorizontal, ArrowUpDown, Box, Combine, Undo2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -38,11 +38,18 @@ interface Variante {
   notas: string;
 }
 
+interface ModeloRef {
+  id: string;
+  nombre: string;
+}
+
 interface Modelo {
   id: string;
   nombre: string;
   sku: string | null;
   serie: string | null;
+  consolidadoEnId?: string | null;
+  consolidadoEn?: ModeloRef | null;
   pesoGr: number | null;
   costoFab: number;
   precioVenta: number;
@@ -304,13 +311,17 @@ export default function ModelosPage() {
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [mostrarConsolidados, setMostrarConsolidados] = useState(false);
+  const [consolidarDialog, setConsolidarDialog] = useState<{ open: boolean; modelo: Modelo | null }>({ open: false, modelo: null });
+  const [destinoConsolidacion, setDestinoConsolidacion] = useState<string>("");
 
   /* ─── Fetch ───────────────────────────────────────── */
 
   const fetchModelos = useCallback(async () => {
-    const res = await fetch("/api/modelos");
+    const consolidados = mostrarConsolidados ? "incluir" : "ocultar";
+    const res = await fetch(`/api/modelos?consolidados=${consolidados}`);
     setModelos(await res.json());
-  }, []);
+  }, [mostrarConsolidados]);
 
   const fetchCategorias = useCallback(async () => {
     const res = await fetch("/api/categorias");
@@ -426,6 +437,39 @@ export default function ModelosPage() {
     fetchModelos();
   };
 
+  const openConsolidar = (m: Modelo) => {
+    setDestinoConsolidacion("");
+    setConsolidarDialog({ open: true, modelo: m });
+  };
+
+  const handleConsolidar = async () => {
+    if (!consolidarDialog.modelo || !destinoConsolidacion) return;
+    const res = await fetch(`/api/modelos/${consolidarDialog.modelo.id}/consolidar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ destinoId: destinoConsolidacion }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || "Error al consolidar");
+      return;
+    }
+    toast.success("Modelo consolidado");
+    setConsolidarDialog({ open: false, modelo: null });
+    fetchModelos();
+  };
+
+  const handleRevertirConsolidacion = async (id: string) => {
+    if (!confirm("¿Revertir consolidación? El modelo volverá al catálogo activo.")) return;
+    const res = await fetch(`/api/modelos/${id}/consolidar`, { method: "DELETE" });
+    if (!res.ok) {
+      toast.error("Error al revertir");
+      return;
+    }
+    toast.success("Consolidación revertida");
+    fetchModelos();
+  };
+
   const updateField = (field: string, value: string | boolean | string[] | Variante[]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
@@ -492,6 +536,19 @@ export default function ModelosPage() {
               </button>
             ))}
           </div>
+
+          {/* Mostrar consolidados toggle */}
+          <Button
+            variant={mostrarConsolidados ? "default" : "outline"}
+            size="sm"
+            className="gap-1.5 h-9"
+            onClick={() => setMostrarConsolidados(!mostrarConsolidados)}
+            type="button"
+            title="Mostrar modelos que fueron consolidados en otro"
+          >
+            <Combine className="h-3.5 w-3.5" />
+            {mostrarConsolidados ? "Ocultar consolidados" : "Mostrar consolidados"}
+          </Button>
 
           {/* Extra filters toggle */}
           <Button
@@ -632,6 +689,11 @@ export default function ModelosPage() {
                   {formatPrice(m.precioVenta)}
                 </p>
                 <CategoriaBadges categorias={m.categorias} />
+                {m.consolidadoEn && (
+                  <p className="text-xs text-amber-500 truncate">
+                    ↪ Consolidado en {m.consolidadoEn.nombre}
+                  </p>
+                )}
               </div>
             </Card>
           ))}
@@ -680,6 +742,11 @@ export default function ModelosPage() {
                         {m.serie && (
                           <span className="block text-xs text-muted-foreground">{m.serie}</span>
                         )}
+                        {m.consolidadoEn && (
+                          <span className="block text-xs text-amber-500 mt-0.5">
+                            ↪ Consolidado en {m.consolidadoEn.nombre}
+                          </span>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -715,6 +782,25 @@ export default function ModelosPage() {
                               <Download className="h-4 w-4" />
                             </Button>
                           </a>
+                        )}
+                        {m.consolidadoEnId ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => { e.stopPropagation(); handleRevertirConsolidacion(m.id); }}
+                            title="Revertir consolidación"
+                          >
+                            <Undo2 className="h-4 w-4 text-amber-500" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => { e.stopPropagation(); openConsolidar(m); }}
+                            title="Consolidar en otro modelo"
+                          >
+                            <Combine className="h-4 w-4 text-blue-400" />
+                          </Button>
                         )}
                         <Button
                           variant="ghost"
@@ -756,6 +842,11 @@ export default function ModelosPage() {
                 <h3 className="font-medium text-sm truncate">{m.nombre}</h3>
                 <p className="text-lg font-bold text-primary">{formatPrice(m.precioVenta)}</p>
                 <CategoriaBadges categorias={m.categorias} />
+                {m.consolidadoEn && (
+                  <p className="text-xs text-amber-500 truncate">
+                    ↪ {m.consolidadoEn.nombre}
+                  </p>
+                )}
               </div>
             </Card>
           ))}
@@ -1087,6 +1178,58 @@ export default function ModelosPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Consolidar modelo */}
+      <Dialog
+        open={consolidarDialog.open}
+        onOpenChange={(o) => setConsolidarDialog({ open: o, modelo: o ? consolidarDialog.modelo : null })}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Consolidar modelo</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <p className="text-sm text-muted-foreground">
+              Vas a marcar <span className="font-semibold text-foreground">{consolidarDialog.modelo?.nombre}</span> como consolidado en otro modelo. El modelo se ocultará del catálogo activo y de los selectores, pero <span className="font-semibold">los pedidos viejos seguirán funcionando intactos</span>.
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="destino-consolidacion">Modelo destino</Label>
+              <select
+                id="destino-consolidacion"
+                value={destinoConsolidacion}
+                onChange={(e) => setDestinoConsolidacion(e.target.value)}
+                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">— Elegí el modelo —</option>
+                {modelos
+                  .filter((m) => m.id !== consolidarDialog.modelo?.id && !m.consolidadoEnId)
+                  .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.nombre}
+                      {m.sku ? ` — ${m.sku}` : ""}
+                    </option>
+                  ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Tip: si el modelo destino todavía no existe, creálo primero con sus variantes.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setConsolidarDialog({ open: false, modelo: null })}
+                type="button"
+              >
+                Cancelar
+              </Button>
+              <Button onClick={handleConsolidar} disabled={!destinoConsolidacion} type="button">
+                Consolidar
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
