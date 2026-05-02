@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronRight, AlertTriangle, ShoppingCart, GripVertical, CalendarClock } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronRight, AlertTriangle, ShoppingCart, GripVertical, CalendarClock, Clock } from "lucide-react";
 import { toast } from "sonner";
 import {
   DragDropContext,
@@ -96,6 +96,7 @@ export default function PedidosPage() {
   const [editingPedido, setEditingPedido] = useState<Pedido | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [mlExpanded, setMlExpanded] = useState(false);
 
   const fetchPedidos = useCallback(async () => {
     const res = await fetch("/api/pedidos");
@@ -113,6 +114,17 @@ export default function PedidosPage() {
     const matchEstado = filterEstado === "todos" || p.estado === filterEstado;
     return matchSearch && matchEstado;
   });
+
+  // Si filtro = "todos", separamos los pedidos en ESPERANDO_LIQUIDACION_ML para
+  // mostrarlos en un grupo colapsable abajo. Si el usuario filtra explícitamente
+  // por ese estado, los muestra normalmente sin agrupar.
+  const showMLGroup = filterEstado === "todos";
+  const regularPedidos = showMLGroup
+    ? filtered.filter((p) => p.estado !== "ESPERANDO_LIQUIDACION_ML")
+    : filtered;
+  const mlPedidos = showMLGroup
+    ? filtered.filter((p) => p.estado === "ESPERANDO_LIQUIDACION_ML")
+    : [];
 
   const openCreate = () => {
     setEditingPedido(null);
@@ -272,6 +284,9 @@ export default function PedidosPage() {
             description="No se encontraron pedidos con estos filtros. Proba cambiando la busqueda o el estado."
           />
         )
+      ) : regularPedidos.length === 0 ? (
+        // Solo hay pedidos ML — el bloque colapsable se renderiza abajo
+        null
       ) : (
         <DragDropContext onDragEnd={handleDragEnd}>
           {/* Mobile cards */}
@@ -282,7 +297,7 @@ export default function PedidosPage() {
                 {...provided.droppableProps}
                 className="md:hidden space-y-3"
               >
-                {filtered.map((p, index) => {
+                {regularPedidos.map((p, index) => {
                   const total = calcTotal(p.items);
                   const costo = calcCosto(p.items);
                   const ganancia = total - costo;
@@ -417,7 +432,7 @@ export default function PedidosPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtered.map((p, index) => {
+                    {regularPedidos.map((p, index) => {
                       const total = calcTotal(p.items);
                       const costo = calcCosto(p.items);
                       const ganancia = total - costo;
@@ -698,6 +713,202 @@ export default function PedidosPage() {
             )}
           </Droppable>
         </DragDropContext>
+      )}
+
+      {/* Grupo colapsable: pedidos esperando liquidación ML */}
+      {showMLGroup && mlPedidos.length > 0 && (
+        <Card className="border-amber-500/30">
+          <button
+            type="button"
+            onClick={() => setMlExpanded(!mlExpanded)}
+            className="w-full p-4 flex items-center justify-between gap-3 hover:bg-muted/30 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-amber-500/15 p-2">
+                <Clock className="h-4 w-4 text-amber-500" />
+              </div>
+              <div className="text-left">
+                <p className="font-semibold text-sm">
+                  {mlPedidos.length} {mlPedidos.length === 1 ? "pedido esperando" : "pedidos esperando"} liquidación ML
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Click para {mlExpanded ? "ocultar" : "ver"} los pedidos en espera
+                </p>
+              </div>
+            </div>
+            <ChevronRight
+              className={`h-4 w-4 text-muted-foreground transition-transform ${mlExpanded ? "rotate-90" : ""}`}
+            />
+          </button>
+
+          {mlExpanded && (
+            <div className="border-t">
+              {/* Mobile cards */}
+              <div className="md:hidden space-y-2 p-3">
+                {mlPedidos.map((p) => {
+                  const total = calcTotal(p.items);
+                  const estadoConfig = ESTADOS_PEDIDO[p.estado];
+                  const liquidacionVencida =
+                    p.fechaLiquidacionMl && new Date(p.fechaLiquidacionMl) <= new Date();
+                  return (
+                    <div
+                      key={p.id}
+                      className={`rounded-md border p-3 space-y-2 text-sm ${liquidacionVencida ? "bg-emerald-50 dark:bg-emerald-950/30" : ""}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-semibold">
+                            {p.cliente?.nombre || <span className="text-muted-foreground">Sin cliente</span>}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {p.fechaLiquidacionMl
+                              ? `Liquida ${new Date(p.fechaLiquidacionMl).toLocaleDateString("es-AR")}`
+                              : "Sin fecha de liquidación"}
+                            {liquidacionVencida && (
+                              <Badge className="ml-2 bg-emerald-600 text-white text-xs">Liquidado</Badge>
+                            )}
+                          </p>
+                        </div>
+                        <p className="font-bold">${total.toFixed(0)}</p>
+                      </div>
+                      <div className="text-xs space-y-0.5">
+                        {p.items.map((item) => (
+                          <div key={item.id}>
+                            <span className="text-muted-foreground mr-1">{item.cantidad}×</span>
+                            {item.modelo.nombre}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between pt-1 border-t">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={<Button variant="ghost" size="sm" className="gap-1 h-7 px-2" />}
+                          >
+                            <span className={`h-2 w-2 rounded-full ${estadoConfig.color}`} />
+                            {estadoConfig.label}
+                            <ChevronDown className="h-3 w-3" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent>
+                            {Object.entries(ESTADOS_PEDIDO).map(([key, val]) => (
+                              <DropdownMenuItem
+                                key={key}
+                                onClick={() => handleStatusChange(p.id, key)}
+                                className="gap-2"
+                              >
+                                <span className={`h-2 w-2 rounded-full ${val.color}`} />
+                                {val.label}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(p)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDelete(p.id)}>
+                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden md:block overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[120px]">Cliente</TableHead>
+                      <TableHead className="min-w-[160px]">Modelos</TableHead>
+                      <TableHead>Total</TableHead>
+                      <TableHead>Liquidación ML</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead className="w-[100px]">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {mlPedidos.map((p) => {
+                      const total = calcTotal(p.items);
+                      const estadoConfig = ESTADOS_PEDIDO[p.estado];
+                      const liquidacionVencida =
+                        p.fechaLiquidacionMl && new Date(p.fechaLiquidacionMl) <= new Date();
+                      return (
+                        <TableRow
+                          key={p.id}
+                          className={liquidacionVencida ? "bg-emerald-50 dark:bg-emerald-950/30" : ""}
+                        >
+                          <TableCell className="font-medium">
+                            {p.cliente?.nombre || <span className="text-muted-foreground">Sin cliente</span>}
+                          </TableCell>
+                          <TableCell className="max-w-[260px]">
+                            <div className="flex flex-col gap-0.5">
+                              {p.items.map((item) => (
+                                <span key={item.id} className="text-sm truncate">
+                                  {item.cantidad > 1 && (
+                                    <span className="text-muted-foreground mr-1">{item.cantidad}×</span>
+                                  )}
+                                  {item.modelo.nombre}
+                                </span>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell className="font-medium">${total.toFixed(0)}</TableCell>
+                          <TableCell className="text-sm">
+                            {p.fechaLiquidacionMl ? (
+                              <div className="flex items-center gap-2">
+                                {new Date(p.fechaLiquidacionMl).toLocaleDateString("es-AR")}
+                                {liquidacionVencida && (
+                                  <Badge className="bg-emerald-600 text-white text-xs">Liquidado</Badge>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">Sin fecha</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                render={<Button variant="ghost" size="sm" className="gap-1 h-7 px-2" />}
+                              >
+                                <span className={`h-2 w-2 rounded-full ${estadoConfig.color}`} />
+                                {estadoConfig.label}
+                                <ChevronDown className="h-3 w-3" />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent>
+                                {Object.entries(ESTADOS_PEDIDO).map(([key, val]) => (
+                                  <DropdownMenuItem
+                                    key={key}
+                                    onClick={() => handleStatusChange(p.id, key)}
+                                    className="gap-2"
+                                  >
+                                    <span className={`h-2 w-2 rounded-full ${val.color}`} />
+                                    {val.label}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)}>
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+        </Card>
       )}
 
       <PedidoDialog
