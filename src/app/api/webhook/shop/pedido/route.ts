@@ -297,14 +297,16 @@ export async function POST(request: NextRequest) {
       // 6c. Crear pedido
       const estadoMapeado = mapEstadoShopAInventario(payload.estado_shop);
       const necesitaRevision = warnings.length > 0;
+      const fechaEntrega = addBusinessDays(new Date(), 3);
 
       const pedido = await tx.pedido.create({
         data: {
           tenantId,
           clienteId: cliente.id,
           estado: estadoMapeado,
-          prioridad: "MEDIA",
+          prioridad: "ALTA",
           canalVenta: "shop",
+          fechaEntrega,
           metodoEnvio: payload.metodo_envio || payload.tipo_envio || null,
           metodoPago: payload.metodo_pago || null,
           precioEnvio: payload.costo_envio,
@@ -375,6 +377,20 @@ export async function POST(request: NextRequest) {
 }
 
 /* ───────────────────────── helpers ───────────────────────── */
+
+/**
+ * Suma N días hábiles (excluyendo sábados y domingos).
+ */
+function addBusinessDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  let added = 0;
+  while (added < days) {
+    result.setDate(result.getDate() + 1);
+    const day = result.getDay(); // 0 = domingo, 6 = sábado
+    if (day !== 0 && day !== 6) added++;
+  }
+  return result;
+}
 
 function tryParseJson(s: string): unknown {
   try {

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronRight, AlertTriangle, ShoppingCart, GripVertical } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronRight, AlertTriangle, ShoppingCart, GripVertical, CalendarClock } from "lucide-react";
 import { toast } from "sonner";
 import {
   DragDropContext,
@@ -183,16 +183,53 @@ export default function PedidosPage() {
     }
   };
 
+  /**
+   * Ordena los pedidos por fecha de entrega (más próxima primero).
+   * Pedidos sin fechaEntrega quedan al final.
+   */
+  const handleOrdenarPorFechaEntrega = async () => {
+    const sorted = [...pedidos].sort((a, b) => {
+      const aTime = a.fechaEntrega ? new Date(a.fechaEntrega).getTime() : Infinity;
+      const bTime = b.fechaEntrega ? new Date(b.fechaEntrega).getTime() : Infinity;
+      return aTime - bTime;
+    });
+
+    setPedidos(sorted);
+
+    try {
+      await fetch("/api/pedidos/reorder", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orden: sorted.map((p) => p.id) }),
+      });
+      toast.success("Pedidos ordenados por fecha de entrega");
+    } catch {
+      toast.error("Error al ordenar");
+      fetchPedidos();
+    }
+  };
+
   if (initialLoading) return <TableSkeleton cols={7} />;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h1 className="text-2xl font-bold">Pedidos</h1>
-        <Button onClick={openCreate}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nuevo Pedido
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleOrdenarPorFechaEntrega}
+            disabled={pedidos.length === 0}
+            title="Ordenar por fecha de entrega más próxima"
+          >
+            <CalendarClock className="mr-2 h-4 w-4" />
+            Ordenar por entrega
+          </Button>
+          <Button onClick={openCreate}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nuevo Pedido
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
