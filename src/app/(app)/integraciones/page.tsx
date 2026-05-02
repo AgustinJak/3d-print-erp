@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   Plug, ShoppingBag, RefreshCw, Copy, Check, AlertTriangle,
   CheckCircle2, XCircle, Eye, ExternalLink, Wand2, FileWarning,
+  Tags, Pencil, Plus, Box,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -53,7 +54,30 @@ interface PedidoRevision {
   }>;
 }
 
-type Tab = "estado" | "logs" | "revision";
+interface SkusAudit {
+  stats: {
+    totalActivos: number;
+    conSku: number;
+    sinSku: number;
+    consolidados: number;
+    huerfanos: number;
+  };
+  modelosSinSku: Array<{
+    id: string;
+    nombre: string;
+    serie: string | null;
+    imagenUrl: string | null;
+    categorias: Array<{ categoria: { nombre: string; color: string | null } }>;
+  }>;
+  orphans: Array<{
+    sku: string | null;
+    nombre_producto: string;
+    count: number;
+    ultimo_pedido: { externoId: string | null; fecha: string };
+  }>;
+}
+
+type Tab = "estado" | "logs" | "revision" | "skus";
 
 /* ─── Page ───────────────────────────────────────────── */
 
@@ -63,6 +87,7 @@ export default function IntegracionesPage() {
   const [status, setStatus] = useState<ShopStatus | null>(null);
   const [logs, setLogs] = useState<WebhookLog[]>([]);
   const [pedidosRevision, setPedidosRevision] = useState<PedidoRevision[]>([]);
+  const [skusAudit, setSkusAudit] = useState<SkusAudit | null>(null);
   const [loading, setLoading] = useState(true);
   const [logDetail, setLogDetail] = useState<WebhookLog | null>(null);
   const [generatedSecret, setGeneratedSecret] = useState<string | null>(null);
@@ -70,15 +95,17 @@ export default function IntegracionesPage() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [statusRes, logsRes, revRes] = await Promise.all([
+    const [statusRes, logsRes, revRes, skusRes] = await Promise.all([
       fetch("/api/integraciones/status"),
       fetch("/api/integraciones/logs?limit=50"),
       fetch("/api/integraciones/pedidos-revision"),
+      fetch("/api/integraciones/skus-audit"),
     ]);
     const statusJson = await statusRes.json();
     setStatus(statusJson.shop);
     setLogs(await logsRes.json());
     setPedidosRevision(await revRes.json());
+    setSkusAudit(await skusRes.json());
     setLoading(false);
   }, []);
 
@@ -146,6 +173,14 @@ export default function IntegracionesPage() {
           {pedidosRevision.length > 0 && (
             <Badge variant="destructive" className="ml-1.5 h-5 px-1.5">
               {pedidosRevision.length}
+            </Badge>
+          )}
+        </TabBtn>
+        <TabBtn active={tab === "skus"} onClick={() => setTab("skus")}>
+          <Tags className="h-4 w-4 mr-1.5" /> Mapeo SKUs
+          {skusAudit && (skusAudit.stats.sinSku > 0 || skusAudit.stats.huerfanos > 0) && (
+            <Badge className="ml-1.5 h-5 px-1.5 bg-amber-500/20 text-amber-500 border-amber-500/30 hover:bg-amber-500/20">
+              {skusAudit.stats.sinSku + skusAudit.stats.huerfanos}
             </Badge>
           )}
         </TabBtn>
@@ -377,6 +412,177 @@ export default function IntegracionesPage() {
         </div>
       )}
 
+      {/* Tab: Mapeo SKUs */}
+      {tab === "skus" && skusAudit && (
+        <div className="space-y-4">
+          {/* Stats cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard
+              icon={Tags}
+              label="Con SKU"
+              value={skusAudit.stats.conSku}
+              total={skusAudit.stats.totalActivos}
+              color="emerald"
+            />
+            <StatCard
+              icon={AlertTriangle}
+              label="Sin SKU"
+              value={skusAudit.stats.sinSku}
+              total={skusAudit.stats.totalActivos}
+              color="amber"
+            />
+            <StatCard
+              icon={Box}
+              label="Consolidados"
+              value={skusAudit.stats.consolidados}
+              color="muted"
+            />
+            <StatCard
+              icon={FileWarning}
+              label="SKUs huérfanos"
+              value={skusAudit.stats.huerfanos}
+              color={skusAudit.stats.huerfanos > 0 ? "red" : "muted"}
+            />
+          </div>
+
+          {/* Modelos sin SKU */}
+          <Card className="overflow-hidden">
+            <div className="p-4 border-b">
+              <h2 className="font-semibold flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                Modelos sin SKU
+                <span className="text-xs text-muted-foreground font-normal">
+                  ({skusAudit.modelosSinSku.length})
+                </span>
+              </h2>
+              <p className="text-xs text-muted-foreground mt-1">
+                Modelos activos del catálogo que todavía no tienen SKU asignado.
+                Cargá el SKU correspondiente del shop para que el webhook los matchee automáticamente.
+              </p>
+            </div>
+            {skusAudit.modelosSinSku.length === 0 ? (
+              <div className="p-6 text-center text-sm text-muted-foreground">
+                <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-emerald-500" />
+                Todos los modelos activos tienen SKU asignado.
+              </div>
+            ) : (
+              <div className="divide-y">
+                {skusAudit.modelosSinSku.map((m) => (
+                  <div
+                    key={m.id}
+                    className="flex items-center gap-3 p-3 hover:bg-muted/30 transition-colors"
+                  >
+                    <div className="h-10 w-10 rounded bg-muted shrink-0 overflow-hidden flex items-center justify-center">
+                      {m.imagenUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={m.imagenUrl} alt={m.nombre} className="h-full w-full object-cover" />
+                      ) : (
+                        <Box className="h-5 w-5 text-muted-foreground/40" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{m.nombre}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {m.serie && (
+                          <span className="text-xs text-muted-foreground">{m.serie}</span>
+                        )}
+                        {m.categorias.slice(0, 2).map(({ categoria }, i) => (
+                          <span
+                            key={i}
+                            className="text-[10px] px-1.5 py-0.5 rounded"
+                            style={
+                              categoria.color
+                                ? { backgroundColor: categoria.color, color: "#fff" }
+                                : { backgroundColor: "var(--muted)" }
+                            }
+                          >
+                            {categoria.nombre}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => router.push(`/modelos?edit=${m.id}`)}
+                    >
+                      <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                      Cargar SKU
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {/* SKUs huérfanos */}
+          <Card className="overflow-hidden">
+            <div className="p-4 border-b">
+              <h2 className="font-semibold flex items-center gap-2">
+                <FileWarning className="h-4 w-4 text-red-500" />
+                SKUs huérfanos
+                <span className="text-xs text-muted-foreground font-normal">
+                  ({skusAudit.orphans.length})
+                </span>
+              </h2>
+              <p className="text-xs text-muted-foreground mt-1">
+                Productos que aparecieron en pedidos del shop pero NO existen en el inventario.
+                Probablemente sean modelos que falta crear, o que tienen otro SKU asignado por error.
+              </p>
+            </div>
+            {skusAudit.orphans.length === 0 ? (
+              <div className="p-6 text-center text-sm text-muted-foreground">
+                <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-emerald-500" />
+                Todos los productos del shop matchean con modelos del inventario.
+              </div>
+            ) : (
+              <div className="divide-y">
+                {skusAudit.orphans.map((o, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-3 p-3 hover:bg-muted/30 transition-colors"
+                  >
+                    <div className="h-10 w-10 rounded bg-red-500/10 border border-red-500/20 shrink-0 flex items-center justify-center">
+                      <FileWarning className="h-4 w-4 text-red-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{o.nombre_producto}</p>
+                      <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                        {o.sku && (
+                          <code className="font-mono bg-muted px-1.5 py-0.5 rounded text-[10px]">
+                            {o.sku}
+                          </code>
+                        )}
+                        <span>{o.count} {o.count === 1 ? "vez" : "veces"}</span>
+                        {o.ultimo_pedido.externoId && (
+                          <span>· último: {o.ultimo_pedido.externoId}</span>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        // Pre-cargar SKU + nombre en URL hash para autocompletar el form
+                        const params = new URLSearchParams();
+                        params.set("nuevo", "1");
+                        params.set("nombre", o.nombre_producto);
+                        if (o.sku) params.set("sku", o.sku);
+                        router.push(`/modelos?${params.toString()}`);
+                      }}
+                      title="Crear modelo nuevo con este SKU"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1.5" />
+                      Crear modelo
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
       {/* Modal: Generated secret */}
       <Dialog open={!!generatedSecret} onOpenChange={(o) => !o && setGeneratedSecret(null)}>
         <DialogContent className="max-w-lg">
@@ -505,5 +711,40 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <p className="text-xs text-muted-foreground">{label}</p>
       <div className="text-sm">{children}</div>
     </div>
+  );
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  total,
+  color,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: number;
+  total?: number;
+  color: "emerald" | "amber" | "red" | "muted";
+}) {
+  const colorClasses = {
+    emerald: "bg-emerald-500/10 border-emerald-500/30 text-emerald-500",
+    amber: "bg-amber-500/10 border-amber-500/30 text-amber-500",
+    red: "bg-red-500/10 border-red-500/30 text-red-500",
+    muted: "bg-muted/40 border-border text-muted-foreground",
+  };
+  return (
+    <Card className={`p-3 border ${colorClasses[color]}`}>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-medium">{label}</span>
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-2xl font-bold text-foreground">{value}</span>
+        {total !== undefined && (
+          <span className="text-xs text-muted-foreground">/ {total}</span>
+        )}
+      </div>
+    </Card>
   );
 }

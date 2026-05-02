@@ -6,7 +6,7 @@ import {
   LayoutGrid, TableIcon, ChevronDown, X, ImagePlus, SlidersHorizontal, ArrowUpDown, Box, Combine, Undo2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -297,6 +297,7 @@ function formatPrice(n: number) {
 
 export default function ModelosPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [modelos, setModelos] = useState<Modelo[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [search, setSearch] = useState("");
@@ -314,6 +315,7 @@ export default function ModelosPage() {
   const [mostrarConsolidados, setMostrarConsolidados] = useState(false);
   const [consolidarDialog, setConsolidarDialog] = useState<{ open: boolean; modelo: Modelo | null }>({ open: false, modelo: null });
   const [destinoConsolidacion, setDestinoConsolidacion] = useState<string>("");
+  const [filterSku, setFilterSku] = useState<"todos" | "con" | "sin">("todos");
 
   /* ─── Fetch ───────────────────────────────────────── */
 
@@ -331,6 +333,57 @@ export default function ModelosPage() {
   useEffect(() => {
     Promise.all([fetchModelos(), fetchCategorias()]).then(() => setInitialLoading(false));
   }, [fetchModelos, fetchCategorias]);
+
+  // Deep links: ?edit=<id> abre el modal de edición. ?nuevo=1&sku=X&nombre=Y
+  // abre el modal de creación pre-cargado.
+  useEffect(() => {
+    if (initialLoading) return;
+    const editId = searchParams.get("edit");
+    const nuevo = searchParams.get("nuevo");
+    if (editId) {
+      const target = modelos.find((m) => m.id === editId);
+      if (target) {
+        setEditingId(target.id);
+        setForm({
+          nombre: target.nombre,
+          sku: target.sku || "",
+          serie: target.serie || "",
+          pesoGr: target.pesoGr?.toString() || "",
+          costoFab: target.costoFab.toString(),
+          precioVenta: target.precioVenta.toString(),
+          precioCreditoPorc: target.precioCreditoPorc.toString(),
+          precioMayorista: target.precioMayorista?.toString() || "",
+          precioPromo: target.precioPromo?.toString() || "",
+          notas: target.notas || "",
+          archivo3mfUrl: target.archivo3mfUrl || "",
+          imagenUrl: target.imagenUrl || "",
+          imagenesUrls: [
+            ...(target.imagenUrl ? [target.imagenUrl] : []),
+            ...((target.imagenesUrls || []).filter((u: string) => u !== target.imagenUrl)),
+          ],
+          activo: target.activo,
+          categoriaIds: target.categorias.map(({ categoria }) => categoria.id),
+          variantes: target.variantes?.map((v: Variante) => ({
+            nombre: v.nombre,
+            precioAdicional: v.precioAdicional || 0,
+            costoFabAdicional: v.costoFabAdicional || 0,
+            notas: v.notas || "",
+          })) || [],
+        });
+        setDialogOpen(true);
+        // Limpiar URL para que recargas no reabran el modal
+        router.replace("/modelos");
+      }
+    } else if (nuevo === "1") {
+      const skuParam = searchParams.get("sku") || "";
+      const nombreParam = searchParams.get("nombre") || "";
+      setEditingId(null);
+      setForm({ ...emptyForm, sku: skuParam, nombre: nombreParam });
+      setDialogOpen(true);
+      router.replace("/modelos");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialLoading, modelos]);
 
   if (initialLoading) return <TableSkeleton cols={8} />;
 
@@ -351,7 +404,11 @@ export default function ModelosPage() {
       const match3mf = !filterExtras.con3mf || !!m.archivo3mfUrl;
       const matchImagen = !filterExtras.conImagen || !!m.imagenUrl;
       const matchVariantes = !filterExtras.conVariantes || (m.variantes && m.variantes.length > 0);
-      return matchSearch && matchCategoria && matchEstado && match3mf && matchImagen && matchVariantes;
+      const matchSku =
+        filterSku === "todos" ? true :
+        filterSku === "con" ? !!m.sku :
+        !m.sku;
+      return matchSearch && matchCategoria && matchEstado && match3mf && matchImagen && matchVariantes && matchSku;
     })
     .sort((a, b) => {
       switch (sortBy) {
@@ -627,6 +684,44 @@ export default function ModelosPage() {
             </div>
           )}
 
+          {/* SKU filter + counter */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-muted-foreground">SKU:</span>
+            <div className="inline-flex rounded-md border text-xs overflow-hidden">
+              {(["todos", "con", "sin"] as const).map((e, i) => (
+                <button
+                  key={e}
+                  type="button"
+                  onClick={() => setFilterSku(e)}
+                  className={`px-2.5 py-1 capitalize transition-colors ${
+                    filterSku === e
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-background hover:bg-muted"
+                  } ${i > 0 ? "border-l" : ""}`}
+                >
+                  {e === "todos" ? "Todos" : e === "con" ? "Con SKU" : "Sin SKU"}
+                </button>
+              ))}
+            </div>
+            {(() => {
+              const total = modelos.filter((m) => m.activo && !m.consolidadoEnId).length;
+              const conSku = modelos.filter((m) => m.activo && !m.consolidadoEnId && m.sku).length;
+              const sinSku = total - conSku;
+              return (
+                <button
+                  type="button"
+                  onClick={() => setFilterSku(sinSku > 0 ? "sin" : "todos")}
+                  className={`text-xs hover:underline decoration-dotted underline-offset-4 ${
+                    sinSku > 0 ? "text-amber-500" : "text-muted-foreground"
+                  }`}
+                  title={sinSku > 0 ? "Click para ver los que faltan" : "Todos los modelos tienen SKU"}
+                >
+                  {conSku}/{total} con SKU
+                </button>
+              );
+            })()}
+          </div>
+
           {/* Results count */}
           <span className="text-xs text-muted-foreground ml-auto">
             {filtered.length} modelo{filtered.length !== 1 ? "s" : ""}
@@ -682,9 +777,16 @@ export default function ModelosPage() {
               </div>
               {/* Info */}
               <div className="space-y-2 px-4 pb-4">
-                <h3 className="font-semibold truncate" title={m.nombre}>
-                  {m.nombre}
-                </h3>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="font-semibold truncate" title={m.nombre}>
+                    {m.nombre}
+                  </h3>
+                  {!m.sku && !m.consolidadoEn && (
+                    <Badge variant="outline" className="border-amber-500/40 text-amber-500 text-[10px] py-0 px-1.5 shrink-0">
+                      Sin SKU
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-lg font-bold text-primary">
                   {formatPrice(m.precioVenta)}
                 </p>
@@ -738,7 +840,17 @@ export default function ModelosPage() {
                     </TableCell>
                     <TableCell>
                       <div>
-                        <span className="font-medium">{m.nombre}</span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium">{m.nombre}</span>
+                          {!m.sku && !m.consolidadoEn && (
+                            <Badge variant="outline" className="border-amber-500/40 text-amber-500 text-[10px] py-0 px-1.5">
+                              Sin SKU
+                            </Badge>
+                          )}
+                          {m.sku && (
+                            <code className="text-[10px] text-muted-foreground font-mono">{m.sku}</code>
+                          )}
+                        </div>
                         {m.serie && (
                           <span className="block text-xs text-muted-foreground">{m.serie}</span>
                         )}
@@ -839,7 +951,14 @@ export default function ModelosPage() {
                 )}
               </div>
               <div className="p-3 space-y-1">
-                <h3 className="font-medium text-sm truncate">{m.nombre}</h3>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="font-medium text-sm truncate">{m.nombre}</h3>
+                  {!m.sku && !m.consolidadoEn && (
+                    <Badge variant="outline" className="border-amber-500/40 text-amber-500 text-[10px] py-0 px-1 shrink-0">
+                      Sin SKU
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-lg font-bold text-primary">{formatPrice(m.precioVenta)}</p>
                 <CategoriaBadges categorias={m.categorias} />
                 {m.consolidadoEn && (
