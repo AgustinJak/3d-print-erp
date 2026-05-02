@@ -24,6 +24,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/data-loading";
 import { EmptyState } from "@/components/empty-state";
+import { InlineDateEdit } from "@/components/inline-date-edit";
 import { ESTADOS_PEDIDO, PRIORIDADES, CANALES_VENTA } from "@/lib/constants";
 import { PedidoDialog } from "./pedido-dialog";
 
@@ -161,6 +162,21 @@ export default function PedidosPage() {
       body: JSON.stringify({ prioridad }),
     });
     toast.success("Prioridad actualizada");
+    fetchPedidos();
+  };
+
+  const handleDateChange = async (
+    id: string,
+    field: "fechaEntrega" | "fechaLiquidacionMl",
+    newDate: string | null,
+  ) => {
+    const res = await fetch(`/api/pedidos/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: newDate }),
+    });
+    if (!res.ok) throw new Error("save failed");
+    toast.success("Fecha actualizada");
     fetchPedidos();
   };
 
@@ -554,10 +570,12 @@ export default function PedidosPage() {
                         <TableCell className="text-sm">
                           {new Date(p.fechaPedido).toLocaleDateString("es-AR")}
                         </TableCell>
-                        <TableCell className="text-sm">
-                          {p.fechaEntrega
-                            ? new Date(p.fechaEntrega).toLocaleDateString("es-AR")
-                            : "\u2014"}
+                        <TableCell className="text-sm" onClick={(e) => e.stopPropagation()}>
+                          <InlineDateEdit
+                            value={p.fechaEntrega}
+                            placeholder="\u2014"
+                            onSave={(d) => handleDateChange(p.id, "fechaEntrega", d)}
+                          />
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
@@ -760,14 +778,18 @@ export default function PedidosPage() {
                           <p className="font-semibold">
                             {p.cliente?.nombre || <span className="text-muted-foreground">Sin cliente</span>}
                           </p>
-                          <p className="text-xs text-muted-foreground">
-                            {p.fechaLiquidacionMl
-                              ? `Liquida ${new Date(p.fechaLiquidacionMl).toLocaleDateString("es-AR")}`
-                              : "Sin fecha de liquidación"}
+                          <div className="text-xs text-muted-foreground flex items-center gap-2">
+                            <span>Liquida</span>
+                            <InlineDateEdit
+                              value={p.fechaLiquidacionMl}
+                              placeholder="Sin fecha"
+                              onSave={(d) => handleDateChange(p.id, "fechaLiquidacionMl", d)}
+                              className="text-xs"
+                            />
                             {liquidacionVencida && (
-                              <Badge className="ml-2 bg-emerald-600 text-white text-xs">Liquidado</Badge>
+                              <Badge className="bg-emerald-600 text-white text-xs">Liquidado</Badge>
                             )}
-                          </p>
+                          </div>
                         </div>
                         <p className="font-bold">${total.toFixed(0)}</p>
                       </div>
@@ -856,16 +878,16 @@ export default function PedidosPage() {
                           </TableCell>
                           <TableCell className="font-medium">${total.toFixed(0)}</TableCell>
                           <TableCell className="text-sm">
-                            {p.fechaLiquidacionMl ? (
-                              <div className="flex items-center gap-2">
-                                {new Date(p.fechaLiquidacionMl).toLocaleDateString("es-AR")}
-                                {liquidacionVencida && (
-                                  <Badge className="bg-emerald-600 text-white text-xs">Liquidado</Badge>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground">Sin fecha</span>
-                            )}
+                            <div className="flex items-center gap-2">
+                              <InlineDateEdit
+                                value={p.fechaLiquidacionMl}
+                                placeholder="Sin fecha"
+                                onSave={(d) => handleDateChange(p.id, "fechaLiquidacionMl", d)}
+                              />
+                              {liquidacionVencida && (
+                                <Badge className="bg-emerald-600 text-white text-xs">Liquidado</Badge>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell>
                             <DropdownMenu>

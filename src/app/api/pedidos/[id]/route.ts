@@ -45,13 +45,23 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    // Actualización parcial (solo estado, prioridad, o ambos — sin items)
+    // Actualización parcial (solo estado, prioridad, fechaLiquidacionMl, fechaEntrega — sin items)
     const keys = Object.keys(body);
-    const camposPartial = ["estado", "prioridad"];
+    const camposPartial = ["estado", "prioridad", "fechaLiquidacionMl", "fechaEntrega"];
     if (keys.length > 0 && keys.every((k) => camposPartial.includes(k))) {
-      const data: Record<string, string> = {};
+      const data: Record<string, unknown> = {};
       if (body.estado) data.estado = body.estado;
       if (body.prioridad) data.prioridad = body.prioridad;
+      if ("fechaLiquidacionMl" in body) {
+        data.fechaLiquidacionMl = body.fechaLiquidacionMl
+          ? new Date(body.fechaLiquidacionMl + "T12:00:00")
+          : null;
+      }
+      if ("fechaEntrega" in body) {
+        data.fechaEntrega = body.fechaEntrega
+          ? new Date(body.fechaEntrega + "T12:00:00")
+          : null;
+      }
       const pedido = await prisma.pedido.update({
         where: { id, tenantId },
         data,
