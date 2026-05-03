@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronRight, AlertTriangle, ShoppingCart, GripVertical, CalendarClock, Clock } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronRight, AlertTriangle, ShoppingCart, GripVertical, CalendarClock, Clock, Copy } from "lucide-react";
 import { toast } from "sonner";
 import {
   DragDropContext,
@@ -163,6 +163,19 @@ export default function PedidosPage() {
     });
     toast.success("Prioridad actualizada");
     fetchPedidos();
+  };
+
+  const handleCopyMlId = async (idMl: string | null) => {
+    if (!idMl) {
+      toast.error("Este pedido no tiene ID de MercadoLibre cargado");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(idMl);
+      toast.success(`ID copiado: ${idMl}`);
+    } catch {
+      toast.error("No se pudo copiar al portapapeles");
+    }
   };
 
   const handleDateChange = async (
@@ -824,6 +837,16 @@ export default function PedidosPage() {
                           </DropdownMenuContent>
                         </DropdownMenu>
                         <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => handleCopyMlId(p.idMercadolibre)}
+                            disabled={!p.idMercadolibre}
+                            title={p.idMercadolibre ? `Copiar ID ML: ${p.idMercadolibre}` : "Sin ID ML cargado"}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(p)}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
@@ -914,6 +937,15 @@ export default function PedidosPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleCopyMlId(p.idMercadolibre)}
+                                disabled={!p.idMercadolibre}
+                                title={p.idMercadolibre ? `Copiar ID ML: ${p.idMercadolibre}` : "Sin ID ML cargado"}
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
                               <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
                                 <Pencil className="h-4 w-4" />
                               </Button>
