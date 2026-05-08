@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
-import { getAuthenticatedTenant } from "@/lib/tenant";
+import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -14,7 +14,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { tenantId } = await getAuthenticatedTenant();
+    const { tenantId } = await getAuthenticatedTenantNonDemo();
     const { id } = await params;
 
     const pedido = await prisma.pedido.findFirst({

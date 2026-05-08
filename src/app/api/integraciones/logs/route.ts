@@ -1,12 +1,12 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
-import { getAuthenticatedTenant } from "@/lib/tenant";
+import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
   try {
-    const { tenantId } = await getAuthenticatedTenant();
+    const { tenantId } = await getAuthenticatedTenantNonDemo();
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get("limit") || "30", 10), 100);
     const origen = searchParams.get("origen");

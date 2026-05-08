@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
-import { getAuthenticatedTenant } from "@/lib/tenant";
+import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { NextResponse } from "next/server";
 
 interface OrphanedSku {
@@ -33,7 +33,7 @@ interface ShopWebhookPayload {
  */
 export async function GET() {
   try {
-    const { tenantId } = await getAuthenticatedTenant();
+    const { tenantId } = await getAuthenticatedTenantNonDemo();
 
     // ─── Stats de modelos ───────────────────────────────
     const [totalActivos, conSku, consolidados, modelosSinSku] = await Promise.all([

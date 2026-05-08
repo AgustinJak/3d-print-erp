@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 
-import { getAuthenticatedTenant } from "@/lib/tenant";
+import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 
@@ -12,7 +12,7 @@ import { randomBytes } from "crypto";
  */
 export async function POST() {
   try {
-    await getAuthenticatedTenant(); // Solo autenticados pueden generar
+    await getAuthenticatedTenantNonDemo(); // Solo autenticados pueden generar
     const secret = `whsec_${randomBytes(32).toString("hex")}`;
     return NextResponse.json({ secret });
   } catch (e) {

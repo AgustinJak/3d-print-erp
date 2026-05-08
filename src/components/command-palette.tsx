@@ -7,8 +7,17 @@ import {
   LayoutDashboard, Tag, Box, ShoppingCart, Factory, Users, Palette,
   DollarSign, Receipt, History, Radar, Search, Plug,
 } from "lucide-react";
+import { useIsDemoTenant } from "@/components/current-user-provider";
 
-const pages = [
+interface PageEntry {
+  name: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  keywords: string;
+  hideOnDemo?: boolean;
+}
+
+const pages: PageEntry[] = [
   { name: "Panel", href: "/", icon: LayoutDashboard, keywords: "dashboard inicio home panel" },
   { name: "Pedidos", href: "/pedidos", icon: ShoppingCart, keywords: "pedidos ordenes ventas" },
   { name: "Produccion", href: "/produccion", icon: Factory, keywords: "produccion cola impresion fabricar" },
@@ -20,12 +29,14 @@ const pages = [
   { name: "Finanzas", href: "/finanzas", icon: DollarSign, keywords: "finanzas dinero ingresos ganancia" },
   { name: "Gastos", href: "/gastos", icon: Receipt, keywords: "gastos costos compras" },
   { name: "Historial", href: "/historial", icon: History, keywords: "historial completados archivo" },
-  { name: "Integraciones", href: "/integraciones", icon: Plug, keywords: "integraciones webhook shop sendero api logs" },
+  { name: "Integraciones", href: "/integraciones", icon: Plug, keywords: "integraciones webhook shop sendero api logs", hideOnDemo: true },
 ];
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
+  const isDemo = useIsDemoTenant();
+  const visiblePages = pages.filter((p) => !(p.hideOnDemo && isDemo));
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -74,7 +85,7 @@ export function CommandPalette() {
               Sin resultados.
             </Command.Empty>
             <Command.Group heading="Navegacion" className="text-xs text-muted-foreground px-2 py-1.5">
-              {pages.map((page) => (
+              {visiblePages.map((page) => (
                 <Command.Item
                   key={page.href}
                   value={`${page.name} ${page.keywords}`}

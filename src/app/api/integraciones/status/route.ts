@@ -1,12 +1,12 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
-import { getAuthenticatedTenant } from "@/lib/tenant";
+import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
-    const { tenantId } = await getAuthenticatedTenant();
+    const { tenantId } = await getAuthenticatedTenantNonDemo();
 
     const [secretConfigured, totalLogs, ultimoLog, totalRevision] = await Promise.all([
       Promise.resolve(Boolean(process.env.SHOP_WEBHOOK_SECRET)),

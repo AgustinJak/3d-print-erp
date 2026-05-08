@@ -33,6 +33,7 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { useIsDemoTenant } from "@/components/current-user-provider";
 
 const navPrincipal = [
   { title: "Panel", href: "/", icon: LayoutDashboard },
@@ -62,6 +63,7 @@ export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
+  const isDemo = useIsDemoTenant();
 
   const handleLogout = async () => {
     const supabase = createClient();
@@ -115,7 +117,7 @@ export function AppSidebar() {
         {renderGroup("Principal", navPrincipal)}
         {renderGroup("Catálogo", navCatalogo)}
         {renderGroup("Negocio", navNegocio)}
-        {renderGroup("Sistema", navSistema)}
+        {!isDemo && renderGroup("Sistema", navSistema)}
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-2">

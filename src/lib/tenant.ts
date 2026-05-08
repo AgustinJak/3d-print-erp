@@ -43,3 +43,22 @@ export async function getAuthenticatedTenant(): Promise<{
 
   return { user: { id: user.id, email: user.email }, tenantId };
 }
+
+/**
+ * Igual que `getAuthenticatedTenant` pero bloquea explícitamente al tenant demo.
+ * Usar en endpoints/funciones que NO deben estar disponibles en la cuenta demo
+ * (ej: integración con shop, generador de secrets, etc.)
+ */
+export async function getAuthenticatedTenantNonDemo(): Promise<{
+  user: { id: string; email?: string };
+  tenantId: string;
+}> {
+  const auth = await getAuthenticatedTenant();
+  if (auth.tenantId === "demo") {
+    throw NextResponse.json(
+      { error: "Esta sección no está disponible en la cuenta demo" },
+      { status: 403 },
+    );
+  }
+  return auth;
+}
