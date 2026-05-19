@@ -90,39 +90,58 @@ export async function GET(request: NextRequest) {
         .filter((g) => !billetera || g.billetera === billetera)
         .reduce((s, g) => s + g.monto, 0);
 
+    // Solo cuenta gastos cuya fecha ya pasó (o es hoy). Las cuotas futuras
+    // NO se descuentan de la billetera hasta que llega su fecha.
+    const sumGastosEjecutados = (gastos: typeof gastosMes, billetera?: string) =>
+      gastos
+        .filter((g) => g.fecha <= ahora)
+        .filter((g) => !billetera || g.billetera === billetera)
+        .reduce((s, g) => s + g.monto, 0);
+
     // ─── Resúmenes mes/año ────────────────────────────────
     const mesData = calcularTotales(pedidosMes);
     const anioData = calcularTotales(pedidosAnio);
 
-    const gastosMesTotal = sumGastos(gastosMes);
-    const gastosMesFab = sumGastos(gastosMes, "fabricacion");
-    const gastosMesEmp = sumGastos(gastosMes, "empresarial");
-    const gastosAnioTotal = sumGastos(gastosAnio);
+    // Para mostrar lo gastado en el mes/año, solo contamos los gastos cuya
+    // fecha ya pasó. Cuotas futuras se ven en "Cuotas en curso".
+    const gastosMesTotal = sumGastosEjecutados(gastosMes);
+    const gastosMesFab = sumGastosEjecutados(gastosMes, "fabricacion");
+    const gastosMesEmp = sumGastosEjecutados(gastosMes, "empresarial");
+    const gastosAnioTotal = sumGastosEjecutados(gastosAnio);
 
     // ─── Billetera Fabricación (acumulado histórico) ──────
+    // El "disponible" solo cuenta cosas que ya pasaron: pedidos completados,
+    // gastos con fecha <= hoy, y transferencias ya hechas. Las cuotas futuras
+    // se ven en "Cuotas en curso" pero no descuentan de la disponibilidad.
     const totalCompletados = calcularTotales(todosCompletados);
     const billeteraFabIngresos = totalCompletados.costoFab; // costo_fab de TODOS los completados
-    const billeteraFabGastos = sumGastos(todosGastos, "fabricacion");
+    const billeteraFabGastosEjecutados = sumGastosEjecutados(todosGastos, "fabricacion");
+    const billeteraFabGastosTodos = sumGastos(todosGastos, "fabricacion"); // total comprometido (incluye futuras)
     const transfeHaciaFab = todasTransferencias
-      .filter((t) => t.hacia === "fabricacion")
+      .filter((t) => t.hacia === "fabricacion" && t.fecha <= ahora)
       .reduce((s, t) => s + t.monto, 0);
     const transfeDesdeFab = todasTransferencias
-      .filter((t) => t.desde === "fabricacion")
+      .filter((t) => t.desde === "fabricacion" && t.fecha <= ahora)
       .reduce((s, t) => s + t.monto, 0);
     const billeteraFabDisponible =
-      billeteraFabIngresos + transfeHaciaFab - billeteraFabGastos - transfeDesdeFab;
+      billeteraFabIngresos + transfeHaciaFab - billeteraFabGastosEjecutados - transfeDesdeFab;
 
     // ─── Billetera Empresarial (acumulado histórico) ──────
     const billeteraEmpIngresos = totalCompletados.ganancia; // ganancia neta de TODOS los completados
-    const billeteraEmpGastos = sumGastos(todosGastos, "empresarial");
+    const billeteraEmpGastosEjecutados = sumGastosEjecutados(todosGastos, "empresarial");
+    const billeteraEmpGastosTodos = sumGastos(todosGastos, "empresarial");
     const transfeHaciaEmp = todasTransferencias
-      .filter((t) => t.hacia === "empresarial")
+      .filter((t) => t.hacia === "empresarial" && t.fecha <= ahora)
       .reduce((s, t) => s + t.monto, 0);
     const transfeDesdeEmp = todasTransferencias
-      .filter((t) => t.desde === "empresarial")
+      .filter((t) => t.desde === "empresarial" && t.fecha <= ahora)
       .reduce((s, t) => s + t.monto, 0);
     const billeteraEmpDisponible =
-      billeteraEmpIngresos + transfeHaciaEmp - billeteraEmpGastos - transfeDesdeEmp;
+      billeteraEmpIngresos + transfeHaciaEmp - billeteraEmpGastosEjecutados - transfeDesdeEmp;
+
+    // Compromisos futuros (cuotas + gastos con fecha posterior a hoy)
+    const compromisosFuturosFab = billeteraFabGastosTodos - billeteraFabGastosEjecutados;
+    const compromisosFuturosEmp = billeteraEmpGastosTodos - billeteraEmpGastosEjecutados;
 
     // ─── Aportado al mes seleccionado ─────────────────────
     let billeteraFabMes = 0;
@@ -398,14 +417,16 @@ export async function GET(request: NextRequest) {
       },
       billeteraFab: {
         acumulado: billeteraFabIngresos + transfeHaciaFab,
-        gastado: billeteraFabGastos,
+        gastado: billeteraFabGastosEjecutados,
+        compromisosFuturos: compromisosFuturosFab,
         transferencias: transfeDesdeFab,
         disponible: billeteraFabDisponible,
         mes: billeteraFabMes,
       },
       billeteraEmp: {
         acumulado: billeteraEmpIngresos + transfeHaciaEmp,
-        gastado: billeteraEmpGastos,
+        gastado: billeteraEmpGastosEjecutados,
+        compromisosFuturos: compromisosFuturosEmp,
         transferencias: transfeDesdeEmp,
         disponible: billeteraEmpDisponible,
         mes: billeteraEmpMes,

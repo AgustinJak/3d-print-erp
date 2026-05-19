@@ -99,6 +99,7 @@ interface FinanzasData {
   billeteraFab: {
     acumulado: number;
     gastado: number;
+    compromisosFuturos: number;
     transferencias: number;
     disponible: number;
     mes: number;
@@ -106,6 +107,7 @@ interface FinanzasData {
   billeteraEmp: {
     acumulado: number;
     gastado: number;
+    compromisosFuturos: number;
     transferencias: number;
     disponible: number;
     mes: number;
@@ -504,6 +506,23 @@ export default function FinanzasPage() {
                   <p className="text-xs text-muted-foreground">Aportado este mes</p>
                   <p className="text-base">{formatMoney(data.billeteraFab.mes)}</p>
                 </div>
+                {data.billeteraFab.compromisosFuturos > 0 && (
+                  <div className="col-span-2 pt-2 border-t border-violet-500/20">
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
+                      Compromisos futuros (cuotas pendientes)
+                    </p>
+                    <p className="text-sm font-medium text-amber-500">
+                      −{formatMoney(data.billeteraFab.compromisosFuturos)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      Aún no se descontó. Disponible proyectado:{" "}
+                      <span className={data.billeteraFab.disponible - data.billeteraFab.compromisosFuturos >= 0 ? "" : "text-red-500"}>
+                        {formatMoney(data.billeteraFab.disponible - data.billeteraFab.compromisosFuturos)}
+                      </span>
+                    </p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -539,6 +558,23 @@ export default function FinanzasPage() {
                   <p className="text-xs text-muted-foreground">Ganancia este mes</p>
                   <p className="text-base">{formatMoney(data.billeteraEmp.mes)}</p>
                 </div>
+                {data.billeteraEmp.compromisosFuturos > 0 && (
+                  <div className="col-span-2 pt-2 border-t border-emerald-500/20">
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
+                      Compromisos futuros (cuotas pendientes)
+                    </p>
+                    <p className="text-sm font-medium text-amber-500">
+                      −{formatMoney(data.billeteraEmp.compromisosFuturos)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      Aún no se descontó. Disponible proyectado:{" "}
+                      <span className={data.billeteraEmp.disponible - data.billeteraEmp.compromisosFuturos >= 0 ? "" : "text-red-500"}>
+                        {formatMoney(data.billeteraEmp.disponible - data.billeteraEmp.compromisosFuturos)}
+                      </span>
+                    </p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
