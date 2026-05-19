@@ -75,12 +75,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "origen y destino no pueden ser iguales" }, { status: 400 });
     }
 
+    const parseFechaLocal = (s: string | undefined) => {
+      if (!s) return new Date();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s + "T12:00:00");
+      return new Date(s);
+    };
+
     const transferencia = await prisma.transferencia.create({
       data: {
         monto,
         desde,
         hacia,
-        fecha: body.fecha ? new Date(body.fecha) : new Date(),
+        fecha: parseFechaLocal(body.fecha),
         descripcion: body.descripcion || null,
         tenantId,
       },

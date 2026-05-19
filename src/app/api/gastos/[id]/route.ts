@@ -37,11 +37,17 @@ export async function PUT(
       return NextResponse.json(updated);
     }
 
+    const parseFechaLocal = (s: string | undefined) => {
+      if (!s) return undefined;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s + "T12:00:00");
+      return new Date(s);
+    };
+
     // Solo esta cuota / gasto individual
     const updated = await prisma.gasto.update({
       where: { id, tenantId },
       data: {
-        fecha: body.fecha ? new Date(body.fecha) : undefined,
+        fecha: parseFechaLocal(body.fecha),
         categoria: body.categoria,
         monto: body.monto !== undefined ? parseFloat(body.monto) : undefined,
         descripcion: body.descripcion !== undefined ? (body.descripcion || null) : undefined,

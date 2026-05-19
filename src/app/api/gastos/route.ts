@@ -60,7 +60,15 @@ export async function POST(request: NextRequest) {
     const { tenantId } = await getAuthenticatedTenant();
     const body = await request.json();
 
-    const fecha = body.fecha ? new Date(body.fecha) : new Date();
+    // Para fechas "YYYY-MM-DD" agregamos T12:00:00 para evitar el shift de UTC.
+    // En AR (UTC-3) un date input sin hora se interpreta como UTC midnight y
+    // retrocede 3hs al día anterior.
+    const parseFechaLocal = (s: string | undefined) => {
+      if (!s) return new Date();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s + "T12:00:00");
+      return new Date(s);
+    };
+    const fecha = parseFechaLocal(body.fecha);
     const categoria = body.categoria;
     const monto = parseFloat(body.monto);
     const descripcion = body.descripcion || null;
@@ -83,7 +91,7 @@ export async function POST(request: NextRequest) {
         );
       }
       const fechaPrimera = body.cuotas.fechaPrimera
-        ? new Date(body.cuotas.fechaPrimera)
+        ? parseFechaLocal(body.cuotas.fechaPrimera)
         : fecha;
       const grupoCuotasId = randomUUID();
       const montoPorCuota = Math.round((monto / cantidad) * 100) / 100;
