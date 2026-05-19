@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import {
   TrendingUp, TrendingDown, DollarSign, ShoppingCart, ArrowLeft, ArrowRight,
   Wallet, Users, Save, Clock, Download, Factory, Building2, ArrowRightLeft,
-  PlusCircle, MinusCircle, Calendar, Trash2,
+  PlusCircle, MinusCircle, Calendar, Trash2, Receipt, Package, ArrowUpRight, ArrowDownRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,6 +55,29 @@ interface Transferencia {
   descripcion: string | null;
 }
 
+interface Movimiento {
+  id: string;
+  fecha: string;
+  tipo: "gasto" | "cuota" | "transferencia" | "aporte" | "retiro" | "pedido";
+  descripcion: string;
+  billetera: string;
+  monto: number;
+  direccion: "entrada" | "salida" | "ambos";
+  meta?: {
+    categoria?: string;
+    cuotaNumero?: number;
+    cuotaTotal?: number;
+    grupoCuotasId?: string;
+    desde?: string;
+    hacia?: string;
+    pedidoId?: string;
+    externoId?: string;
+    aporteFab?: number;
+    aporteEmp?: number;
+    items?: number;
+  };
+}
+
 interface FinanzasData {
   mes: {
     ingresos: number;
@@ -100,6 +123,7 @@ interface FinanzasData {
   cuotasEnCurso: CuotaEnCurso[];
   cuotasPagadasMes: CuotaPagada[];
   transferenciasMes: Transferencia[];
+  movimientos: Movimiento[];
   datosMensuales: {
     mes: string;
     ingresos: number;
@@ -129,6 +153,67 @@ function labelBilletera(b: string) {
   return b;
 }
 
+function getMovimientoConfig(m: { tipo: string; direccion: string; billetera: string }) {
+  switch (m.tipo) {
+    case "gasto":
+      return {
+        Icon: Receipt,
+        bgClass: "bg-red-500/10",
+        iconClass: "text-red-500",
+        amountClass: "text-red-500",
+        sign: "−",
+      };
+    case "cuota":
+      return {
+        Icon: Calendar,
+        bgClass: "bg-blue-500/10",
+        iconClass: "text-blue-500",
+        amountClass: "text-blue-500",
+        sign: "−",
+      };
+    case "transferencia":
+      return {
+        Icon: ArrowRightLeft,
+        bgClass: "bg-purple-500/10",
+        iconClass: "text-purple-500",
+        amountClass: "text-purple-500",
+        sign: "↔",
+      };
+    case "aporte":
+      return {
+        Icon: ArrowDownRight,
+        bgClass: "bg-emerald-500/10",
+        iconClass: "text-emerald-500",
+        amountClass: "text-emerald-500",
+        sign: "+",
+      };
+    case "retiro":
+      return {
+        Icon: ArrowUpRight,
+        bgClass: "bg-amber-500/10",
+        iconClass: "text-amber-500",
+        amountClass: "text-amber-500",
+        sign: "−",
+      };
+    case "pedido":
+      return {
+        Icon: Package,
+        bgClass: "bg-green-500/10",
+        iconClass: "text-green-500",
+        amountClass: "text-emerald-500",
+        sign: "+",
+      };
+    default:
+      return {
+        Icon: Wallet,
+        bgClass: "bg-muted",
+        iconClass: "text-muted-foreground",
+        amountClass: "text-foreground",
+        sign: "",
+      };
+  }
+}
+
 export default function FinanzasPage() {
   const [data, setData] = useState<FinanzasData | null>(null);
   const [mes, setMes] = useState(new Date().getMonth() + 1);
@@ -148,6 +233,10 @@ export default function FinanzasPage() {
     fecha: new Date().toISOString().slice(0, 10),
   });
   const [savingTransfer, setSavingTransfer] = useState(false);
+
+  // Timeline
+  const [tipoFiltro, setTipoFiltro] = useState<"todos" | "gasto" | "cuota" | "transferencia" | "pedido">("todos");
+  const [billeteraFiltro, setBilleteraFiltro] = useState<"todas" | "fabricacion" | "empresarial">("todas");
 
   const fetchData = useCallback(async () => {
     const res = await fetch(`/api/finanzas?mes=${mes}&anio=${anio}`);
@@ -584,68 +673,160 @@ export default function FinanzasPage() {
         </Card>
       )}
 
-      {/* Cuotas pagadas en el mes */}
-      {data.cuotasPagadasMes && data.cuotasPagadasMes.length > 0 && (
+      {/* Historial unificado de movimientos del mes */}
+      {data.movimientos && data.movimientos.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Calendar className="h-4 w-4" /> Cuotas pagadas este mes
-              <span className="text-xs text-muted-foreground font-normal">({data.cuotasPagadasMes.length})</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            {data.cuotasPagadasMes.map((c) => (
-              <div key={c.id} className="flex items-center justify-between text-sm border-b last:border-b-0 pb-1.5">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(c.fecha).toLocaleDateString("es-AR")}
-                  </span>
-                  <span>{(c.descripcion || "").replace(/ \(Cuota \d+\/\d+\)$/, "") || c.categoria}</span>
-                  <Badge variant="outline" className="text-[10px] py-0 px-1 border-blue-500/30 text-blue-500">
-                    {c.cuotaNumero}/{c.cuotaTotal}
-                  </Badge>
-                  <Badge variant="outline" className={`text-[10px] py-0 px-1 ${c.billetera === "empresarial" ? "border-emerald-500/30 text-emerald-500" : "border-violet-500/30 text-violet-500"}`}>
-                    {labelBilletera(c.billetera)}
-                  </Badge>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Calendar className="h-4 w-4" /> Historial del mes
+                <span className="text-xs text-muted-foreground font-normal">
+                  ({data.movimientos.filter((m) => {
+                    if (tipoFiltro !== "todos" && m.tipo !== tipoFiltro && !(tipoFiltro === "transferencia" && (m.tipo === "aporte" || m.tipo === "retiro"))) return false;
+                    if (billeteraFiltro !== "todas" && m.billetera !== billeteraFiltro && m.billetera !== "ambos") {
+                      const desde = m.meta?.desde;
+                      const hacia = m.meta?.hacia;
+                      if (desde !== billeteraFiltro && hacia !== billeteraFiltro) return false;
+                    }
+                    return true;
+                  }).length})
+                </span>
+              </CardTitle>
+              <div className="flex flex-wrap gap-2">
+                <div className="inline-flex rounded-md border text-xs overflow-hidden">
+                  {([
+                    { val: "todos", label: "Todos" },
+                    { val: "gasto", label: "Gastos" },
+                    { val: "cuota", label: "Cuotas" },
+                    { val: "transferencia", label: "Mov." },
+                    { val: "pedido", label: "Pedidos" },
+                  ] as const).map((e, i) => (
+                    <button
+                      key={e.val}
+                      type="button"
+                      onClick={() => setTipoFiltro(e.val)}
+                      className={`px-2 h-7 transition-colors ${
+                        tipoFiltro === e.val ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
+                      } ${i > 0 ? "border-l" : ""}`}
+                    >
+                      {e.label}
+                    </button>
+                  ))}
                 </div>
-                <span className="font-medium">{formatMoney(c.monto)}</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Historial de transferencias del mes */}
-      {data.transferenciasMes && data.transferenciasMes.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <ArrowRightLeft className="h-4 w-4" /> Movimientos del mes
-              <span className="text-xs text-muted-foreground font-normal">({data.transferenciasMes.length})</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            {data.transferenciasMes.map((t) => (
-              <div key={t.id} className="flex items-center justify-between text-sm border-b last:border-b-0 pb-1.5">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(t.fecha).toLocaleDateString("es-AR")}
-                  </span>
-                  <Badge variant="outline" className="text-xs">
-                    {labelBilletera(t.desde)} → {labelBilletera(t.hacia)}
-                  </Badge>
-                  {t.descripcion && (
-                    <span className="text-xs text-muted-foreground">{t.descripcion}</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{formatMoney(t.monto)}</span>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => deleteTransfer(t.id)}>
-                    <Trash2 className="h-3 w-3 text-destructive" />
-                  </Button>
+                <div className="inline-flex rounded-md border text-xs overflow-hidden">
+                  {([
+                    { val: "todas", label: "Todas" },
+                    { val: "fabricacion", label: "Fab" },
+                    { val: "empresarial", label: "Emp" },
+                  ] as const).map((e, i) => (
+                    <button
+                      key={e.val}
+                      type="button"
+                      onClick={() => setBilleteraFiltro(e.val)}
+                      className={`px-2 h-7 transition-colors ${
+                        billeteraFiltro === e.val ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
+                      } ${i > 0 ? "border-l" : ""}`}
+                    >
+                      {e.label}
+                    </button>
+                  ))}
                 </div>
               </div>
-            ))}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            {data.movimientos
+              .filter((m) => {
+                if (tipoFiltro !== "todos") {
+                  if (tipoFiltro === "transferencia" && !(m.tipo === "transferencia" || m.tipo === "aporte" || m.tipo === "retiro")) return false;
+                  if (tipoFiltro !== "transferencia" && m.tipo !== tipoFiltro) return false;
+                }
+                if (billeteraFiltro !== "todas" && m.billetera !== billeteraFiltro && m.billetera !== "ambos") {
+                  const desde = m.meta?.desde;
+                  const hacia = m.meta?.hacia;
+                  if (desde !== billeteraFiltro && hacia !== billeteraFiltro) return false;
+                }
+                return true;
+              })
+              .map((m) => {
+                const config = getMovimientoConfig(m);
+                return (
+                  <div
+                    key={m.id}
+                    className="flex items-center gap-3 py-2 border-b last:border-b-0 hover:bg-muted/30 -mx-2 px-2 rounded-md transition-colors"
+                  >
+                    {/* Icon */}
+                    <div className={`shrink-0 h-8 w-8 rounded-md flex items-center justify-center ${config.bgClass}`}>
+                      <config.Icon className={`h-4 w-4 ${config.iconClass}`} />
+                    </div>
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{m.descripcion}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(m.fecha).toLocaleDateString("es-AR")}
+                        </span>
+                        {m.tipo === "cuota" && m.meta?.cuotaNumero && (
+                          <Badge variant="outline" className="text-[10px] py-0 px-1 border-blue-500/30 text-blue-500">
+                            {m.meta.cuotaNumero}/{m.meta.cuotaTotal}
+                          </Badge>
+                        )}
+                        {m.meta?.categoria && (
+                          <span className="text-xs text-muted-foreground">{m.meta.categoria}</span>
+                        )}
+                        {m.tipo === "transferencia" && m.meta?.desde && (
+                          <Badge variant="outline" className="text-[10px] py-0 px-1">
+                            {labelBilletera(m.meta.desde)} → {labelBilletera(m.meta.hacia!)}
+                          </Badge>
+                        )}
+                        {m.tipo !== "transferencia" && m.tipo !== "aporte" && m.tipo !== "retiro" && m.billetera !== "ambos" && (
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] py-0 px-1 ${
+                              m.billetera === "empresarial"
+                                ? "border-emerald-500/30 text-emerald-500"
+                                : "border-violet-500/30 text-violet-500"
+                            }`}
+                          >
+                            {labelBilletera(m.billetera)}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    {/* Monto */}
+                    <div className="text-right shrink-0">
+                      {m.tipo === "pedido" && m.meta ? (
+                        <>
+                          <p className="text-sm font-semibold text-emerald-500">+{formatMoney(m.monto)}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            Fab: +{formatMoney(m.meta.aporteFab || 0)} · Emp: +{formatMoney(m.meta.aporteEmp || 0)}
+                          </p>
+                        </>
+                      ) : (
+                        <p className={`text-sm font-semibold ${config.amountClass}`}>
+                          {config.sign}{formatMoney(m.monto)}
+                        </p>
+                      )}
+                    </div>
+                    {/* Delete button para transferencias */}
+                    {(m.tipo === "transferencia" || m.tipo === "aporte" || m.tipo === "retiro") && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => deleteTransfer(m.id.replace(/^t-/, ""))}
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            {data.movimientos.length === 0 && (
+              <p className="text-center text-sm text-muted-foreground py-6">
+                Sin movimientos registrados este mes
+              </p>
+            )}
           </CardContent>
         </Card>
       )}

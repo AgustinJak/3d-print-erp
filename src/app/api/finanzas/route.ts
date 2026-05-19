@@ -241,6 +241,112 @@ export async function GET(request: NextRequest) {
         grupoCuotasId: g.grupoCuotasId,
       }));
 
+    // ─── Timeline unificada de movimientos del mes ────────
+    type Movimiento = {
+      id: string;
+      fecha: Date;
+      tipo: "gasto" | "cuota" | "transferencia" | "aporte" | "retiro" | "pedido";
+      descripcion: string;
+      billetera: string;             // billetera principal afectada
+      monto: number;                 // siempre positivo
+      direccion: "entrada" | "salida" | "ambos";
+      meta?: Record<string, unknown>; // datos extra para mostrar
+    };
+
+    const movimientos: Movimiento[] = [];
+
+    // Gastos individuales (no cuotas)
+    gastosMes
+      .filter((g) => !g.grupoCuotasId)
+      .forEach((g) => {
+        movimientos.push({
+          id: `g-${g.id}`,
+          fecha: g.fecha,
+          tipo: "gasto",
+          descripcion: g.descripcion || g.categoria,
+          billetera: g.billetera,
+          monto: g.monto,
+          direccion: "salida",
+          meta: { categoria: g.categoria },
+        });
+      });
+
+    // Cuotas ejecutadas en el mes
+    gastosMes
+      .filter((g) => g.grupoCuotasId)
+      .forEach((g) => {
+        movimientos.push({
+          id: `c-${g.id}`,
+          fecha: g.fecha,
+          tipo: "cuota",
+          descripcion: (g.descripcion || g.categoria).replace(/ \(Cuota \d+\/\d+\)$/, ""),
+          billetera: g.billetera,
+          monto: g.monto,
+          direccion: "salida",
+          meta: {
+            categoria: g.categoria,
+            cuotaNumero: g.cuotaNumero,
+            cuotaTotal: g.cuotaTotal,
+            grupoCuotasId: g.grupoCuotasId,
+          },
+        });
+      });
+
+    // Transferencias / aportes / retiros del mes
+    todasTransferencias
+      .filter((t) => t.fecha >= inicioMes && t.fecha < finMes)
+      .forEach((t) => {
+        const esAporte = t.desde === "externo";
+        const esRetiro = t.hacia === "externo";
+        const tipo: Movimiento["tipo"] =
+          esAporte ? "aporte" :
+          esRetiro ? "retiro" :
+          "transferencia";
+        movimientos.push({
+          id: `t-${t.id}`,
+          fecha: t.fecha,
+          tipo,
+          descripcion: t.descripcion || (
+            esAporte ? "Aporte de capital" :
+            esRetiro ? "Retiro de capital" :
+            `Transferencia ${t.desde} → ${t.hacia}`
+          ),
+          billetera: esAporte ? t.hacia : t.desde, // dónde se ve la "salida" o "entrada principal"
+          monto: t.monto,
+          direccion: esAporte ? "entrada" : esRetiro ? "salida" : "ambos",
+          meta: { desde: t.desde, hacia: t.hacia },
+        });
+      });
+
+    // Pedidos completados del mes — aportan a las dos billeteras
+    pedidosMes.forEach((p) => {
+      let aporteFab = 0;
+      let aporteEmp = 0;
+      p.items.forEach((it) => {
+        aporteFab += it.costoUnitario * it.cantidad;
+        aporteEmp += it.precioUnitario * it.cantidad + it.ajusteManual - it.costoUnitario * it.cantidad;
+      });
+      const totalPedido = aporteFab + aporteEmp;
+      movimientos.push({
+        id: `p-${p.id}`,
+        fecha: p.updatedAt,
+        tipo: "pedido",
+        descripcion: `Pedido completado${p.externoId ? ` ${p.externoId}` : ""}`,
+        billetera: "ambos",
+        monto: totalPedido,
+        direccion: "entrada",
+        meta: {
+          pedidoId: p.id,
+          externoId: p.externoId,
+          aporteFab,
+          aporteEmp,
+          items: p.items.length,
+        },
+      });
+    });
+
+    movimientos.sort((a, b) => b.fecha.getTime() - a.fecha.getTime());
+
     // ─── Pedidos en curso ─────────────────────────────────
     const pedidosEnCurso = await prisma.pedido.findMany({
       where: { tenantId, estado: { notIn: ["COMPLETADO", "CANCELADO"] } },
@@ -320,6 +426,7 @@ export async function GET(request: NextRequest) {
       cuotasEnCurso,
       cuotasPagadasMes,
       transferenciasMes,
+      movimientos,
     });
   } catch (e) {
     if (e instanceof NextResponse) return e;
