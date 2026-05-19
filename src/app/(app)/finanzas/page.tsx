@@ -1,16 +1,58 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, ArrowLeft, ArrowRight, Wallet, Users, Save, Clock, Download } from "lucide-react";
+import {
+  TrendingUp, TrendingDown, DollarSign, ShoppingCart, ArrowLeft, ArrowRight,
+  Wallet, Users, Save, Clock, Download, Factory, Building2, ArrowRightLeft,
+  PlusCircle, MinusCircle, Calendar, Trash2,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { TableSkeleton } from "@/components/data-loading";
+import { toast } from "sonner";
 
 interface Socio {
   nombre: string;
   porcentaje: number;
+}
+
+interface CuotaEnCurso {
+  grupoCuotasId: string;
+  descripcion: string;
+  categoria: string;
+  billetera: string;
+  montoCuota: number;
+  cuotaTotal: number;
+  pagadas: number;
+  pendientes: number;
+  proximaCuotaFecha: string | null;
+  proximaCuotaNumero: number | null;
+  totalAcumulado: number;
+}
+
+interface CuotaPagada {
+  id: string;
+  fecha: string;
+  monto: number;
+  categoria: string;
+  descripcion: string | null;
+  billetera: string;
+  cuotaNumero: number | null;
+  cuotaTotal: number | null;
+  grupoCuotasId: string | null;
+}
+
+interface Transferencia {
+  id: string;
+  fecha: string;
+  monto: number;
+  desde: string;
+  hacia: string;
+  descripcion: string | null;
 }
 
 interface FinanzasData {
@@ -18,7 +60,10 @@ interface FinanzasData {
     ingresos: number;
     costoFab: number;
     gastos: number;
+    gastosFab: number;
+    gastosEmp: number;
     ganancia: number;
+    gananciaNeta: number;
     totalPedidos: number;
   };
   anio: {
@@ -31,6 +76,14 @@ interface FinanzasData {
   billeteraFab: {
     acumulado: number;
     gastado: number;
+    transferencias: number;
+    disponible: number;
+    mes: number;
+  };
+  billeteraEmp: {
+    acumulado: number;
+    gastado: number;
+    transferencias: number;
     disponible: number;
     mes: number;
   };
@@ -44,11 +97,16 @@ interface FinanzasData {
     cantidad: number;
     porEstado: Record<string, { cantidad: number; total: number }>;
   };
+  cuotasEnCurso: CuotaEnCurso[];
+  cuotasPagadasMes: CuotaPagada[];
+  transferenciasMes: Transferencia[];
   datosMensuales: {
     mes: string;
     ingresos: number;
     costoFab: number;
     gastos: number;
+    gastosFab: number;
+    gastosEmp: number;
     ganancia: number;
   }[];
   mesActual: number;
@@ -64,6 +122,13 @@ const MESES = [
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
 
+function labelBilletera(b: string) {
+  if (b === "fabricacion") return "Fabricación";
+  if (b === "empresarial") return "Empresarial";
+  if (b === "externo") return "Externo";
+  return b;
+}
+
 export default function FinanzasPage() {
   const [data, setData] = useState<FinanzasData | null>(null);
   const [mes, setMes] = useState(new Date().getMonth() + 1);
@@ -72,6 +137,17 @@ export default function FinanzasPage() {
   const [socios, setSocios] = useState<Socio[]>([]);
   const [savingConfig, setSavingConfig] = useState(false);
   const [configDirty, setConfigDirty] = useState(false);
+
+  // Transferencia dialog
+  const [transferDialog, setTransferDialog] = useState(false);
+  const [transferForm, setTransferForm] = useState({
+    desde: "empresarial",
+    hacia: "fabricacion",
+    monto: "",
+    descripcion: "",
+    fecha: new Date().toISOString().slice(0, 10),
+  });
+  const [savingTransfer, setSavingTransfer] = useState(false);
 
   const fetchData = useCallback(async () => {
     const res = await fetch(`/api/finanzas?mes=${mes}&anio=${anio}`);
@@ -117,6 +193,47 @@ export default function FinanzasPage() {
     else setMes(mes + 1);
   };
 
+  const openTransfer = (preset?: "transferir" | "aporte" | "retiro") => {
+    if (preset === "aporte") {
+      setTransferForm({ desde: "externo", hacia: "empresarial", monto: "", descripcion: "Aporte del socio", fecha: new Date().toISOString().slice(0, 10) });
+    } else if (preset === "retiro") {
+      setTransferForm({ desde: "empresarial", hacia: "externo", monto: "", descripcion: "Retiro del socio", fecha: new Date().toISOString().slice(0, 10) });
+    } else {
+      setTransferForm({ desde: "empresarial", hacia: "fabricacion", monto: "", descripcion: "", fecha: new Date().toISOString().slice(0, 10) });
+    }
+    setTransferDialog(true);
+  };
+
+  const submitTransfer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (transferForm.desde === transferForm.hacia) {
+      toast.error("Origen y destino no pueden ser iguales");
+      return;
+    }
+    setSavingTransfer(true);
+    const res = await fetch("/api/transferencias", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(transferForm),
+    });
+    setSavingTransfer(false);
+    if (!res.ok) {
+      const err = await res.json();
+      toast.error(err.error || "Error al guardar");
+      return;
+    }
+    toast.success("Movimiento registrado");
+    setTransferDialog(false);
+    fetchData();
+  };
+
+  const deleteTransfer = async (id: string) => {
+    if (!confirm("¿Eliminar este movimiento?")) return;
+    await fetch(`/api/transferencias/${id}`, { method: "DELETE" });
+    toast.success("Movimiento eliminado");
+    fetchData();
+  };
+
   if (initialLoading) return <TableSkeleton cols={4} />;
   if (!data) return null;
 
@@ -129,20 +246,20 @@ export default function FinanzasPage() {
     lines.push(["Ingresos del mes", data.mes.ingresos].join(sep));
     lines.push(["Costo de fabricación", data.mes.costoFab].join(sep));
     lines.push(["Ganancia bruta", data.mes.ganancia].join(sep));
-    lines.push(["Gastos operativos", data.mes.gastos].join(sep));
-    lines.push(["Ganancia neta", data.mes.ganancia - data.mes.gastos].join(sep));
+    lines.push(["Gastos fabricación", data.mes.gastosFab].join(sep));
+    lines.push(["Gastos empresariales", data.mes.gastosEmp].join(sep));
+    lines.push(["Ganancia neta", data.mes.gananciaNeta].join(sep));
     lines.push(["Pedidos completados", data.mes.totalPedidos].join(sep));
     lines.push("");
-    lines.push("Pedidos en curso");
-    lines.push(["Total a cobrar", data.pedidosEnCurso.total].join(sep));
-    lines.push(["Ya cobrado (señas)", data.pedidosEnCurso.cobrado].join(sep));
-    lines.push(["Pendiente de cobro", data.pedidosEnCurso.pendiente].join(sep));
-    lines.push(["Costo fab. en curso", data.pedidosEnCurso.costoFab].join(sep));
-    lines.push("");
-    lines.push("Billetera de fabricación");
+    lines.push("Billetera de Fabricación");
     lines.push(["Disponible", data.billeteraFab.disponible].join(sep));
-    lines.push(["Acumulado total", data.billeteraFab.acumulado].join(sep));
-    lines.push(["Gastado en reinversión", data.billeteraFab.gastado].join(sep));
+    lines.push(["Acumulado", data.billeteraFab.acumulado].join(sep));
+    lines.push(["Gastado", data.billeteraFab.gastado].join(sep));
+    lines.push("");
+    lines.push("Billetera Empresarial");
+    lines.push(["Disponible", data.billeteraEmp.disponible].join(sep));
+    lines.push(["Acumulado", data.billeteraEmp.acumulado].join(sep));
+    lines.push(["Gastado", data.billeteraEmp.gastado].join(sep));
     if (Object.keys(data.gastosPorCategoria).length > 0) {
       lines.push("");
       lines.push("Gastos por categoría");
@@ -158,7 +275,7 @@ export default function FinanzasPage() {
       lines.push([d.mes, d.ingresos, d.costoFab, d.gastos, d.ganancia].join(sep));
     });
 
-    const BOM = "\uFEFF";
+    const BOM = "﻿";
     const blob = new Blob([BOM + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -170,10 +287,10 @@ export default function FinanzasPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-bold">Finanzas</h1>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={exportarCSV} className="gap-1.5 mr-2" title="Exportar resumen">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={exportarCSV} className="gap-1.5" title="Exportar resumen">
             <Download className="h-4 w-4" /> Exportar
           </Button>
           <Button variant="outline" size="icon" onClick={() => setAnio(anio - 1)} title="Año anterior">
@@ -249,38 +366,95 @@ export default function FinanzasPage() {
         </CardContent>
       </Card>
 
-      {/* Billetera de Fabricación */}
-      <Card className="border-violet-500/30 bg-violet-500/5">
-        <CardContent className="pt-4 pb-4">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 rounded-lg bg-violet-500/10">
-              <Wallet className="h-5 w-5 text-violet-500" />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-violet-500">Billetera de Fabricación</h2>
-              <p className="text-xs text-muted-foreground">Dinero reservado para el negocio. Todos los gastos se descuentan de acá.</p>
-            </div>
+      {/* Billeteras + acciones */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h2 className="text-sm font-medium text-muted-foreground">Billeteras</h2>
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="outline" size="sm" onClick={() => openTransfer("transferir")} className="gap-1.5">
+              <ArrowRightLeft className="h-3.5 w-3.5" /> Transferir
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => openTransfer("aporte")} className="gap-1.5 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10">
+              <PlusCircle className="h-3.5 w-3.5" /> Aporte
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => openTransfer("retiro")} className="gap-1.5 text-red-500 border-red-500/30 hover:bg-red-500/10">
+              <MinusCircle className="h-3.5 w-3.5" /> Retiro
+            </Button>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <p className="text-xs text-muted-foreground">Disponible</p>
-              <p className="text-2xl font-bold text-violet-500">{formatMoney(data.billeteraFab.disponible)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Acumulado total</p>
-              <p className="text-lg font-semibold">{formatMoney(data.billeteraFab.acumulado)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Gastado en reinversión</p>
-              <p className="text-lg font-semibold">{formatMoney(data.billeteraFab.gastado)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Aportado este mes</p>
-              <p className="text-lg font-semibold">{formatMoney(data.billeteraFab.mes)}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Billetera Fabricación */}
+          <Card className="border-violet-500/30 bg-violet-500/5">
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="p-2 rounded-lg bg-violet-500/10">
+                  <Factory className="h-5 w-5 text-violet-500" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-violet-500">Billetera de Fabricación</h2>
+                  <p className="text-xs text-muted-foreground">Para reinversión: filamento, impresoras, herramientas</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Disponible</p>
+                  <p className={`text-2xl font-bold ${data.billeteraFab.disponible >= 0 ? "text-violet-500" : "text-red-500"}`}>
+                    {formatMoney(data.billeteraFab.disponible)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Acumulado</p>
+                  <p className="text-lg font-semibold">{formatMoney(data.billeteraFab.acumulado)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Gastado en reinversión</p>
+                  <p className="text-base">{formatMoney(data.billeteraFab.gastado)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Aportado este mes</p>
+                  <p className="text-base">{formatMoney(data.billeteraFab.mes)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Billetera Empresarial */}
+          <Card className="border-emerald-500/30 bg-emerald-500/5">
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="p-2 rounded-lg bg-emerald-500/10">
+                  <Building2 className="h-5 w-5 text-emerald-500" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-emerald-500">Billetera Empresarial</h2>
+                  <p className="text-xs text-muted-foreground">Ganancia neta acumulada: alquiler, sueldos, retiros</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Disponible</p>
+                  <p className={`text-2xl font-bold ${data.billeteraEmp.disponible >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                    {formatMoney(data.billeteraEmp.disponible)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Acumulado</p>
+                  <p className="text-lg font-semibold">{formatMoney(data.billeteraEmp.acumulado)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Gastado</p>
+                  <p className="text-base">{formatMoney(data.billeteraEmp.gastado)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Ganancia este mes</p>
+                  <p className="text-base">{formatMoney(data.billeteraEmp.mes)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
 
       {/* Resumen mensual */}
       <div>
@@ -304,73 +478,179 @@ export default function FinanzasPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">{formatMoney(data.mes.costoFab)}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Va a la billetera de fabricación
-              </p>
+              <p className="text-xs text-muted-foreground mt-1">Va a fabricación</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <DollarSign className="h-4 w-4" /> Ganancia
+                <DollarSign className="h-4 w-4" /> Ganancia bruta
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className={`text-2xl font-bold ${data.mes.ganancia >= 0 ? "text-green-600" : "text-red-500"}`}>
                 {formatMoney(data.mes.ganancia)}
               </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Ingresos - Costo fabricación
-              </p>
+              <p className="text-xs text-muted-foreground mt-1">Va a empresarial</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <ShoppingCart className="h-4 w-4" /> Pedidos
+                <DollarSign className="h-4 w-4" /> Ganancia neta
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold">{data.mes.totalPedidos}</p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {/* Resumen anual */}
-      <div>
-        <h2 className="text-sm font-medium text-muted-foreground mb-3">Resumen anual ({anio})</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground">Ingresos</p>
-              <p className="text-xl font-bold">{formatMoney(data.anio.ingresos)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground">Costo fabricación</p>
-              <p className="text-xl font-bold">{formatMoney(data.anio.costoFab)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground">Ganancia</p>
-              <p className={`text-xl font-bold ${data.anio.ganancia >= 0 ? "text-green-600" : "text-red-500"}`}>
-                {formatMoney(data.anio.ganancia)}
+              <p className={`text-2xl font-bold ${data.mes.gananciaNeta >= 0 ? "text-green-600" : "text-red-500"}`}>
+                {formatMoney(data.mes.gananciaNeta)}
               </p>
+              <p className="text-xs text-muted-foreground mt-1">Después de gastos empresariales</p>
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground">Pedidos</p>
-              <p className="text-xl font-bold">{data.anio.totalPedidos}</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-3">
+          <Card className="bg-muted/30">
+            <CardContent className="pt-3 pb-3">
+              <p className="text-xs text-muted-foreground flex items-center gap-1"><Factory className="h-3 w-3" /> Gastos fabricación</p>
+              <p className="text-lg font-semibold text-violet-500">{formatMoney(data.mes.gastosFab)}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-muted/30">
+            <CardContent className="pt-3 pb-3">
+              <p className="text-xs text-muted-foreground flex items-center gap-1"><Building2 className="h-3 w-3" /> Gastos empresariales</p>
+              <p className="text-lg font-semibold text-emerald-500">{formatMoney(data.mes.gastosEmp)}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-muted/30">
+            <CardContent className="pt-3 pb-3">
+              <p className="text-xs text-muted-foreground flex items-center gap-1"><ShoppingCart className="h-3 w-3" /> Pedidos completados</p>
+              <p className="text-lg font-semibold">{data.mes.totalPedidos}</p>
             </CardContent>
           </Card>
         </div>
       </div>
 
-      {/* Gráfico de barras: Ingresos, Costo fab, Gastos, Ganancia */}
+      {/* Cuotas en curso */}
+      {data.cuotasEnCurso && data.cuotasEnCurso.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Calendar className="h-4 w-4" /> Cuotas en curso
+              <span className="text-xs text-muted-foreground font-normal">({data.cuotasEnCurso.length})</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {data.cuotasEnCurso.map((c) => {
+              const pctPagada = c.cuotaTotal > 0 ? (c.pagadas / c.cuotaTotal) * 100 : 0;
+              return (
+                <div key={c.grupoCuotasId} className="rounded-md border p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{c.descripcion || c.categoria}</p>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                        <Badge variant="outline" className="text-xs">{c.categoria}</Badge>
+                        <Badge variant="outline" className={`text-xs ${c.billetera === "empresarial" ? "border-emerald-500/30 text-emerald-500" : "border-violet-500/30 text-violet-500"}`}>
+                          {labelBilletera(c.billetera)}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold">{formatMoney(c.totalAcumulado)}</p>
+                      <p className="text-xs text-muted-foreground">{formatMoney(c.montoCuota)}/cuota</p>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">
+                        {c.pagadas}/{c.cuotaTotal} pagadas · {c.pendientes} pendientes
+                      </span>
+                      {c.proximaCuotaFecha && (
+                        <span className="text-muted-foreground">
+                          próxima: cuota {c.proximaCuotaNumero} el {new Date(c.proximaCuotaFecha).toLocaleDateString("es-AR")}
+                        </span>
+                      )}
+                    </div>
+                    <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500 transition-all"
+                        style={{ width: `${pctPagada}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Cuotas pagadas en el mes */}
+      {data.cuotasPagadasMes && data.cuotasPagadasMes.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Calendar className="h-4 w-4" /> Cuotas pagadas este mes
+              <span className="text-xs text-muted-foreground font-normal">({data.cuotasPagadasMes.length})</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1.5">
+            {data.cuotasPagadasMes.map((c) => (
+              <div key={c.id} className="flex items-center justify-between text-sm border-b last:border-b-0 pb-1.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(c.fecha).toLocaleDateString("es-AR")}
+                  </span>
+                  <span>{(c.descripcion || "").replace(/ \(Cuota \d+\/\d+\)$/, "") || c.categoria}</span>
+                  <Badge variant="outline" className="text-[10px] py-0 px-1 border-blue-500/30 text-blue-500">
+                    {c.cuotaNumero}/{c.cuotaTotal}
+                  </Badge>
+                  <Badge variant="outline" className={`text-[10px] py-0 px-1 ${c.billetera === "empresarial" ? "border-emerald-500/30 text-emerald-500" : "border-violet-500/30 text-violet-500"}`}>
+                    {labelBilletera(c.billetera)}
+                  </Badge>
+                </div>
+                <span className="font-medium">{formatMoney(c.monto)}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Historial de transferencias del mes */}
+      {data.transferenciasMes && data.transferenciasMes.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ArrowRightLeft className="h-4 w-4" /> Movimientos del mes
+              <span className="text-xs text-muted-foreground font-normal">({data.transferenciasMes.length})</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1.5">
+            {data.transferenciasMes.map((t) => (
+              <div key={t.id} className="flex items-center justify-between text-sm border-b last:border-b-0 pb-1.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(t.fecha).toLocaleDateString("es-AR")}
+                  </span>
+                  <Badge variant="outline" className="text-xs">
+                    {labelBilletera(t.desde)} → {labelBilletera(t.hacia)}
+                  </Badge>
+                  {t.descripcion && (
+                    <span className="text-xs text-muted-foreground">{t.descripcion}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{formatMoney(t.monto)}</span>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => deleteTransfer(t.id)}>
+                    <Trash2 className="h-3 w-3 text-destructive" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Gráfico anual */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Resumen mensual ({anio})</CardTitle>
@@ -475,7 +755,7 @@ export default function FinanzasPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {socios.map((socio, idx) => {
-              const ganancia = data.mes.ganancia;
+              const ganancia = data.mes.gananciaNeta;
               const sueldo = ganancia > 0 ? ganancia * (socio.porcentaje / 100) : 0;
               const initials = socio.nombre.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
               const colors = ["bg-blue-500", "bg-emerald-500"];
@@ -492,7 +772,7 @@ export default function FinanzasPage() {
                           {formatMoney(sueldo)}
                         </p>
                         {ganancia <= 0 && (
-                          <p className="text-xs text-muted-foreground mt-1">Sin ganancia este mes</p>
+                          <p className="text-xs text-muted-foreground mt-1">Sin ganancia neta este mes</p>
                         )}
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
@@ -520,10 +800,83 @@ export default function FinanzasPage() {
             })}
           </div>
           <p className="text-xs text-muted-foreground mt-2">
-            Los porcentajes se suman al 100%. Basado en la ganancia del mes seleccionado.
+            Los porcentajes se suman al 100%. Basado en la ganancia NETA del mes (después de gastos empresariales).
           </p>
         </div>
       )}
+
+      {/* Dialog: transferencia / aporte / retiro */}
+      <Dialog open={transferDialog} onOpenChange={setTransferDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {transferForm.desde === "externo" ? "Aporte de capital" :
+               transferForm.hacia === "externo" ? "Retiro de capital" :
+               "Transferencia entre billeteras"}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={submitTransfer} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Desde</Label>
+                <select
+                  value={transferForm.desde}
+                  onChange={(e) => setTransferForm({ ...transferForm, desde: e.target.value })}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="empresarial">Empresarial</option>
+                  <option value="fabricacion">Fabricación</option>
+                  <option value="externo">Externo (aporte)</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Hacia</Label>
+                <select
+                  value={transferForm.hacia}
+                  onChange={(e) => setTransferForm({ ...transferForm, hacia: e.target.value })}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="fabricacion">Fabricación</option>
+                  <option value="empresarial">Empresarial</option>
+                  <option value="externo">Externo (retiro)</option>
+                </select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Monto *</Label>
+              <Input
+                type="number"
+                step="1"
+                value={transferForm.monto}
+                onChange={(e) => setTransferForm({ ...transferForm, monto: e.target.value })}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Fecha</Label>
+              <Input
+                type="date"
+                value={transferForm.fecha}
+                onChange={(e) => setTransferForm({ ...transferForm, fecha: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Descripción</Label>
+              <Input
+                value={transferForm.descripcion}
+                onChange={(e) => setTransferForm({ ...transferForm, descripcion: e.target.value })}
+                placeholder="Motivo del movimiento"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setTransferDialog(false)}>Cancelar</Button>
+              <Button type="submit" disabled={savingTransfer}>
+                {savingTransfer ? "Guardando..." : "Confirmar"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

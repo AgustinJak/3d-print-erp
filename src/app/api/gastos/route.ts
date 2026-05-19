@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,6 +11,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const mes = searchParams.get("mes");
     const anio = searchParams.get("anio");
+    const billetera = searchParams.get("billetera");
 
     let where: Record<string, unknown> = { tenantId };
     if (mes && anio) {
@@ -20,6 +22,10 @@ export async function GET(request: NextRequest) {
       const inicio = new Date(parseInt(anio), 0, 1);
       const fin = new Date(parseInt(anio) + 1, 0, 1);
       where = { tenantId, fecha: { gte: inicio, lt: fin } };
+    }
+
+    if (billetera && billetera !== "todas") {
+      where.billetera = billetera;
     }
 
     const gastos = await prisma.gasto.findMany({
@@ -33,16 +39,94 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/**
+ * Crea un gasto único o N cuotas si se pasa el flag `cuotas`.
+ *
+ * Body:
+ *  {
+ *    fecha?: string,
+ *    categoria: string,
+ *    monto: number,        // monto TOTAL si hay cuotas, monto único si no
+ *    descripcion?: string,
+ *    billetera?: "fabricacion" | "empresarial",   // default fabricacion
+ *    cuotas?: {
+ *      cantidad: number,         // N cuotas
+ *      fechaPrimera?: string,    // default = hoy
+ *    }
+ *  }
+ */
 export async function POST(request: NextRequest) {
   try {
     const { tenantId } = await getAuthenticatedTenant();
     const body = await request.json();
+
+    const fecha = body.fecha ? new Date(body.fecha) : new Date();
+    const categoria = body.categoria;
+    const monto = parseFloat(body.monto);
+    const descripcion = body.descripcion || null;
+    const billetera = body.billetera === "empresarial" ? "empresarial" : "fabricacion";
+
+    if (Number.isNaN(monto) || monto <= 0) {
+      return NextResponse.json({ error: "monto inválido" }, { status: 400 });
+    }
+    if (!categoria) {
+      return NextResponse.json({ error: "categoría requerida" }, { status: 400 });
+    }
+
+    // ─── Modo cuotas ─────────────────────────────────────
+    if (body.cuotas && typeof body.cuotas === "object") {
+      const cantidad = parseInt(body.cuotas.cantidad, 10);
+      if (!Number.isFinite(cantidad) || cantidad < 2 || cantidad > 60) {
+        return NextResponse.json(
+          { error: "Cantidad de cuotas debe estar entre 2 y 60" },
+          { status: 400 }
+        );
+      }
+      const fechaPrimera = body.cuotas.fechaPrimera
+        ? new Date(body.cuotas.fechaPrimera)
+        : fecha;
+      const grupoCuotasId = randomUUID();
+      const montoPorCuota = Math.round((monto / cantidad) * 100) / 100;
+
+      const data = Array.from({ length: cantidad }).map((_, i) => {
+        const fechaCuota = new Date(fechaPrimera);
+        fechaCuota.setMonth(fechaCuota.getMonth() + i);
+        return {
+          fecha: fechaCuota,
+          categoria,
+          monto: montoPorCuota,
+          descripcion: descripcion
+            ? `${descripcion} (Cuota ${i + 1}/${cantidad})`
+            : `Cuota ${i + 1}/${cantidad}`,
+          billetera,
+          grupoCuotasId,
+          cuotaNumero: i + 1,
+          cuotaTotal: cantidad,
+          tenantId,
+        };
+      });
+
+      await prisma.gasto.createMany({ data });
+
+      // Devolver todas las cuotas creadas
+      const cuotas = await prisma.gasto.findMany({
+        where: { tenantId, grupoCuotasId },
+        orderBy: { cuotaNumero: "asc" },
+      });
+      return NextResponse.json(
+        { grupoCuotasId, cuotas, total: monto, cantidad },
+        { status: 201 }
+      );
+    }
+
+    // ─── Modo gasto único ─────────────────────────────────
     const gasto = await prisma.gasto.create({
       data: {
-        fecha: body.fecha ? new Date(body.fecha) : new Date(),
-        categoria: body.categoria,
-        monto: parseFloat(body.monto),
-        descripcion: body.descripcion || null,
+        fecha,
+        categoria,
+        monto,
+        descripcion,
+        billetera,
         tenantId,
       },
     });

@@ -272,16 +272,38 @@ model SugerenciaProducto {
 // ==================== GASTOS ====================
 
 model Gasto {
+  id            String   @id @default(cuid())
+  fecha         DateTime @default(now())
+  categoria     String
+  monto         Float
+  descripcion   String?
+  billetera     String   @default("fabricacion")              // "fabricacion" | "empresarial"
+  grupoCuotasId String?  @map("grupo_cuotas_id")              // UUID común para cuotas del mismo gasto
+  cuotaNumero   Int?     @map("cuota_numero")                 // 1, 2, 3...
+  cuotaTotal    Int?     @map("cuota_total")                  // N total de cuotas
+  tenantId      String   @default("sendero3d") @map("tenant_id")
+  creadoEn      DateTime @default(now()) @map("creado_en")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId, billetera, fecha])
+  @@index([tenantId, grupoCuotasId])
+  @@map("gastos")
+}
+
+// ==================== TRANSFERENCIAS ENTRE BILLETERAS ====================
+
+model Transferencia {
   id          String   @id @default(cuid())
   fecha       DateTime @default(now())
-  categoria   String
   monto       Float
+  desde       String                                          // "fabricacion" | "empresarial" | "externo"
+  hacia       String                                          // "fabricacion" | "empresarial" | "externo"
   descripcion String?
   tenantId    String   @default("sendero3d") @map("tenant_id")
   creadoEn    DateTime @default(now()) @map("creado_en")
-  updatedAt   DateTime @updatedAt @map("updated_at")
 
-  @@map("gastos")
+  @@index([tenantId, fecha])
+  @@map("transferencias")
 }
 
 // ==================== INTEGRACIÓN / WEBHOOKS ====================
