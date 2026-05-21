@@ -90,11 +90,22 @@ export async function GET(request: NextRequest) {
         .filter((g) => !billetera || g.billetera === billetera)
         .reduce((s, g) => s + g.monto, 0);
 
+    // Compara dos fechas a nivel de día. Necesario porque los gastos se
+    // guardan al mediodía local (T12:00) y `ahora` puede ser anterior — sin
+    // esto, un gasto creado hoy temprano queda como "futuro".
+    const inicioDia = (d: Date) => {
+      const n = new Date(d);
+      n.setHours(0, 0, 0, 0);
+      return n.getTime();
+    };
+    const hoyInicio = inicioDia(ahora);
+    const yaOcurrio = (fecha: Date) => inicioDia(fecha) <= hoyInicio;
+
     // Solo cuenta gastos cuya fecha ya pasó (o es hoy). Las cuotas futuras
     // NO se descuentan de la billetera hasta que llega su fecha.
     const sumGastosEjecutados = (gastos: typeof gastosMes, billetera?: string) =>
       gastos
-        .filter((g) => g.fecha <= ahora)
+        .filter((g) => yaOcurrio(g.fecha))
         .filter((g) => !billetera || g.billetera === billetera)
         .reduce((s, g) => s + g.monto, 0);
 
@@ -118,10 +129,10 @@ export async function GET(request: NextRequest) {
     const billeteraFabGastosEjecutados = sumGastosEjecutados(todosGastos, "fabricacion");
     const billeteraFabGastosTodos = sumGastos(todosGastos, "fabricacion"); // total comprometido (incluye futuras)
     const transfeHaciaFab = todasTransferencias
-      .filter((t) => t.hacia === "fabricacion" && t.fecha <= ahora)
+      .filter((t) => t.hacia === "fabricacion" && yaOcurrio(t.fecha))
       .reduce((s, t) => s + t.monto, 0);
     const transfeDesdeFab = todasTransferencias
-      .filter((t) => t.desde === "fabricacion" && t.fecha <= ahora)
+      .filter((t) => t.desde === "fabricacion" && yaOcurrio(t.fecha))
       .reduce((s, t) => s + t.monto, 0);
     const billeteraFabDisponible =
       billeteraFabIngresos + transfeHaciaFab - billeteraFabGastosEjecutados - transfeDesdeFab;
@@ -131,10 +142,10 @@ export async function GET(request: NextRequest) {
     const billeteraEmpGastosEjecutados = sumGastosEjecutados(todosGastos, "empresarial");
     const billeteraEmpGastosTodos = sumGastos(todosGastos, "empresarial");
     const transfeHaciaEmp = todasTransferencias
-      .filter((t) => t.hacia === "empresarial" && t.fecha <= ahora)
+      .filter((t) => t.hacia === "empresarial" && yaOcurrio(t.fecha))
       .reduce((s, t) => s + t.monto, 0);
     const transfeDesdeEmp = todasTransferencias
-      .filter((t) => t.desde === "empresarial" && t.fecha <= ahora)
+      .filter((t) => t.desde === "empresarial" && yaOcurrio(t.fecha))
       .reduce((s, t) => s + t.monto, 0);
     const billeteraEmpDisponible =
       billeteraEmpIngresos + transfeHaciaEmp - billeteraEmpGastosEjecutados - transfeDesdeEmp;
@@ -224,7 +235,7 @@ export async function GET(request: NextRequest) {
         };
       }
       grupos[k].totalAcumulado += g.monto;
-      if (g.fecha <= ahora) {
+      if (yaOcurrio(g.fecha)) {
         grupos[k].pagadas += 1;
       } else {
         grupos[k].pendientes += 1;
