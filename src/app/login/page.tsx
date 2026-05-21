@@ -80,14 +80,6 @@ export default function LoginPage() {
             {loading ? "Ingresando..." : "Ingresar"}
           </Button>
         </form>
-
-        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-1.5">
-          <p className="text-sm font-medium text-primary">Cuenta demo para probar</p>
-          <div className="text-sm text-muted-foreground space-y-0.5">
-            <p>Mail: <code className="text-foreground font-mono">demo@sendero3d.com</code></p>
-            <p>Password: <code className="text-foreground font-mono">demo1234</code></p>
-          </div>
-        </div>
       </div>
     </div>
   );
