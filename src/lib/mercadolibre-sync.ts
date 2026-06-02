@@ -64,7 +64,13 @@ function packKey(order: MlOrder): string {
  *  - pedidos creados por esta integración (externoId = "ML-<id>")
  *  - pedidos cargados manualmente (id_mercadolibre con/ sin espacios)
  */
-type ExistingPedido = { id: string; estado: string; tieneFechaLiq: boolean };
+type ExistingPedido = {
+  id: string;
+  estado: string;
+  tieneFechaLiq: boolean;
+  esIntegracion: boolean; // creado por la integración (externoId ML-*)
+  tieneNeto: boolean;     // ya tiene el desglose de costos calculado
+};
 
 async function findExistingPedido(
   tenantId: string,
@@ -73,13 +79,16 @@ async function findExistingPedido(
   // 1. Por externoId (los que crea esta integración)
   const porExterno = await prisma.pedido.findFirst({
     where: { tenantId, externoId: `ML-${orderId}` },
-    select: { id: true, estado: true, fechaLiquidacionMl: true },
+    select: { id: true, estado: true, fechaLiquidacionMl: true, origenExterno: true },
   });
   if (porExterno) {
+    const oe = (porExterno.origenExterno ?? {}) as Record<string, unknown>;
     return {
       id: porExterno.id,
       estado: porExterno.estado,
       tieneFechaLiq: porExterno.fechaLiquidacionMl != null,
+      esIntegracion: true,
+      tieneNeto: oe.costos_ml != null,
     };
   }
 
@@ -95,7 +104,13 @@ async function findExistingPedido(
   `;
   const row = rows[0];
   if (!row) return null;
-  return { id: row.id, estado: row.estado, tieneFechaLiq: row.fecha_liquidacion_ml != null };
+  return {
+    id: row.id,
+    estado: row.estado,
+    tieneFechaLiq: row.fecha_liquidacion_ml != null,
+    esIntegracion: false, // cargado a mano → no lo tocamos
+    tieneNeto: true,
+  };
 }
 
 function mapEstadoMl(orderStatus: string): "CONFIRMADO" | "CANCELADO" {
@@ -170,8 +185,22 @@ export async function processMlOrderGroup(
 
   const existente = await findExistingPedido(tenantId, key);
 
-  // Ya existe: solo actualizamos la fecha de liquidación si falta
+  // Ya existe
   if (existente) {
+    // Pedido de la integración al que le falta el neto (creado por una versión
+    // anterior): recalculamos y actualizamos precio + desglose, preservando
+    // estado/prioridad/fechas que el usuario haya tocado.
+    if (existente.esIntegracion && !existente.tieneNeto) {
+      const costos = await calcularCostosMl(tenantId, orders);
+      await ajustarNetoPedidoDesdeLista(existente.id, costos);
+      const fechaLiq = await resolverFechaLiquidacionGrupo(tenantId, orders);
+      if (fechaLiq && !existente.tieneFechaLiq) {
+        await prisma.pedido.update({ where: { id: existente.id }, data: { fechaLiquidacionMl: fechaLiq } });
+      }
+      return { action: "updated", pedidoId: existente.id, estado: existente.estado, warnings, reason: "neto_aplicado" };
+    }
+
+    // Solo actualizamos la fecha de liquidación si falta
     if (existente.tieneFechaLiq) {
       return { action: "skipped_existing", pedidoId: existente.id, estado: existente.estado, warnings, reason: "pedido_ya_existe" };
     }
@@ -252,8 +281,10 @@ export async function processMlOrderGroup(
         });
         costoExtraVariantes += match.costoFabAdicional;
       } else {
+        // La variante de ML (color/tamaño elegido por el comprador) no coincide
+        // con una variante del modelo. Se guarda igual para que se vea qué
+        // imprimir, pero NO marca revisión manual (es info, no un problema).
         variantesMatched.push({ nombre: attr.value_name, mlAtributo: attr.name, matched: false });
-        warnings.push(`Variante sin match en "${modelo.nombre}": "${attr.value_name}"`);
       }
     }
 
@@ -408,26 +439,71 @@ export async function calcularCostosMl(
   return { precioProductos, comision, envio, neto, factorNeto };
 }
 
+const DESGLOSE_MARKER = "💰 Desglose ML:";
+
+function buildDesglose(costos: CostosMl): string {
+  const fmt = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`;
+  return [
+    DESGLOSE_MARKER,
+    `  Precio productos: ${fmt(costos.precioProductos)}`,
+    `  Comisión ML: -${fmt(costos.comision)}`,
+    `  Envío (vendedor): -${fmt(costos.envio)}`,
+    `  Neto recibido: ${fmt(costos.neto)}`,
+  ].join("\n");
+}
+
 function buildNotas(order: MlOrder, key: string, warnings: string[], costos?: CostosMl): string {
   const lines: string[] = [`🛒 Venta Mercado Libre: ${key}`];
   if (order.buyer.nickname) lines.push(`👤 ${order.buyer.nickname}`);
   if (order.pack_id) lines.push(`📦 Pack: ${order.pack_id}`);
-  if (costos) {
-    const fmt = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`;
-    lines.push(
-      "",
-      "💰 Desglose ML:",
-      `  Precio productos: ${fmt(costos.precioProductos)}`,
-      `  Comisión ML: -${fmt(costos.comision)}`,
-      `  Envío (vendedor): -${fmt(costos.envio)}`,
-      `  Neto recibido: ${fmt(costos.neto)}`
-    );
-  }
+  if (costos) lines.push("", buildDesglose(costos));
   if (warnings.length > 0) {
     lines.push("", "⚠️ Revisar manualmente:");
     warnings.forEach((w) => lines.push(`  • ${w}`));
   }
   return lines.join("\n");
+}
+
+/**
+ * Aplica el neto a un pedido cuyos items tienen el precio de LISTA (creado por
+ * una versión anterior sin el cálculo). Multiplica por el factor y guarda el
+ * desglose. Preserva estado/prioridad/fechas.
+ */
+async function ajustarNetoPedidoDesdeLista(pedidoId: string, costos: CostosMl): Promise<void> {
+  const pedido = await prisma.pedido.findUnique({
+    where: { id: pedidoId },
+    include: { items: true },
+  });
+  if (!pedido) return;
+
+  const oe = (pedido.origenExterno ?? {}) as Record<string, unknown>;
+  // Notas: quitar un desglose previo si lo hubiera y agregar el nuevo
+  const notasBase = (pedido.notas || "").split(`\n\n${DESGLOSE_MARKER}`)[0].split(`\n${DESGLOSE_MARKER}`)[0].trimEnd();
+  const notasNuevas = `${notasBase}\n\n${buildDesglose(costos)}`;
+
+  await prisma.$transaction([
+    ...pedido.items.map((it) =>
+      prisma.itemPedido.update({
+        where: { id: it.id },
+        data: { precioUnitario: Math.round(it.precioUnitario * costos.factorNeto) },
+      })
+    ),
+    prisma.pedido.update({
+      where: { id: pedidoId },
+      data: {
+        notas: notasNuevas,
+        origenExterno: {
+          ...oe,
+          costos_ml: {
+            precio_productos: costos.precioProductos,
+            comision: costos.comision,
+            envio: costos.envio,
+            neto: costos.neto,
+          },
+        } as Prisma.InputJsonValue,
+      },
+    }),
+  ]);
 }
 
 /**
