@@ -89,6 +89,26 @@ interface MlStatus {
   webhookUrl: string;
   totalEventos: number;
   ultimoEvento: { recibidoEn: string; estado: string; evento: string } | null;
+  publicacionesSinMapear: number;
+}
+
+interface MlPublicacion {
+  id: string;
+  mla: string;
+  titulo: string | null;
+  modeloId: string | null;
+  modeloNombre: string | null;
+  ignorar: boolean;
+  vecesVista: number;
+  sugerencia: { id: string; nombre: string; score: number } | null;
+}
+
+interface MlPublicacionesData {
+  sinMapear: MlPublicacion[];
+  mapeadas: MlPublicacion[];
+  ignoradas: MlPublicacion[];
+  modelos: Array<{ id: string; nombre: string; serie: string | null }>;
+  stats: { sinMapear: number; mapeadas: number; ignoradas: number };
 }
 
 type Tab = "estado" | "mercadolibre" | "logs" | "revision" | "skus";
@@ -101,6 +121,7 @@ function IntegracionesContent() {
   const [tab, setTab] = useState<Tab>("estado");
   const [status, setStatus] = useState<ShopStatus | null>(null);
   const [mlStatus, setMlStatus] = useState<MlStatus | null>(null);
+  const [mlPubs, setMlPubs] = useState<MlPublicacionesData | null>(null);
   const [mlBusy, setMlBusy] = useState<null | "sync" | "disconnect">(null);
   const [logs, setLogs] = useState<WebhookLog[]>([]);
   const [pedidosRevision, setPedidosRevision] = useState<PedidoRevision[]>([]);
@@ -112,9 +133,10 @@ function IntegracionesContent() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [statusRes, mlRes, logsRes, revRes, skusRes] = await Promise.all([
+    const [statusRes, mlRes, pubsRes, logsRes, revRes, skusRes] = await Promise.all([
       fetch("/api/integraciones/status"),
       fetch("/api/ml/status"),
+      fetch("/api/ml/publicaciones"),
       fetch("/api/integraciones/logs?limit=50"),
       fetch("/api/integraciones/pedidos-revision"),
       fetch("/api/integraciones/skus-audit"),
@@ -122,6 +144,7 @@ function IntegracionesContent() {
     const statusJson = await statusRes.json();
     setStatus(statusJson.shop);
     setMlStatus(await mlRes.json());
+    setMlPubs(pubsRes.ok ? await pubsRes.json() : null);
     setLogs(await logsRes.json());
     setPedidosRevision(await revRes.json());
     setSkusAudit(await skusRes.json());
@@ -173,13 +196,45 @@ function IntegracionesContent() {
       }
       const s = data.stats;
       toast.success(
-        `Sincronización lista: ${s.creadas} nuevas, ${s.actualizadas} actualizadas, ${s.ya_existian} ya existían${s.errores ? `, ${s.errores} con error` : ""}`
+        `Sincronización lista: ${s.creadas} nuevas, ${s.actualizadas} actualizadas, ${s.ya_existian} ya existían`
       );
+      if (s.ignoradas > 0) {
+        toast.info(`${s.ignoradas} órdenes ignoradas (otro negocio o publicaciones por mapear)`);
+      }
       fetchAll();
     } catch {
       toast.error("Error al sincronizar");
     } finally {
       setMlBusy(null);
+    }
+  };
+
+  const asignarPublicacion = async (mla: string, modeloId: string) => {
+    if (!modeloId) return;
+    const res = await fetch("/api/ml/publicaciones", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mla, modeloId }),
+    });
+    if (res.ok) {
+      toast.success("Publicación mapeada");
+      fetchAll();
+    } else {
+      toast.error("Error al asignar");
+    }
+  };
+
+  const ignorarPublicacion = async (mla: string) => {
+    const res = await fetch("/api/ml/publicaciones", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mla, ignorar: true }),
+    });
+    if (res.ok) {
+      toast.success("Publicación marcada como otro negocio");
+      fetchAll();
+    } else {
+      toast.error("Error al ignorar");
     }
   };
 
@@ -236,9 +291,13 @@ function IntegracionesContent() {
         </TabBtn>
         <TabBtn active={tab === "mercadolibre"} onClick={() => setTab("mercadolibre")}>
           <Store className="h-4 w-4 mr-1.5" /> Mercado Libre
-          {mlStatus?.connected && (
+          {mlStatus && mlStatus.publicacionesSinMapear > 0 ? (
+            <Badge className="ml-1.5 h-5 px-1.5 bg-amber-500/20 text-amber-500 border-amber-500/30 hover:bg-amber-500/20">
+              {mlStatus.publicacionesSinMapear}
+            </Badge>
+          ) : mlStatus?.connected ? (
             <span className="ml-1.5 h-2 w-2 rounded-full bg-emerald-500" />
-          )}
+          ) : null}
         </TabBtn>
         <TabBtn active={tab === "logs"} onClick={() => setTab("logs")}>
           <Eye className="h-4 w-4 mr-1.5" /> Logs
@@ -473,6 +532,55 @@ function IntegracionesContent() {
               </p>
             </div>
           </Card>
+
+          {/* Mapeo de publicaciones */}
+          {mlStatus.connected && mlPubs && (
+            <Card className="overflow-hidden">
+              <div className="p-4 border-b">
+                <h2 className="font-semibold flex items-center gap-2">
+                  <Tags className="h-4 w-4 text-amber-500" />
+                  Publicaciones por mapear
+                  {mlPubs.stats.sinMapear > 0 && (
+                    <Badge className="h-5 px-1.5 bg-amber-500/20 text-amber-500 border-amber-500/30 hover:bg-amber-500/20">
+                      {mlPubs.stats.sinMapear}
+                    </Badge>
+                  )}
+                </h2>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Estas publicaciones aparecieron en pedidos pero todavía no están asociadas a un modelo.
+                  Asigná cada una a su modelo (o marcala como otro negocio). Después volvé a sincronizar
+                  para que los pedidos entren.
+                </p>
+              </div>
+
+              {mlPubs.sinMapear.length === 0 ? (
+                <div className="p-6 text-center text-sm text-muted-foreground">
+                  <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-emerald-500" />
+                  No hay publicaciones pendientes de mapear.
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {mlPubs.sinMapear.map((pub) => (
+                    <PublicacionMapRow
+                      key={pub.id}
+                      pub={pub}
+                      modelos={mlPubs.modelos}
+                      onAsignar={asignarPublicacion}
+                      onIgnorar={ignorarPublicacion}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Resumen de ya mapeadas / ignoradas */}
+              {(mlPubs.stats.mapeadas > 0 || mlPubs.stats.ignoradas > 0) && (
+                <div className="p-3 border-t bg-muted/30 text-xs text-muted-foreground flex gap-4">
+                  <span><CheckCircle2 className="h-3 w-3 inline mr-1 text-emerald-500" />{mlPubs.stats.mapeadas} mapeadas</span>
+                  <span><XCircle className="h-3 w-3 inline mr-1" />{mlPubs.stats.ignoradas} ignoradas (otro negocio)</span>
+                </div>
+              )}
+            </Card>
+          )}
         </div>
       )}
 
@@ -852,6 +960,71 @@ export default function IntegracionesPage() {
 }
 
 /* ─── Subcomponents ───────────────────────────────────── */
+
+function PublicacionMapRow({
+  pub,
+  modelos,
+  onAsignar,
+  onIgnorar,
+}: {
+  pub: MlPublicacion;
+  modelos: Array<{ id: string; nombre: string; serie: string | null }>;
+  onAsignar: (mla: string, modeloId: string) => void;
+  onIgnorar: (mla: string) => void;
+}) {
+  const [seleccion, setSeleccion] = useState<string>(pub.sugerencia?.id || "");
+
+  return (
+    <div className="p-3 space-y-2 hover:bg-muted/20 transition-colors">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">{pub.titulo || pub.mla}</p>
+          <div className="flex items-center gap-2 flex-wrap mt-0.5">
+            <code className="text-[10px] font-mono text-muted-foreground">{pub.mla}</code>
+            <span className="text-[10px] text-muted-foreground">
+              · visto en {pub.vecesVista} {pub.vecesVista === 1 ? "pedido" : "pedidos"}
+            </span>
+            {pub.sugerencia && (
+              <Badge className="h-4 px-1.5 text-[10px] bg-blue-500/15 text-blue-500 border-blue-500/30 hover:bg-blue-500/20">
+                Sugerencia: {pub.sugerencia.nombre} ({Math.round(pub.sugerencia.score * 100)}%)
+              </Badge>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <select
+          value={seleccion}
+          onChange={(e) => setSeleccion(e.target.value)}
+          className="flex-1 min-w-[200px] rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+        >
+          <option value="">— Elegí un modelo —</option>
+          {modelos.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.nombre}{m.serie ? ` (${m.serie})` : ""}
+            </option>
+          ))}
+        </select>
+        <Button
+          size="sm"
+          disabled={!seleccion}
+          onClick={() => onAsignar(pub.mla, seleccion)}
+        >
+          <Check className="h-3.5 w-3.5 mr-1.5" /> Asignar
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onIgnorar(pub.mla)}
+          title="No es de este negocio (ej: juguete)"
+        >
+          <XCircle className="h-3.5 w-3.5 mr-1.5" /> Otro negocio
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (

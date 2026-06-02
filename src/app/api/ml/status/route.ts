@@ -14,12 +14,15 @@ export async function GET() {
       process.env.ML_CLIENT_ID && process.env.ML_CLIENT_SECRET && process.env.ML_REDIRECT_URI
     );
 
-    const [totalEventos, ultimoEvento] = await Promise.all([
+    const [totalEventos, ultimoEvento, sinMapear] = await Promise.all([
       prisma.webhookLog.count({ where: { tenantId, origen: "mercadolibre" } }),
       prisma.webhookLog.findFirst({
         where: { tenantId, origen: "mercadolibre" },
         orderBy: { recibidoEn: "desc" },
         select: { recibidoEn: true, estado: true, evento: true },
+      }),
+      prisma.publicacionMl.count({
+        where: { tenantId, modeloId: null, ignorar: false },
       }),
     ]);
 
@@ -37,6 +40,7 @@ export async function GET() {
       webhookUrl: "/api/webhooks/mercadolibre",
       totalEventos,
       ultimoEvento,
+      publicacionesSinMapear: sinMapear,
     });
   } catch (e) {
     if (e instanceof NextResponse) return e;

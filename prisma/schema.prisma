@@ -104,6 +104,7 @@ model Modelo {
 
   consolidadoEn        Modelo?  @relation("Consolidacion", fields: [consolidadoEnId], references: [id], onDelete: SetNull)
   consolidaciones      Modelo[] @relation("Consolidacion")
+  publicacionesMl      PublicacionMl[]
 
   @@unique([tenantId, sku])
   @@map("modelos")
@@ -341,4 +342,25 @@ model CuentaMercadolibre {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("cuentas_ml")
+}
+
+// ==================== MAPEO PUBLICACIONES ML → MODELO ====================
+
+model PublicacionMl {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  mla          String                                  // ID de publicación ML (MLA...)
+  modeloId     String?  @map("modelo_id")              // modelo asociado (null = sin mapear)
+  ignorar      Boolean  @default(false)                // true = no es de este negocio (ej: juguete)
+  titulo       String?                                 // título de la publicación (cache)
+  ultimoMla    String?  @map("ultimo_pedido")          // último order_id donde apareció
+  vecesVista   Int      @default(1) @map("veces_vista")
+  creadoEn     DateTime @default(now()) @map("creado_en")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  modelo Modelo? @relation(fields: [modeloId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, mla])
+  @@index([tenantId, modeloId])
+  @@map("publicaciones_ml")
 }

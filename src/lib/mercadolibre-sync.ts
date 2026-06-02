@@ -153,98 +153,115 @@ export async function processMlOrder(
     return { action: "ignored", warnings, reason: "orden_cancelada" };
   }
 
+  // ── Resolver items por MLA (FUERA de transacción para que la cola de
+  //    publicaciones sin mapear persista aunque el pedido no se cree) ──
+  const itemsData: Array<{
+    modeloId: string;
+    cantidad: number;
+    precioUnitario: number;
+    costoUnitario: number;
+    ajusteManual: number;
+    variantesInfo: Prisma.InputJsonValue;
+  }> = [];
+
+  let itemsIgnorados = 0; // productos de otro negocio (ej: juguetes)
+  let itemsSinMapear = 0; // publicaciones que faltan mapear
+
+  for (const oi of order.order_items) {
+    const mla = oi.item.id;
+    const titulo = oi.item.title;
+
+    const mapeo = await prisma.publicacionMl.findUnique({
+      where: { tenantId_mla: { tenantId, mla } },
+    });
+
+    // Publicación marcada como "ignorar" (otro negocio) → saltear
+    if (mapeo?.ignorar) {
+      itemsIgnorados++;
+      continue;
+    }
+
+    // Sin mapear → registrar/actualizar en la cola y saltear
+    if (!mapeo || !mapeo.modeloId) {
+      itemsSinMapear++;
+      await prisma.publicacionMl.upsert({
+        where: { tenantId_mla: { tenantId, mla } },
+        create: { tenantId, mla, titulo, ultimoMla: orderId },
+        update: { titulo, ultimoMla: orderId, vecesVista: { increment: 1 } },
+      });
+      warnings.push(`Publicación sin mapear: "${titulo}" (${mla})`);
+      continue;
+    }
+
+    // Mapeada → traer el modelo
+    const modelo = await prisma.modelo.findFirst({
+      where: { tenantId, id: mapeo.modeloId },
+      include: { variantes: true },
+    });
+    if (!modelo) {
+      itemsSinMapear++;
+      warnings.push(`Modelo mapeado no encontrado para "${titulo}" (${mla})`);
+      continue;
+    }
+
+    // Variantes desde variation_attributes (ej: "Tamaño: 65cm")
+    const variantesMatched: Array<Record<string, unknown>> = [];
+    let costoExtraVariantes = 0;
+    for (const attr of oi.item.variation_attributes || []) {
+      const target = normalizeForMatch(attr.value_name);
+      const match = modelo.variantes.find((v) => normalizeForMatch(v.nombre) === target);
+      if (match) {
+        variantesMatched.push({
+          nombre: match.nombre,
+          mlAtributo: attr.name,
+          matched: true,
+          varianteId: match.id,
+          costoFabAdicional: match.costoFabAdicional,
+        });
+        costoExtraVariantes += match.costoFabAdicional;
+      } else {
+        variantesMatched.push({ nombre: attr.value_name, mlAtributo: attr.name, matched: false });
+        warnings.push(`Variante sin match en "${modelo.nombre}": "${attr.value_name}"`);
+      }
+    }
+
+    itemsData.push({
+      modeloId: modelo.id,
+      cantidad: oi.quantity,
+      precioUnitario: oi.unit_price,
+      costoUnitario: modelo.costoFab + costoExtraVariantes,
+      ajusteManual: 0,
+      variantesInfo: variantesMatched as unknown as Prisma.InputJsonValue,
+    });
+  }
+
+  // Ningún item mapeó: NO es un error, simplemente la orden no es de este
+  // negocio (todo ignorado) o falta mapear sus publicaciones.
+  if (itemsData.length === 0) {
+    return {
+      action: "ignored",
+      warnings,
+      reason:
+        itemsSinMapear > 0
+          ? `publicaciones_sin_mapear (${itemsSinMapear})`
+          : `otro_negocio (${itemsIgnorados} ignorados)`,
+    };
+  }
+
   const fechaLiquidacion = await resolverFechaLiquidacion(tenantId, order);
 
   const result = await prisma.$transaction(async (tx) => {
-    // ── Cliente: buscar por nombre, si no crear ──
+    // Cliente: buscar por nombre, si no crear
     const nombre = buyerNombre(order.buyer);
     let cliente = await tx.cliente.findFirst({
       where: { tenantId, nombre: { equals: nombre, mode: "insensitive" }, plataforma: "mercadolibre" },
     });
     if (!cliente) {
-      cliente = await tx.cliente.create({
-        data: { tenantId, nombre, plataforma: "mercadolibre" },
-      });
-    }
-
-    // ── Items: SKU → modelo, variation_attributes → variantes ──
-    const itemsData: Array<{
-      modeloId: string;
-      cantidad: number;
-      precioUnitario: number;
-      costoUnitario: number;
-      ajusteManual: number;
-      variantesInfo: Prisma.InputJsonValue;
-    }> = [];
-
-    for (const oi of order.order_items) {
-      const sku = oi.item.seller_sku?.trim() || null;
-      const titulo = oi.item.title;
-
-      let modelo = null;
-      if (sku) {
-        modelo = await tx.modelo.findFirst({
-          where: { tenantId, sku, consolidadoEnId: null },
-          include: { variantes: true },
-        });
-      }
-      if (!modelo) {
-        modelo = await tx.modelo.findFirst({
-          where: {
-            tenantId,
-            consolidadoEnId: null,
-            nombre: { equals: titulo, mode: "insensitive" },
-          },
-          include: { variantes: true },
-        });
-      }
-
-      if (!modelo) {
-        warnings.push(`Producto sin match: "${titulo}" (SKU: ${sku || "—"})`);
-        continue;
-      }
-
-      // Variantes desde variation_attributes (ej: "Tamaño: 65cm")
-      const variantesMatched: Array<Record<string, unknown>> = [];
-      let costoExtraVariantes = 0;
-      for (const attr of oi.item.variation_attributes || []) {
-        const target = normalizeForMatch(attr.value_name);
-        const match = modelo.variantes.find((v) => normalizeForMatch(v.nombre) === target);
-        if (match) {
-          variantesMatched.push({
-            nombre: match.nombre,
-            mlAtributo: attr.name,
-            matched: true,
-            varianteId: match.id,
-            costoFabAdicional: match.costoFabAdicional,
-          });
-          costoExtraVariantes += match.costoFabAdicional;
-        } else {
-          variantesMatched.push({
-            nombre: attr.value_name,
-            mlAtributo: attr.name,
-            matched: false,
-          });
-          warnings.push(`Variante sin match en "${modelo.nombre}": "${attr.value_name}"`);
-        }
-      }
-
-      itemsData.push({
-        modeloId: modelo.id,
-        cantidad: oi.quantity,
-        precioUnitario: oi.unit_price,
-        costoUnitario: modelo.costoFab + costoExtraVariantes,
-        ajusteManual: 0,
-        variantesInfo: variantesMatched as unknown as Prisma.InputJsonValue,
-      });
-    }
-
-    if (itemsData.length === 0) {
-      throw new Error("ningún item de la orden ML pudo mapearse a modelos del inventario");
+      cliente = await tx.cliente.create({ data: { tenantId, nombre, plataforma: "mercadolibre" } });
     }
 
     const necesitaRevision = warnings.length > 0;
-    const pedido = await tx.pedido.create({
+    return tx.pedido.create({
       data: {
         tenantId,
         clienteId: cliente.id,
@@ -273,16 +290,9 @@ export async function processMlOrder(
       },
       select: { id: true, estado: true },
     });
-
-    return pedido;
   });
 
-  return {
-    action: "created",
-    pedidoId: result.id,
-    estado: result.estado,
-    warnings,
-  };
+  return { action: "created", pedidoId: result.id, estado: result.estado, warnings };
 }
 
 function buildNotas(order: MlOrder, warnings: string[]): string {
