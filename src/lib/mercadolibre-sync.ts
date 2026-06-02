@@ -5,6 +5,7 @@ import {
   getPayment,
   getPack,
   getShipmentCosts,
+  getShipment,
   type MlOrder,
 } from "@/lib/mercadolibre";
 import type { Prisma } from "@/generated/prisma";
@@ -68,8 +69,9 @@ type ExistingPedido = {
   id: string;
   estado: string;
   tieneFechaLiq: boolean;
-  esIntegracion: boolean; // creado por la integración (externoId ML-*)
-  tieneNeto: boolean;     // ya tiene el desglose de costos calculado
+  esIntegracion: boolean;    // creado por la integración (externoId ML-*)
+  tieneNeto: boolean;        // ya tiene el desglose de costos calculado
+  tieneFechaDespacho: boolean; // ya tiene la fecha real de despacho de ML
 };
 
 async function findExistingPedido(
@@ -89,6 +91,7 @@ async function findExistingPedido(
       tieneFechaLiq: porExterno.fechaLiquidacionMl != null,
       esIntegracion: true,
       tieneNeto: oe.costos_ml != null,
+      tieneFechaDespacho: oe.fecha_despacho_ml != null,
     };
   }
 
@@ -110,6 +113,7 @@ async function findExistingPedido(
     tieneFechaLiq: row.fecha_liquidacion_ml != null,
     esIntegracion: false, // cargado a mano → no lo tocamos
     tieneNeto: true,
+    tieneFechaDespacho: true,
   };
 }
 
@@ -187,17 +191,24 @@ export async function processMlOrderGroup(
 
   // Ya existe
   if (existente) {
-    // Pedido de la integración al que le falta el neto (creado por una versión
-    // anterior): recalculamos y actualizamos precio + desglose, preservando
-    // estado/prioridad/fechas que el usuario haya tocado.
-    if (existente.esIntegracion && !existente.tieneNeto) {
-      const costos = await calcularCostosMl(tenantId, orders);
-      await ajustarNetoPedidoDesdeLista(existente.id, costos);
+    // Pedido de la integración al que le falta el neto o la fecha real de
+    // despacho (creado por una versión anterior): lo completamos sin perder
+    // estado/prioridad que el usuario haya tocado.
+    if (existente.esIntegracion && (!existente.tieneNeto || !existente.tieneFechaDespacho)) {
+      const fechaDespacho = await resolverFechaDespacho(tenantId, orders);
+      if (!existente.tieneNeto) {
+        // Falta el neto: recalcular y aplicar al precio de lista + fecha
+        const costos = await calcularCostosMl(tenantId, orders);
+        await ajustarNetoPedidoDesdeLista(existente.id, costos, fechaDespacho);
+      } else if (fechaDespacho) {
+        // Ya tiene neto, solo falta la fecha de despacho
+        await actualizarFechaDespacho(existente.id, fechaDespacho);
+      }
       const fechaLiq = await resolverFechaLiquidacionGrupo(tenantId, orders);
       if (fechaLiq && !existente.tieneFechaLiq) {
         await prisma.pedido.update({ where: { id: existente.id }, data: { fechaLiquidacionMl: fechaLiq } });
       }
-      return { action: "updated", pedidoId: existente.id, estado: existente.estado, warnings, reason: "neto_aplicado" };
+      return { action: "updated", pedidoId: existente.id, estado: existente.estado, warnings, reason: "datos_ml_completados" };
     }
 
     // Solo actualizamos la fecha de liquidación si falta
@@ -323,6 +334,7 @@ export async function processMlOrderGroup(
   const nombre = buyerNombre(buyer);
 
   const fechaLiquidacion = await resolverFechaLiquidacionGrupo(tenantId, orders);
+  const fechaDespacho = await resolverFechaDespacho(tenantId, orders);
 
   // Neto real: descontar comisión de ML y envío del vendedor. El precio de cada
   // item pasa a ser lo que el vendedor efectivamente recibe (prorrateado).
@@ -348,7 +360,7 @@ export async function processMlOrderGroup(
         prioridad: "ALTA",
         canalVenta: "mercadolibre",
         fechaPedido: principal.date_created ? new Date(principal.date_created) : new Date(),
-        fechaEntrega: addBusinessDays(new Date(), 3),
+        fechaEntrega: fechaDespacho ?? addBusinessDays(new Date(), 3),
         fechaLiquidacionMl: fechaLiquidacion,
         idMercadolibre: key,
         externoId: `ML-${key}`,
@@ -367,6 +379,7 @@ export async function processMlOrderGroup(
             envio: costos.envio,
             neto: costos.neto,
           },
+          fecha_despacho_ml: fechaDespacho ? fechaDespacho.toISOString() : null,
           source: opts.source,
           recibido_en: new Date().toISOString(),
           warnings,
@@ -390,6 +403,41 @@ async function resolverFechaLiquidacionGrupo(
     if (fecha) return fecha;
   }
   return null;
+}
+
+/** Parsea la parte de día de un ISO y la fija al mediodía local (evita shifts). */
+function parseFechaDia(iso?: string | null): Date | null {
+  if (!iso) return null;
+  const m = iso.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? new Date(`${m[1]}T12:00:00`) : null;
+}
+
+/**
+ * Fecha de despacho (cuándo dar la etiqueta / despachar al correo) según ML.
+ * Usa `estimated_schedule_limit`; si no está, la entrega estimada. Devuelve la
+ * más temprana entre los envíos del grupo (el deadline más próximo).
+ */
+async function resolverFechaDespacho(
+  tenantId: string,
+  orders: MlOrder[]
+): Promise<Date | null> {
+  const shipmentIds = Array.from(
+    new Set(orders.map((o) => o.shipping?.id).filter((id): id is number => id != null))
+  );
+  let mejor: Date | null = null;
+  for (const sid of shipmentIds) {
+    try {
+      const s = await getShipment(tenantId, sid);
+      const opt = s.shipping_option;
+      const fecha =
+        parseFechaDia(opt?.estimated_schedule_limit?.date) ??
+        parseFechaDia(opt?.estimated_delivery_time?.date);
+      if (fecha && (!mejor || fecha < mejor)) mejor = fecha;
+    } catch {
+      // sin datos de envío para ese shipment
+    }
+  }
+  return mejor;
 }
 
 export interface CostosMl {
@@ -469,7 +517,11 @@ function buildNotas(order: MlOrder, key: string, warnings: string[], costos?: Co
  * una versión anterior sin el cálculo). Multiplica por el factor y guarda el
  * desglose. Preserva estado/prioridad/fechas.
  */
-async function ajustarNetoPedidoDesdeLista(pedidoId: string, costos: CostosMl): Promise<void> {
+async function ajustarNetoPedidoDesdeLista(
+  pedidoId: string,
+  costos: CostosMl,
+  fechaDespacho?: Date | null
+): Promise<void> {
   const pedido = await prisma.pedido.findUnique({
     where: { id: pedidoId },
     include: { items: true },
@@ -492,6 +544,7 @@ async function ajustarNetoPedidoDesdeLista(pedidoId: string, costos: CostosMl): 
       where: { id: pedidoId },
       data: {
         notas: notasNuevas,
+        ...(fechaDespacho ? { fechaEntrega: fechaDespacho } : {}),
         origenExterno: {
           ...oe,
           costos_ml: {
@@ -500,10 +553,28 @@ async function ajustarNetoPedidoDesdeLista(pedidoId: string, costos: CostosMl): 
             envio: costos.envio,
             neto: costos.neto,
           },
+          ...(fechaDespacho ? { fecha_despacho_ml: fechaDespacho.toISOString() } : {}),
         } as Prisma.InputJsonValue,
       },
     }),
   ]);
+}
+
+/** Actualiza solo la fecha de despacho de un pedido (preserva lo demás). */
+async function actualizarFechaDespacho(pedidoId: string, fechaDespacho: Date): Promise<void> {
+  const pedido = await prisma.pedido.findUnique({
+    where: { id: pedidoId },
+    select: { origenExterno: true },
+  });
+  if (!pedido) return;
+  const oe = (pedido.origenExterno ?? {}) as Record<string, unknown>;
+  await prisma.pedido.update({
+    where: { id: pedidoId },
+    data: {
+      fechaEntrega: fechaDespacho,
+      origenExterno: { ...oe, fecha_despacho_ml: fechaDespacho.toISOString() } as Prisma.InputJsonValue,
+    },
+  });
 }
 
 /**

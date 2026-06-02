@@ -342,6 +342,25 @@ export async function getShipmentCosts(
   return mlFetch<MlShipmentCosts>(tenantId, `/shipments/${shipmentId}/costs`);
 }
 
+export interface MlShipment {
+  id: number;
+  status?: string;
+  substatus?: string | null;
+  shipping_option?: {
+    estimated_schedule_limit?: { date?: string | null }; // límite para despachar
+    estimated_delivery_time?: { date?: string | null };  // entrega estimada
+    estimated_delivery_limit?: { date?: string | null };
+  };
+}
+
+/** Datos del envío, incluidas las fechas estimadas de despacho y entrega. */
+export async function getShipment(
+  tenantId: string,
+  shipmentId: string | number
+): Promise<MlShipment> {
+  return mlFetch<MlShipment>(tenantId, `/shipments/${shipmentId}`);
+}
+
 /** Busca órdenes del vendedor en un rango de fechas (paginado). */
 export async function searchOrders(
   tenantId: string,
