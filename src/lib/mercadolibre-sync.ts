@@ -1,6 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { normalizeForMatch } from "@/lib/webhook-security";
-import { getOrder, getPayment, getPack, type MlOrder } from "@/lib/mercadolibre";
+import {
+  getOrder,
+  getPayment,
+  getPack,
+  getShipmentCosts,
+  type MlOrder,
+} from "@/lib/mercadolibre";
 import type { Prisma } from "@/generated/prisma";
 
 /**
@@ -123,26 +129,29 @@ async function resolverFechaLiquidacion(
  * Procesa una orden recibida por webhook. Si pertenece a un pack (carrito con
  * varios productos), trae todas las órdenes del pack y las agrupa en un pedido.
  */
+/** Dada una orden, devuelve todas las órdenes de su pack (o solo ella). */
+async function expandPack(tenantId: string, order: MlOrder): Promise<MlOrder[]> {
+  if (!order.pack_id) return [order];
+  try {
+    const pack = await getPack(tenantId, order.pack_id);
+    const otrosIds = pack.orders
+      .map((o) => String(o.id))
+      .filter((id) => id !== String(order.id));
+    const otras = await Promise.all(
+      otrosIds.map((id) => getOrder(tenantId, id).catch(() => null))
+    );
+    return [order, ...otras.filter((o): o is MlOrder => o !== null)];
+  } catch {
+    return [order];
+  }
+}
+
 export async function processMlOrder(
   tenantId: string,
   order: MlOrder,
   opts: { source: "webhook" | "backfill" } = { source: "webhook" }
 ): Promise<ProcessResult> {
-  let orders: MlOrder[] = [order];
-  if (order.pack_id) {
-    try {
-      const pack = await getPack(tenantId, order.pack_id);
-      const otrosIds = pack.orders
-        .map((o) => String(o.id))
-        .filter((id) => id !== String(order.id));
-      const otras = await Promise.all(
-        otrosIds.map((id) => getOrder(tenantId, id).catch(() => null))
-      );
-      orders = [order, ...otras.filter((o): o is MlOrder => o !== null)];
-    } catch {
-      // Si falla traer el pack, procesamos solo la orden recibida
-    }
-  }
+  const orders = await expandPack(tenantId, order);
   return processMlOrderGroup(tenantId, orders, opts);
 }
 
@@ -284,6 +293,13 @@ export async function processMlOrderGroup(
 
   const fechaLiquidacion = await resolverFechaLiquidacionGrupo(tenantId, orders);
 
+  // Neto real: descontar comisión de ML y envío del vendedor. El precio de cada
+  // item pasa a ser lo que el vendedor efectivamente recibe (prorrateado).
+  const costos = await calcularCostosMl(tenantId, orders);
+  for (const it of itemsData) {
+    it.precioUnitario = Math.round(it.precioUnitario * costos.factorNeto);
+  }
+
   const result = await prisma.$transaction(async (tx) => {
     let cliente = await tx.cliente.findFirst({
       where: { tenantId, nombre: { equals: nombre, mode: "insensitive" }, plataforma: "mercadolibre" },
@@ -306,7 +322,7 @@ export async function processMlOrderGroup(
         idMercadolibre: key,
         externoId: `ML-${key}`,
         contacto: buyer.nickname || null,
-        notas: buildNotas(principal, key, warnings),
+        notas: buildNotas(principal, key, warnings, costos),
         etiquetas: necesitaRevision ? ["revision_manual"] : [],
         origenExterno: {
           sistema: "mercadolibre",
@@ -314,6 +330,12 @@ export async function processMlOrderGroup(
           order_ids: orders.map((o) => String(o.id)),
           status_ml: principal.status,
           total_amount: orders.reduce((s, o) => s + (o.total_amount || 0), 0),
+          costos_ml: {
+            precio_productos: costos.precioProductos,
+            comision: costos.comision,
+            envio: costos.envio,
+            neto: costos.neto,
+          },
           source: opts.source,
           recibido_en: new Date().toISOString(),
           warnings,
@@ -339,10 +361,68 @@ async function resolverFechaLiquidacionGrupo(
   return null;
 }
 
-function buildNotas(order: MlOrder, key: string, warnings: string[]): string {
+export interface CostosMl {
+  precioProductos: number; // lo que pagó el comprador por los productos (sin envío)
+  comision: number;        // cargo por venta (sale_fee)
+  envio: number;           // costo de envío a cargo del vendedor
+  neto: number;            // precioProductos - comision - envio
+  factorNeto: number;      // neto / precioProductos (proporción que queda)
+}
+
+/**
+ * Calcula lo que el vendedor realmente recibe por una compra (grupo de órdenes):
+ *   neto = precio de productos − comisión de ML − envío a cargo del vendedor
+ *
+ * El `factorNeto` permite prorratear ese neto entre los items del pedido.
+ */
+export async function calcularCostosMl(
+  tenantId: string,
+  orders: MlOrder[]
+): Promise<CostosMl> {
+  let precioProductos = 0;
+  let comision = 0;
+  for (const o of orders) {
+    for (const it of o.order_items) {
+      precioProductos += it.unit_price * it.quantity;
+      comision += (it.sale_fee || 0) * it.quantity;
+    }
+  }
+
+  // Envío a cargo del vendedor: sumar los costos de los shipments del grupo
+  // (sin duplicar si varias órdenes comparten el mismo envío).
+  const shipmentIds = Array.from(
+    new Set(orders.map((o) => o.shipping?.id).filter((id): id is number => id != null))
+  );
+  let envio = 0;
+  for (const sid of shipmentIds) {
+    try {
+      const costs = await getShipmentCosts(tenantId, sid);
+      for (const s of costs.senders || []) envio += s.cost || 0;
+    } catch {
+      // si falla traer el costo de envío, lo dejamos en 0 para ese shipment
+    }
+  }
+
+  const neto = precioProductos - comision - envio;
+  const factorNeto = precioProductos > 0 ? neto / precioProductos : 1;
+  return { precioProductos, comision, envio, neto, factorNeto };
+}
+
+function buildNotas(order: MlOrder, key: string, warnings: string[], costos?: CostosMl): string {
   const lines: string[] = [`🛒 Venta Mercado Libre: ${key}`];
   if (order.buyer.nickname) lines.push(`👤 ${order.buyer.nickname}`);
   if (order.pack_id) lines.push(`📦 Pack: ${order.pack_id}`);
+  if (costos) {
+    const fmt = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`;
+    lines.push(
+      "",
+      "💰 Desglose ML:",
+      `  Precio productos: ${fmt(costos.precioProductos)}`,
+      `  Comisión ML: -${fmt(costos.comision)}`,
+      `  Envío (vendedor): -${fmt(costos.envio)}`,
+      `  Neto recibido: ${fmt(costos.neto)}`
+    );
+  }
   if (warnings.length > 0) {
     lines.push("", "⚠️ Revisar manualmente:");
     warnings.forEach((w) => lines.push(`  • ${w}`));
@@ -384,12 +464,21 @@ export async function processMlPayment(
       where: { id: existente.id },
       data: { fechaLiquidacionMl: new Date(pago.money_release_date) },
     });
+    // Al liquidar, ajustamos el neto al valor real (las comisiones/envío ya
+    // están definitivos). Solo afecta a pedidos creados por la integración.
+    try {
+      const orders = await expandPack(tenantId, order);
+      const costos = await calcularCostosMl(tenantId, orders);
+      await ajustarNetoPedido(existente.id, costos);
+    } catch {
+      // si falla el ajuste, la fecha de liquidación ya quedó guardada
+    }
     return {
       action: "updated",
       pedidoId: existente.id,
       estado: existente.estado,
       warnings: [],
-      reason: "fecha_liquidacion_actualizada",
+      reason: "liquidacion_y_neto_actualizados",
     };
   }
 
@@ -399,4 +488,51 @@ export async function processMlPayment(
     warnings: [],
     reason: "sin_fecha_liquidacion",
   };
+}
+
+/**
+ * Re-escala los items de un pedido creado por la integración al neto real
+ * (cuando ML liquida). Solo actúa si el pedido tiene el desglose de costos
+ * guardado y el factor cambió de forma apreciable.
+ */
+async function ajustarNetoPedido(pedidoId: string, costosNuevos: CostosMl): Promise<void> {
+  const pedido = await prisma.pedido.findUnique({
+    where: { id: pedidoId },
+    include: { items: true },
+  });
+  if (!pedido) return;
+
+  const oe = (pedido.origenExterno ?? {}) as Record<string, unknown>;
+  const viejos = oe.costos_ml as
+    | { precio_productos?: number; neto?: number }
+    | undefined;
+  if (!viejos?.precio_productos || !viejos.neto) return; // manual o sin desglose
+
+  const factorViejo = viejos.neto / viejos.precio_productos;
+  const factorNuevo = costosNuevos.factorNeto;
+  if (factorViejo <= 0 || Math.abs(factorNuevo - factorViejo) < 0.001) return;
+
+  const ratio = factorNuevo / factorViejo;
+  await prisma.$transaction([
+    ...pedido.items.map((it) =>
+      prisma.itemPedido.update({
+        where: { id: it.id },
+        data: { precioUnitario: Math.round(it.precioUnitario * ratio) },
+      })
+    ),
+    prisma.pedido.update({
+      where: { id: pedidoId },
+      data: {
+        origenExterno: {
+          ...oe,
+          costos_ml: {
+            precio_productos: costosNuevos.precioProductos,
+            comision: costosNuevos.comision,
+            envio: costosNuevos.envio,
+            neto: costosNuevos.neto,
+          },
+        } as Prisma.InputJsonValue,
+      },
+    }),
+  ]);
 }

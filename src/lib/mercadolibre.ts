@@ -258,6 +258,7 @@ export interface MlOrderItem {
   };
   quantity: number;
   unit_price: number;
+  sale_fee?: number; // comisión de ML por unidad
 }
 
 export interface MlOrder {
@@ -322,6 +323,23 @@ export interface MlPack {
 /** Trae un pack (carrito con varios productos) y los IDs de sus órdenes. */
 export async function getPack(tenantId: string, packId: string | number): Promise<MlPack> {
   return mlFetch<MlPack>(tenantId, `/packs/${packId}`);
+}
+
+export interface MlShipmentCosts {
+  gross_amount?: number;
+  senders?: Array<{ cost?: number; user_id?: number }>;
+  receiver?: { cost?: number };
+}
+
+/**
+ * Costos del envío. `senders[].cost` es lo que paga el VENDEDOR por el envío
+ * (ya con los descuentos/bonificaciones de Mercado Envíos aplicados).
+ */
+export async function getShipmentCosts(
+  tenantId: string,
+  shipmentId: string | number
+): Promise<MlShipmentCosts> {
+  return mlFetch<MlShipmentCosts>(tenantId, `/shipments/${shipmentId}/costs`);
 }
 
 /** Busca órdenes del vendedor en un rango de fechas (paginado). */
