@@ -325,3 +325,20 @@ model WebhookLog {
   @@index([tenantId, externoId])
   @@map("webhook_logs")
 }
+
+// ==================== CUENTAS MERCADO LIBRE (OAuth) ====================
+
+model CuentaMercadolibre {
+  id           String   @id @default(cuid())
+  tenantId     String   @unique @map("tenant_id")
+  mlUserId     String   @map("ml_user_id")            // user_id de la cuenta ML
+  nickname     String?                                // apodo de la cuenta (para mostrar en UI)
+  accessToken  String   @map("access_token")
+  refreshToken String   @map("refresh_token")
+  expiresAt    DateTime @map("expires_at")            // cuándo expira el access_token
+  scope        String?
+  creadoEn     DateTime @default(now()) @map("creado_en")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("cuentas_ml")
+}

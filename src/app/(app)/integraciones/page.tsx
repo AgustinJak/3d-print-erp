@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useCallback, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   Plug, ShoppingBag, RefreshCw, Copy, Check, AlertTriangle,
   CheckCircle2, XCircle, Eye, ExternalLink, Wand2, FileWarning,
-  Tags, Pencil, Plus, Box,
+  Tags, Pencil, Plus, Box, Store, Unplug, Download, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -77,14 +77,31 @@ interface SkusAudit {
   }>;
 }
 
-type Tab = "estado" | "logs" | "revision" | "skus";
+interface MlStatus {
+  envConfigured: boolean;
+  connected: boolean;
+  cuenta: {
+    mlUserId: string;
+    nickname: string | null;
+    scope: string | null;
+    expiresAt: string;
+  } | null;
+  webhookUrl: string;
+  totalEventos: number;
+  ultimoEvento: { recibidoEn: string; estado: string; evento: string } | null;
+}
+
+type Tab = "estado" | "mercadolibre" | "logs" | "revision" | "skus";
 
 /* ─── Page ───────────────────────────────────────────── */
 
-export default function IntegracionesPage() {
+function IntegracionesContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>("estado");
   const [status, setStatus] = useState<ShopStatus | null>(null);
+  const [mlStatus, setMlStatus] = useState<MlStatus | null>(null);
+  const [mlBusy, setMlBusy] = useState<null | "sync" | "disconnect">(null);
   const [logs, setLogs] = useState<WebhookLog[]>([]);
   const [pedidosRevision, setPedidosRevision] = useState<PedidoRevision[]>([]);
   const [skusAudit, setSkusAudit] = useState<SkusAudit | null>(null);
@@ -95,14 +112,16 @@ export default function IntegracionesPage() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [statusRes, logsRes, revRes, skusRes] = await Promise.all([
+    const [statusRes, mlRes, logsRes, revRes, skusRes] = await Promise.all([
       fetch("/api/integraciones/status"),
+      fetch("/api/ml/status"),
       fetch("/api/integraciones/logs?limit=50"),
       fetch("/api/integraciones/pedidos-revision"),
       fetch("/api/integraciones/skus-audit"),
     ]);
     const statusJson = await statusRes.json();
     setStatus(statusJson.shop);
+    setMlStatus(await mlRes.json());
     setLogs(await logsRes.json());
     setPedidosRevision(await revRes.json());
     setSkusAudit(await skusRes.json());
@@ -110,6 +129,59 @@ export default function IntegracionesPage() {
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Resultado del callback de OAuth (?ml=ok|error&tab=mercadolibre)
+  useEffect(() => {
+    const ml = searchParams.get("ml");
+    if (!ml) return;
+    setTab("mercadolibre");
+    if (ml === "ok") {
+      toast.success("Cuenta de Mercado Libre conectada");
+    } else {
+      const detail = searchParams.get("detail");
+      toast.error(`No se pudo conectar Mercado Libre${detail ? `: ${detail}` : ""}`);
+    }
+    // Limpiar query params de la URL
+    router.replace("/integraciones");
+  }, [searchParams, router]);
+
+  const connectMl = () => {
+    window.location.href = "/api/ml/oauth/start";
+  };
+
+  const disconnectMl = async () => {
+    if (!confirm("¿Desconectar la cuenta de Mercado Libre? Vas a dejar de recibir pedidos automáticamente.")) return;
+    setMlBusy("disconnect");
+    const res = await fetch("/api/ml/disconnect", { method: "DELETE" });
+    setMlBusy(null);
+    if (res.ok) {
+      toast.success("Cuenta desconectada");
+      fetchAll();
+    } else {
+      toast.error("Error al desconectar");
+    }
+  };
+
+  const syncMl = async () => {
+    setMlBusy("sync");
+    try {
+      const res = await fetch("/api/ml/backfill?days=30", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Error al sincronizar");
+        return;
+      }
+      const s = data.stats;
+      toast.success(
+        `Sincronización lista: ${s.creadas} nuevas, ${s.actualizadas} actualizadas, ${s.ya_existian} ya existían${s.errores ? `, ${s.errores} con error` : ""}`
+      );
+      fetchAll();
+    } catch {
+      toast.error("Error al sincronizar");
+    } finally {
+      setMlBusy(null);
+    }
+  };
 
   const generateSecret = async () => {
     const res = await fetch("/api/integraciones/generate-secret", { method: "POST" });
@@ -161,6 +233,12 @@ export default function IntegracionesPage() {
       <div className="border-b flex gap-1">
         <TabBtn active={tab === "estado"} onClick={() => setTab("estado")}>
           <ShoppingBag className="h-4 w-4 mr-1.5" /> Estado
+        </TabBtn>
+        <TabBtn active={tab === "mercadolibre"} onClick={() => setTab("mercadolibre")}>
+          <Store className="h-4 w-4 mr-1.5" /> Mercado Libre
+          {mlStatus?.connected && (
+            <span className="ml-1.5 h-2 w-2 rounded-full bg-emerald-500" />
+          )}
         </TabBtn>
         <TabBtn active={tab === "logs"} onClick={() => setTab("logs")}>
           <Eye className="h-4 w-4 mr-1.5" /> Logs
@@ -278,6 +356,121 @@ export default function IntegracionesPage() {
                 </li>
                 <li>Hacé un redeploy del inventario para que tome la variable</li>
               </ol>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Tab: Mercado Libre */}
+      {tab === "mercadolibre" && mlStatus && (
+        <div className="space-y-4">
+          <Card className="p-5 space-y-4">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-[#FFE600]/20 p-2.5">
+                  <Store className="h-5 w-5 text-[#2D3277]" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-lg">Mercado Libre</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Sincroniza automáticamente las ventas de ML con el inventario
+                  </p>
+                </div>
+              </div>
+              {mlStatus.connected ? (
+                <Badge className="bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/20 border-emerald-500/30">
+                  <CheckCircle2 className="h-3 w-3 mr-1" /> Conectado
+                </Badge>
+              ) : (
+                <Badge className="bg-muted text-muted-foreground border-border">
+                  Desconectado
+                </Badge>
+              )}
+            </div>
+
+            {!mlStatus.envConfigured && (
+              <div className="rounded-md bg-amber-500/10 border border-amber-500/30 p-3">
+                <p className="text-xs font-semibold text-amber-500 flex items-center gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5" /> Falta configuración
+                </p>
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                  Configurá las variables <code className="bg-muted px-1 rounded">ML_CLIENT_ID</code>,{" "}
+                  <code className="bg-muted px-1 rounded">ML_CLIENT_SECRET</code> y{" "}
+                  <code className="bg-muted px-1 rounded">ML_REDIRECT_URI</code> en Vercel y hacé un redeploy.
+                </p>
+              </div>
+            )}
+
+            {mlStatus.connected && mlStatus.cuenta ? (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                  <div className="rounded-md border p-3">
+                    <p className="text-xs text-muted-foreground">Cuenta</p>
+                    <p className="font-medium mt-1">{mlStatus.cuenta.nickname || mlStatus.cuenta.mlUserId}</p>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <p className="text-xs text-muted-foreground">Eventos recibidos</p>
+                    <p className="text-2xl font-bold">{mlStatus.totalEventos}</p>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <p className="text-xs text-muted-foreground">Último evento</p>
+                    <p className="text-sm font-medium mt-1">
+                      {mlStatus.ultimoEvento
+                        ? new Date(mlStatus.ultimoEvento.recibidoEn).toLocaleString("es-AR")
+                        : "—"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 flex-wrap pt-1">
+                  <Button onClick={syncMl} disabled={mlBusy !== null}>
+                    {mlBusy === "sync" ? (
+                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sincronizando…</>
+                    ) : (
+                      <><Download className="mr-2 h-4 w-4" /> Sincronizar últimos 30 días</>
+                    )}
+                  </Button>
+                  <Button variant="outline" onClick={disconnectMl} disabled={mlBusy !== null}>
+                    {mlBusy === "disconnect" ? (
+                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Desconectando…</>
+                    ) : (
+                      <><Unplug className="mr-2 h-4 w-4" /> Desconectar</>
+                    )}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Conectá tu cuenta de Mercado Libre para que los pedidos entren solos al inventario
+                  y se actualice la fecha de liquidación automáticamente.
+                </p>
+                <Button onClick={connectMl} disabled={!mlStatus.envConfigured}>
+                  <Plug className="mr-2 h-4 w-4" />
+                  Conectar mi cuenta de Mercado Libre
+                </Button>
+              </div>
+            )}
+
+            <div className="space-y-2 pt-2 border-t">
+              <p className="text-sm font-medium">URL de notificaciones</p>
+              <div className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2 font-mono text-xs">
+                <code className="flex-1 truncate">{mlStatus.webhookUrl}</code>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${window.location.origin}${mlStatus.webhookUrl}`);
+                    toast.success("URL copiada");
+                  }}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Pegá esta URL (completa) en la configuración de notificaciones de tu app en el DevCenter de Mercado Libre.
+              </p>
             </div>
           </Card>
         </div>
@@ -647,6 +840,14 @@ export default function IntegracionesPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function IntegracionesPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Cargando…</div>}>
+      <IntegracionesContent />
+    </Suspense>
   );
 }
 
