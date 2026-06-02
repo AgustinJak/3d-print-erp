@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { normalizeForMatch } from "@/lib/webhook-security";
-import { getOrder, getPayment, type MlOrder } from "@/lib/mercadolibre";
+import { getOrder, getPayment, getPack, type MlOrder } from "@/lib/mercadolibre";
 import type { Prisma } from "@/generated/prisma";
 
 /**
@@ -28,9 +28,29 @@ function addBusinessDays(date: Date, days: number): Date {
   return result;
 }
 
+/** Capitaliza cada palabra: "cristina lakos" → "Cristina Lakos". */
+function capitalizar(s: string): string {
+  return s
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 function buyerNombre(buyer: MlOrder["buyer"]): string {
   const full = [buyer.first_name, buyer.last_name].filter(Boolean).join(" ").trim();
-  return full || buyer.nickname || `Comprador ML ${buyer.id}`;
+  if (full) return capitalizar(full);
+  return buyer.nickname || `Comprador ML ${buyer.id}`;
+}
+
+/**
+ * Identificador estable de la compra: el pack_id si la orden pertenece a un
+ * carrito (varios productos), si no el order.id. Es el número que el vendedor
+ * ve en ML y el que se carga a mano, así evitamos duplicados.
+ */
+function packKey(order: MlOrder): string {
+  return String(order.pack_id ?? order.id);
 }
 
 /**
@@ -100,61 +120,66 @@ async function resolverFechaLiquidacion(
 }
 
 /**
- * Procesa una orden completa de ML: crea/actualiza cliente + pedido + items.
- * Idempotente por orden.
+ * Procesa una orden recibida por webhook. Si pertenece a un pack (carrito con
+ * varios productos), trae todas las órdenes del pack y las agrupa en un pedido.
  */
 export async function processMlOrder(
   tenantId: string,
   order: MlOrder,
   opts: { source: "webhook" | "backfill" } = { source: "webhook" }
 ): Promise<ProcessResult> {
-  const orderId = String(order.id);
+  let orders: MlOrder[] = [order];
+  if (order.pack_id) {
+    try {
+      const pack = await getPack(tenantId, order.pack_id);
+      const otrosIds = pack.orders
+        .map((o) => String(o.id))
+        .filter((id) => id !== String(order.id));
+      const otras = await Promise.all(
+        otrosIds.map((id) => getOrder(tenantId, id).catch(() => null))
+      );
+      orders = [order, ...otras.filter((o): o is MlOrder => o !== null)];
+    } catch {
+      // Si falla traer el pack, procesamos solo la orden recibida
+    }
+  }
+  return processMlOrderGroup(tenantId, orders, opts);
+}
+
+/**
+ * Procesa un grupo de órdenes del mismo pack (o una sola) como UN pedido.
+ * Idempotente por pack_id (o order.id si no hay pack).
+ */
+export async function processMlOrderGroup(
+  tenantId: string,
+  orders: MlOrder[],
+  opts: { source: "webhook" | "backfill" } = { source: "webhook" }
+): Promise<ProcessResult> {
+  const principal = orders[0];
+  const key = packKey(principal); // pack_id ?? order.id
   const warnings: string[] = [];
 
-  const existente = await findExistingPedido(tenantId, orderId);
+  const existente = await findExistingPedido(tenantId, key);
 
-  // Si ya existe, no recreamos. Solo intentamos actualizar la fecha de liquidación
-  // (y solo si todavía no la tiene, para no reconsultar pagos innecesariamente).
+  // Ya existe: solo actualizamos la fecha de liquidación si falta
   if (existente) {
     if (existente.tieneFechaLiq) {
-      return {
-        action: "skipped_existing",
-        pedidoId: existente.id,
-        estado: existente.estado,
-        warnings,
-        reason: "pedido_ya_existe",
-      };
+      return { action: "skipped_existing", pedidoId: existente.id, estado: existente.estado, warnings, reason: "pedido_ya_existe" };
     }
-    const fechaLiq = await resolverFechaLiquidacion(tenantId, order);
+    const fechaLiq = await resolverFechaLiquidacionGrupo(tenantId, orders);
     if (fechaLiq) {
-      await prisma.pedido.update({
-        where: { id: existente.id },
-        data: { fechaLiquidacionMl: fechaLiq },
-      });
-      return {
-        action: "updated",
-        pedidoId: existente.id,
-        estado: existente.estado,
-        warnings,
-        reason: "fecha_liquidacion_actualizada",
-      };
+      await prisma.pedido.update({ where: { id: existente.id }, data: { fechaLiquidacionMl: fechaLiq } });
+      return { action: "updated", pedidoId: existente.id, estado: existente.estado, warnings, reason: "fecha_liquidacion_actualizada" };
     }
-    return {
-      action: "skipped_existing",
-      pedidoId: existente.id,
-      estado: existente.estado,
-      warnings,
-      reason: "pedido_ya_existe",
-    };
+    return { action: "skipped_existing", pedidoId: existente.id, estado: existente.estado, warnings, reason: "pedido_ya_existe" };
   }
 
-  // Órdenes canceladas que NO existen: las ignoramos (no ensuciamos el inventario)
-  if (order.status === "cancelled") {
+  // Todas canceladas → ignorar
+  if (orders.every((o) => o.status === "cancelled")) {
     return { action: "ignored", warnings, reason: "orden_cancelada" };
   }
 
-  // ── Resolver items por MLA (FUERA de transacción para que la cola de
-  //    publicaciones sin mapear persista aunque el pedido no se cree) ──
+  // ── Resolver items por MLA (juntando todos los items del pack) ──
   const itemsData: Array<{
     modeloId: string;
     cantidad: number;
@@ -164,10 +189,12 @@ export async function processMlOrder(
     variantesInfo: Prisma.InputJsonValue;
   }> = [];
 
-  let itemsIgnorados = 0; // productos de otro negocio (ej: juguetes)
-  let itemsSinMapear = 0; // publicaciones que faltan mapear
+  let itemsIgnorados = 0;
+  let itemsSinMapear = 0;
 
-  for (const oi of order.order_items) {
+  const allItems = orders.flatMap((o) => o.order_items);
+
+  for (const oi of allItems) {
     const mla = oi.item.id;
     const titulo = oi.item.title;
 
@@ -175,25 +202,22 @@ export async function processMlOrder(
       where: { tenantId_mla: { tenantId, mla } },
     });
 
-    // Publicación marcada como "ignorar" (otro negocio) → saltear
     if (mapeo?.ignorar) {
       itemsIgnorados++;
       continue;
     }
 
-    // Sin mapear → registrar/actualizar en la cola y saltear
     if (!mapeo || !mapeo.modeloId) {
       itemsSinMapear++;
       await prisma.publicacionMl.upsert({
         where: { tenantId_mla: { tenantId, mla } },
-        create: { tenantId, mla, titulo, ultimoMla: orderId },
-        update: { titulo, ultimoMla: orderId, vecesVista: { increment: 1 } },
+        create: { tenantId, mla, titulo, ultimoMla: key },
+        update: { titulo, ultimoMla: key, vecesVista: { increment: 1 } },
       });
       warnings.push(`Publicación sin mapear: "${titulo}" (${mla})`);
       continue;
     }
 
-    // Mapeada → traer el modelo
     const modelo = await prisma.modelo.findFirst({
       where: { tenantId, id: mapeo.modeloId },
       include: { variantes: true },
@@ -204,7 +228,6 @@ export async function processMlOrder(
       continue;
     }
 
-    // Variantes desde variation_attributes (ej: "Tamaño: 65cm")
     const variantesMatched: Array<Record<string, unknown>> = [];
     let costoExtraVariantes = 0;
     for (const attr of oi.item.variation_attributes || []) {
@@ -235,8 +258,6 @@ export async function processMlOrder(
     });
   }
 
-  // Ningún item mapeó: NO es un error, simplemente la orden no es de este
-  // negocio (todo ignorado) o falta mapear sus publicaciones.
   if (itemsData.length === 0) {
     return {
       action: "ignored",
@@ -248,11 +269,22 @@ export async function processMlOrder(
     };
   }
 
-  const fechaLiquidacion = await resolverFechaLiquidacion(tenantId, order);
+  // Nombre real del comprador: el /orders/search no trae first_name/last_name,
+  // solo el nickname. Si falta, traemos la orden completa para enriquecerlo.
+  let buyer = principal.buyer;
+  if (!buyer.first_name && !buyer.last_name) {
+    try {
+      const full = await getOrder(tenantId, principal.id);
+      buyer = full.buyer;
+    } catch {
+      // si falla, usamos el nickname
+    }
+  }
+  const nombre = buyerNombre(buyer);
+
+  const fechaLiquidacion = await resolverFechaLiquidacionGrupo(tenantId, orders);
 
   const result = await prisma.$transaction(async (tx) => {
-    // Cliente: buscar por nombre, si no crear
-    const nombre = buyerNombre(order.buyer);
     let cliente = await tx.cliente.findFirst({
       where: { tenantId, nombre: { equals: nombre, mode: "insensitive" }, plataforma: "mercadolibre" },
     });
@@ -265,23 +297,23 @@ export async function processMlOrder(
       data: {
         tenantId,
         clienteId: cliente.id,
-        estado: mapEstadoMl(order.status),
+        estado: mapEstadoMl(principal.status),
         prioridad: "ALTA",
         canalVenta: "mercadolibre",
-        fechaPedido: order.date_created ? new Date(order.date_created) : new Date(),
+        fechaPedido: principal.date_created ? new Date(principal.date_created) : new Date(),
         fechaEntrega: addBusinessDays(new Date(), 3),
         fechaLiquidacionMl: fechaLiquidacion,
-        idMercadolibre: orderId,
-        externoId: `ML-${orderId}`,
-        contacto: order.buyer.nickname || null,
-        notas: buildNotas(order, warnings),
+        idMercadolibre: key,
+        externoId: `ML-${key}`,
+        contacto: buyer.nickname || null,
+        notas: buildNotas(principal, key, warnings),
         etiquetas: necesitaRevision ? ["revision_manual"] : [],
         origenExterno: {
           sistema: "mercadolibre",
-          order_id: orderId,
-          status_ml: order.status,
-          pack_id: order.pack_id ?? null,
-          total_amount: order.total_amount,
+          pack_id: principal.pack_id ?? null,
+          order_ids: orders.map((o) => String(o.id)),
+          status_ml: principal.status,
+          total_amount: orders.reduce((s, o) => s + (o.total_amount || 0), 0),
           source: opts.source,
           recibido_en: new Date().toISOString(),
           warnings,
@@ -295,8 +327,20 @@ export async function processMlOrder(
   return { action: "created", pedidoId: result.id, estado: result.estado, warnings };
 }
 
-function buildNotas(order: MlOrder, warnings: string[]): string {
-  const lines: string[] = [`🛒 Venta Mercado Libre: ${order.id}`];
+/** Busca la fecha de liquidación en los pagos de cualquier orden del grupo. */
+async function resolverFechaLiquidacionGrupo(
+  tenantId: string,
+  orders: MlOrder[]
+): Promise<Date | null> {
+  for (const order of orders) {
+    const fecha = await resolverFechaLiquidacion(tenantId, order);
+    if (fecha) return fecha;
+  }
+  return null;
+}
+
+function buildNotas(order: MlOrder, key: string, warnings: string[]): string {
+  const lines: string[] = [`🛒 Venta Mercado Libre: ${key}`];
   if (order.buyer.nickname) lines.push(`👤 ${order.buyer.nickname}`);
   if (order.pack_id) lines.push(`📦 Pack: ${order.pack_id}`);
   if (warnings.length > 0) {
@@ -318,17 +362,21 @@ export async function processMlPayment(
   if (!pago.order_id) {
     return { action: "ignored", warnings: [], reason: "payment_sin_order" };
   }
-  const orderId = String(pago.order_id);
-  const existente = await findExistingPedido(tenantId, orderId);
+
+  // Traemos la orden para resolver su pack_id (los pedidos se identifican por
+  // pack, no por order.id).
+  let order: MlOrder;
+  try {
+    order = await getOrder(tenantId, String(pago.order_id));
+  } catch {
+    return { action: "ignored", warnings: [], reason: "orden_no_encontrada" };
+  }
+  const key = packKey(order);
+
+  const existente = await findExistingPedido(tenantId, key);
   if (!existente) {
-    // El pedido aún no llegó (puede pasar si payments llega antes que orders).
-    // Traemos la orden y la procesamos completa.
-    try {
-      const order = await getOrder(tenantId, orderId);
-      return processMlOrder(tenantId, order, { source: "webhook" });
-    } catch {
-      return { action: "ignored", warnings: [], reason: "pedido_no_encontrado" };
-    }
+    // El pedido aún no llegó (payments puede llegar antes que orders).
+    return processMlOrder(tenantId, order, { source: "webhook" });
   }
 
   if (pago.money_release_date) {

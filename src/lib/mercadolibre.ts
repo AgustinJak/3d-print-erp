@@ -313,6 +313,17 @@ export async function getPayment(
   return mlFetch<MlPayment>(tenantId, `/payments/${paymentId}`);
 }
 
+export interface MlPack {
+  id: number;
+  status?: string;
+  orders: Array<{ id: number }>;
+}
+
+/** Trae un pack (carrito con varios productos) y los IDs de sus órdenes. */
+export async function getPack(tenantId: string, packId: string | number): Promise<MlPack> {
+  return mlFetch<MlPack>(tenantId, `/packs/${packId}`);
+}
+
 /** Busca órdenes del vendedor en un rango de fechas (paginado). */
 export async function searchOrders(
   tenantId: string,
