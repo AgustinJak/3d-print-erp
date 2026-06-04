@@ -123,11 +123,6 @@ async function findExistingPedido(
   };
 }
 
-function mapEstadoMl(orderStatus: string): "CONFIRMADO" | "CANCELADO" {
-  if (orderStatus === "cancelled") return "CANCELADO";
-  return "CONFIRMADO";
-}
-
 // Mercado Libre libera el dinero ~8 días corridos después de la entrega.
 const DIAS_LIQUIDACION = 8;
 
@@ -167,6 +162,63 @@ export async function processMlOrder(
 ): Promise<ProcessResult> {
   const orders = await expandPack(tenantId, order);
   return processMlOrderGroup(tenantId, orders, opts);
+}
+
+/**
+ * Dado el id que el vendedor ve en ML (pack_id o order_id), devuelve todas las
+ * órdenes correspondientes. Sirve para pedidos cargados a mano cuyo
+ * id_mercadolibre puede ser un pack o una orden suelta.
+ */
+async function expandPackPorId(tenantId: string, idMl: string): Promise<MlOrder[]> {
+  // Intentar como pack (carrito con varios productos)
+  try {
+    const pack = await getPack(tenantId, idMl);
+    if (pack.orders?.length) {
+      const ordenes = await Promise.all(
+        pack.orders.map((o) => getOrder(tenantId, String(o.id)).catch(() => null))
+      );
+      const validas = ordenes.filter((o): o is MlOrder => o !== null);
+      if (validas.length) return validas;
+    }
+  } catch {
+    // no es un pack
+  }
+  // Intentar como orden individual
+  try {
+    const o = await getOrder(tenantId, idMl);
+    return expandPack(tenantId, o);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Actualiza la fecha de liquidación y el estado (según el envío) de un pedido
+ * ya existente del inventario, buscándolo en ML por su id_mercadolibre. No toca
+ * precios ni items (sirve para pedidos cargados a mano o fuera del back-fill).
+ */
+export async function actualizarLiquidacionYEstado(
+  tenantId: string,
+  pedido: { id: string; estado: string; idMercadolibre: string | null }
+): Promise<{ ok: boolean; estadoNuevo?: string; liquidacion?: Date | null; reason?: string }> {
+  const idMl = pedido.idMercadolibre?.trim();
+  if (!idMl) return { ok: false, reason: "sin_id_ml" };
+
+  const orders = await expandPackPorId(tenantId, idMl);
+  if (orders.length === 0) return { ok: false, reason: "no_encontrado_en_ml" };
+
+  const fechas = await resolverFechasEnvio(tenantId, orders);
+  await actualizarLiquidacion(pedido.id, fechas.liquidacion, fechas.liquidacionEstimada);
+
+  const nuevoEstado = estadoPorEnvio(pedido.estado, fechas.enviado);
+  if (nuevoEstado) {
+    await prisma.pedido.update({ where: { id: pedido.id }, data: { estado: nuevoEstado } });
+  }
+  return {
+    ok: true,
+    estadoNuevo: nuevoEstado ?? pedido.estado,
+    liquidacion: fechas.liquidacion,
+  };
 }
 
 /**
@@ -213,7 +265,12 @@ export async function processMlOrderGroup(
     // Siempre marcamos la liquidación (aunque sea null) para no reprocesar
     // indefinidamente pedidos sin envío.
     await actualizarLiquidacion(existente.id, fechas.liquidacion, fechas.liquidacionEstimada);
-    return { action: "updated", pedidoId: existente.id, estado: existente.estado, warnings, reason: "datos_ml_actualizados" };
+    // Si el envío ya salió, subir el estado a "esperando liquidación" (sin retroceder).
+    const nuevoEstado = estadoPorEnvio(existente.estado, fechas.enviado);
+    if (nuevoEstado) {
+      await prisma.pedido.update({ where: { id: existente.id }, data: { estado: nuevoEstado } });
+    }
+    return { action: "updated", pedidoId: existente.id, estado: nuevoEstado ?? existente.estado, warnings, reason: "datos_ml_actualizados" };
   }
 
   // Todas canceladas → ignorar
@@ -345,11 +402,17 @@ export async function processMlOrderGroup(
     }
 
     const necesitaRevision = warnings.length > 0;
+    const estadoInicial =
+      principal.status === "cancelled"
+        ? "CANCELADO"
+        : fechas.enviado
+          ? "ESPERANDO_LIQUIDACION_ML"
+          : "CONFIRMADO";
     return tx.pedido.create({
       data: {
         tenantId,
         clienteId: cliente.id,
-        estado: mapEstadoMl(principal.status),
+        estado: estadoInicial,
         prioridad: "ALTA",
         canalVenta: "mercadolibre",
         fechaPedido: principal.date_created ? new Date(principal.date_created) : new Date(),
@@ -398,6 +461,7 @@ export interface FechasEnvio {
   despacho: Date | null;           // cuándo dar la etiqueta (estimated_schedule_limit)
   liquidacion: Date | null;        // entrega + 8 días corridos
   liquidacionEstimada: boolean;    // true si se basó en la entrega ESTIMADA (no real)
+  enviado: boolean;                // el envío ya salió (en camino o entregado)
 }
 
 /**
@@ -417,11 +481,15 @@ async function resolverFechasEnvio(
   let entregaReal: Date | null = null;     // date_delivered más tardía
   let entregaEstimada: Date | null = null; // estimada más tardía
   let algunoSinEntregar = false;
+  let enviado = false;                      // algún envío ya salió
 
   for (const sid of shipmentIds) {
     try {
       const s = await getShipment(tenantId, sid);
       const opt = s.shipping_option;
+
+      // "en camino" o "entregado" → el envío ya salió del vendedor
+      if (s.status === "shipped" || s.status === "delivered") enviado = true;
 
       const d =
         parseFechaDia(opt?.estimated_schedule_limit?.date) ??
@@ -459,7 +527,34 @@ async function resolverFechasEnvio(
     }
   }
 
-  return { despacho, liquidacion, liquidacionEstimada };
+  return { despacho, liquidacion, liquidacionEstimada, enviado };
+}
+
+// Orden de avance de los estados (para no retroceder al automatizar).
+const ESTADO_RANK: Record<string, number> = {
+  PENDIENTE_PAGO: 0,
+  CONFIRMADO: 1,
+  EN_PRODUCCION: 2,
+  TERMINADO: 3,
+  ENTREGADO: 4,
+  ESPERANDO_LIQUIDACION_ML: 5,
+  COMPLETADO: 6,
+};
+
+/**
+ * Devuelve ESPERANDO_LIQUIDACION_ML si el envío ya salió y el estado actual es
+ * anterior; si no, null (no se cambia el estado). Nunca retrocede ni toca
+ * estados finales (COMPLETADO, CANCELADO, RECLAMO_ABIERTO).
+ */
+function estadoPorEnvio(
+  estadoActual: string,
+  enviado: boolean
+): "ESPERANDO_LIQUIDACION_ML" | null {
+  if (!enviado) return null;
+  const rank = ESTADO_RANK[estadoActual];
+  if (rank == null) return null; // cancelado / reclamo → no tocar
+  if (rank < ESTADO_RANK.ESPERANDO_LIQUIDACION_ML) return "ESPERANDO_LIQUIDACION_ML";
+  return null;
 }
 
 export interface CostosMl {

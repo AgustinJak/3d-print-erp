@@ -122,7 +122,7 @@ function IntegracionesContent() {
   const [status, setStatus] = useState<ShopStatus | null>(null);
   const [mlStatus, setMlStatus] = useState<MlStatus | null>(null);
   const [mlPubs, setMlPubs] = useState<MlPublicacionesData | null>(null);
-  const [mlBusy, setMlBusy] = useState<null | "sync" | "disconnect">(null);
+  const [mlBusy, setMlBusy] = useState<null | "sync" | "disconnect" | "liquidaciones">(null);
   const [logs, setLogs] = useState<WebhookLog[]>([]);
   const [pedidosRevision, setPedidosRevision] = useState<PedidoRevision[]>([]);
   const [skusAudit, setSkusAudit] = useState<SkusAudit | null>(null);
@@ -204,6 +204,27 @@ function IntegracionesContent() {
       fetchAll();
     } catch {
       toast.error("Error al sincronizar");
+    } finally {
+      setMlBusy(null);
+    }
+  };
+
+  const actualizarLiquidaciones = async () => {
+    setMlBusy("liquidaciones");
+    try {
+      const res = await fetch("/api/ml/actualizar-liquidaciones?max=40", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Error al actualizar liquidaciones");
+        return;
+      }
+      const s = data.stats;
+      toast.success(
+        `Liquidaciones: ${s.actualizados} actualizados, ${s.ya_resueltos} ya resueltos${s.no_encontrados ? `, ${s.no_encontrados} no encontrados en ML` : ""}`
+      );
+      fetchAll();
+    } catch {
+      toast.error("Error al actualizar liquidaciones");
     } finally {
       setMlBusy(null);
     }
@@ -487,6 +508,13 @@ function IntegracionesContent() {
                       <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sincronizando…</>
                     ) : (
                       <><Download className="mr-2 h-4 w-4" /> Sincronizar últimos 30 días</>
+                    )}
+                  </Button>
+                  <Button variant="outline" onClick={actualizarLiquidaciones} disabled={mlBusy !== null}>
+                    {mlBusy === "liquidaciones" ? (
+                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Actualizando…</>
+                    ) : (
+                      <><RefreshCw className="mr-2 h-4 w-4" /> Actualizar liquidaciones y estados</>
                     )}
                   </Button>
                   <Button variant="outline" onClick={disconnectMl} disabled={mlBusy !== null}>
