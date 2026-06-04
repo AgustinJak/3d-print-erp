@@ -344,12 +344,17 @@ export async function getShipmentCosts(
 
 export interface MlShipment {
   id: number;
-  status?: string;
+  status?: string; // pending, shipped, delivered, etc.
   substatus?: string | null;
+  status_history?: {
+    date_delivered?: string | null;
+    date_shipped?: string | null;
+  };
   shipping_option?: {
     estimated_schedule_limit?: { date?: string | null }; // límite para despachar
     estimated_delivery_time?: { date?: string | null };  // entrega estimada
     estimated_delivery_limit?: { date?: string | null };
+    estimated_delivery_final?: { date?: string | null };
   };
 }
 

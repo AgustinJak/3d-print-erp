@@ -69,9 +69,10 @@ type ExistingPedido = {
   id: string;
   estado: string;
   tieneFechaLiq: boolean;
-  esIntegracion: boolean;    // creado por la integración (externoId ML-*)
-  tieneNeto: boolean;        // ya tiene el desglose de costos calculado
-  tieneFechaDespacho: boolean; // ya tiene la fecha real de despacho de ML
+  esIntegracion: boolean;       // creado por la integración (externoId ML-*)
+  tieneNeto: boolean;           // ya tiene el desglose de costos calculado
+  tieneFechaDespacho: boolean;  // ya tiene la fecha real de despacho de ML
+  liquidacionEstimada: boolean; // la liquidación es estimada (aún no entregado)
 };
 
 async function findExistingPedido(
@@ -92,6 +93,7 @@ async function findExistingPedido(
       esIntegracion: true,
       tieneNeto: oe.costos_ml != null,
       tieneFechaDespacho: oe.fecha_despacho_ml != null,
+      liquidacionEstimada: oe.liquidacion_estimada === true,
     };
   }
 
@@ -114,6 +116,7 @@ async function findExistingPedido(
     esIntegracion: false, // cargado a mano → no lo tocamos
     tieneNeto: true,
     tieneFechaDespacho: true,
+    liquidacionEstimada: false,
   };
 }
 
@@ -122,26 +125,15 @@ function mapEstadoMl(orderStatus: string): "CONFIRMADO" | "CANCELADO" {
   return "CONFIRMADO";
 }
 
-/**
- * Intenta obtener la fecha de liquidación (money_release_date) consultando
- * los pagos aprobados de la orden. Devuelve null si no hay.
- */
-async function resolverFechaLiquidacion(
-  tenantId: string,
-  order: MlOrder
-): Promise<Date | null> {
-  const pagos = (order.payments || []).filter((p) => p.status === "approved");
-  for (const pago of pagos) {
-    try {
-      const detalle = await getPayment(tenantId, pago.id);
-      if (detalle.money_release_date) {
-        return new Date(detalle.money_release_date);
-      }
-    } catch {
-      // Si falla la consulta del pago, seguimos sin fecha de liquidación
-    }
-  }
-  return null;
+// Mercado Libre libera el dinero ~8 días corridos después de la entrega.
+const DIAS_LIQUIDACION = 8;
+
+/** Suma N días corridos, fijando el resultado al mediodía local. */
+function addDiasCorridos(date: Date, dias: number): Date {
+  const d = new Date(date);
+  d.setDate(d.getDate() + dias);
+  d.setHours(12, 0, 0, 0);
+  return d;
 }
 
 /**
@@ -191,36 +183,31 @@ export async function processMlOrderGroup(
 
   // Ya existe
   if (existente) {
-    // Pedido de la integración al que le falta el neto o la fecha real de
-    // despacho (creado por una versión anterior): lo completamos sin perder
-    // estado/prioridad que el usuario haya tocado.
-    if (existente.esIntegracion && (!existente.tieneNeto || !existente.tieneFechaDespacho)) {
-      const fechaDespacho = await resolverFechaDespacho(tenantId, orders);
-      if (!existente.tieneNeto) {
-        // Falta el neto: recalcular y aplicar al precio de lista + fecha
-        const costos = await calcularCostosMl(tenantId, orders);
-        await ajustarNetoPedidoDesdeLista(existente.id, costos, fechaDespacho);
-      } else if (fechaDespacho) {
-        // Ya tiene neto, solo falta la fecha de despacho
-        await actualizarFechaDespacho(existente.id, fechaDespacho);
-      }
-      const fechaLiq = await resolverFechaLiquidacionGrupo(tenantId, orders);
-      if (fechaLiq && !existente.tieneFechaLiq) {
-        await prisma.pedido.update({ where: { id: existente.id }, data: { fechaLiquidacionMl: fechaLiq } });
-      }
-      return { action: "updated", pedidoId: existente.id, estado: existente.estado, warnings, reason: "datos_ml_completados" };
+    // Pedido cargado a mano: respetamos lo que el usuario puso, no lo tocamos.
+    if (!existente.esIntegracion) {
+      return { action: "skipped_existing", pedidoId: existente.id, estado: existente.estado, warnings, reason: "pedido_manual" };
     }
 
-    // Solo actualizamos la fecha de liquidación si falta
-    if (existente.tieneFechaLiq) {
+    // Pedido de la integración: lo completamos/actualizamos si le falta el neto,
+    // la fecha de despacho, o si la liquidación todavía es estimada (puede haber
+    // pasado a entregado). Preserva estado/prioridad que el usuario haya tocado.
+    const necesita =
+      !existente.tieneNeto || !existente.tieneFechaDespacho || existente.liquidacionEstimada;
+    if (!necesita) {
       return { action: "skipped_existing", pedidoId: existente.id, estado: existente.estado, warnings, reason: "pedido_ya_existe" };
     }
-    const fechaLiq = await resolverFechaLiquidacionGrupo(tenantId, orders);
-    if (fechaLiq) {
-      await prisma.pedido.update({ where: { id: existente.id }, data: { fechaLiquidacionMl: fechaLiq } });
-      return { action: "updated", pedidoId: existente.id, estado: existente.estado, warnings, reason: "fecha_liquidacion_actualizada" };
+
+    const fechas = await resolverFechasEnvio(tenantId, orders);
+    if (!existente.tieneNeto) {
+      const costos = await calcularCostosMl(tenantId, orders);
+      await ajustarNetoPedidoDesdeLista(existente.id, costos, fechas.despacho);
+    } else if (fechas.despacho) {
+      await actualizarFechaDespacho(existente.id, fechas.despacho);
     }
-    return { action: "skipped_existing", pedidoId: existente.id, estado: existente.estado, warnings, reason: "pedido_ya_existe" };
+    if (fechas.liquidacion) {
+      await actualizarLiquidacion(existente.id, fechas.liquidacion, fechas.liquidacionEstimada);
+    }
+    return { action: "updated", pedidoId: existente.id, estado: existente.estado, warnings, reason: "datos_ml_actualizados" };
   }
 
   // Todas canceladas → ignorar
@@ -333,8 +320,8 @@ export async function processMlOrderGroup(
   }
   const nombre = buyerNombre(buyer);
 
-  const fechaLiquidacion = await resolverFechaLiquidacionGrupo(tenantId, orders);
-  const fechaDespacho = await resolverFechaDespacho(tenantId, orders);
+  const fechas = await resolverFechasEnvio(tenantId, orders);
+  const fechaDespacho = fechas.despacho;
 
   // Neto real: descontar comisión de ML y envío del vendedor. El precio de cada
   // item pasa a ser lo que el vendedor efectivamente recibe (prorrateado).
@@ -361,7 +348,7 @@ export async function processMlOrderGroup(
         canalVenta: "mercadolibre",
         fechaPedido: principal.date_created ? new Date(principal.date_created) : new Date(),
         fechaEntrega: fechaDespacho ?? addBusinessDays(new Date(), 3),
-        fechaLiquidacionMl: fechaLiquidacion,
+        fechaLiquidacionMl: fechas.liquidacion,
         idMercadolibre: key,
         externoId: `ML-${key}`,
         contacto: buyer.nickname || null,
@@ -380,6 +367,7 @@ export async function processMlOrderGroup(
             neto: costos.neto,
           },
           fecha_despacho_ml: fechaDespacho ? fechaDespacho.toISOString() : null,
+          liquidacion_estimada: fechas.liquidacionEstimada,
           source: opts.source,
           recibido_en: new Date().toISOString(),
           warnings,
@@ -393,18 +381,6 @@ export async function processMlOrderGroup(
   return { action: "created", pedidoId: result.id, estado: result.estado, warnings };
 }
 
-/** Busca la fecha de liquidación en los pagos de cualquier orden del grupo. */
-async function resolverFechaLiquidacionGrupo(
-  tenantId: string,
-  orders: MlOrder[]
-): Promise<Date | null> {
-  for (const order of orders) {
-    const fecha = await resolverFechaLiquidacion(tenantId, order);
-    if (fecha) return fecha;
-  }
-  return null;
-}
-
 /** Parsea la parte de día de un ISO y la fija al mediodía local (evita shifts). */
 function parseFechaDia(iso?: string | null): Date | null {
   if (!iso) return null;
@@ -412,32 +388,72 @@ function parseFechaDia(iso?: string | null): Date | null {
   return m ? new Date(`${m[1]}T12:00:00`) : null;
 }
 
+export interface FechasEnvio {
+  despacho: Date | null;           // cuándo dar la etiqueta (estimated_schedule_limit)
+  liquidacion: Date | null;        // entrega + 8 días corridos
+  liquidacionEstimada: boolean;    // true si se basó en la entrega ESTIMADA (no real)
+}
+
 /**
- * Fecha de despacho (cuándo dar la etiqueta / despachar al correo) según ML.
- * Usa `estimated_schedule_limit`; si no está, la entrega estimada. Devuelve la
- * más temprana entre los envíos del grupo (el deadline más próximo).
+ * Resuelve las fechas de envío del grupo en una sola pasada por los shipments:
+ *  - despacho: el límite de despacho más temprano (deadline operativo)
+ *  - liquidación: la entrega (real si todo está entregado, si no estimada) + 8 días
  */
-async function resolverFechaDespacho(
+async function resolverFechasEnvio(
   tenantId: string,
   orders: MlOrder[]
-): Promise<Date | null> {
+): Promise<FechasEnvio> {
   const shipmentIds = Array.from(
     new Set(orders.map((o) => o.shipping?.id).filter((id): id is number => id != null))
   );
-  let mejor: Date | null = null;
+
+  let despacho: Date | null = null;
+  let entregaReal: Date | null = null;     // date_delivered más tardía
+  let entregaEstimada: Date | null = null; // estimada más tardía
+  let algunoSinEntregar = false;
+
   for (const sid of shipmentIds) {
     try {
       const s = await getShipment(tenantId, sid);
       const opt = s.shipping_option;
-      const fecha =
+
+      const d =
         parseFechaDia(opt?.estimated_schedule_limit?.date) ??
         parseFechaDia(opt?.estimated_delivery_time?.date);
-      if (fecha && (!mejor || fecha < mejor)) mejor = fecha;
+      if (d && (!despacho || d < despacho)) despacho = d;
+
+      const entregado = parseFechaDia(s.status_history?.date_delivered);
+      if (entregado) {
+        if (!entregaReal || entregado > entregaReal) entregaReal = entregado;
+      } else {
+        algunoSinEntregar = true;
+      }
+
+      const est =
+        parseFechaDia(opt?.estimated_delivery_time?.date) ??
+        parseFechaDia(opt?.estimated_delivery_final?.date) ??
+        parseFechaDia(opt?.estimated_delivery_limit?.date);
+      if (est && (!entregaEstimada || est > entregaEstimada)) entregaEstimada = est;
     } catch {
-      // sin datos de envío para ese shipment
+      // sin datos para ese shipment
     }
   }
-  return mejor;
+
+  let liquidacion: Date | null = null;
+  let liquidacionEstimada = false;
+  if (!algunoSinEntregar && entregaReal) {
+    // Todo entregado → liquidación real
+    liquidacion = addDiasCorridos(entregaReal, DIAS_LIQUIDACION);
+  } else {
+    // Falta entregar algo → liquidación estimada
+    const base = entregaEstimada ?? entregaReal;
+    if (base) {
+      liquidacion = addDiasCorridos(base, DIAS_LIQUIDACION);
+      liquidacionEstimada = true;
+    }
+  }
+
+  return { despacho, liquidacion, liquidacionEstimada };
 }
 
 export interface CostosMl {
@@ -577,9 +593,32 @@ async function actualizarFechaDespacho(pedidoId: string, fechaDespacho: Date): P
   });
 }
 
+/** Actualiza la fecha de liquidación y si es estimada o real. */
+async function actualizarLiquidacion(
+  pedidoId: string,
+  fecha: Date,
+  estimada: boolean
+): Promise<void> {
+  const pedido = await prisma.pedido.findUnique({
+    where: { id: pedidoId },
+    select: { origenExterno: true },
+  });
+  if (!pedido) return;
+  const oe = (pedido.origenExterno ?? {}) as Record<string, unknown>;
+  await prisma.pedido.update({
+    where: { id: pedidoId },
+    data: {
+      fechaLiquidacionMl: fecha,
+      origenExterno: { ...oe, liquidacion_estimada: estimada } as Prisma.InputJsonValue,
+    },
+  });
+}
+
 /**
- * Procesa una notificación de pago: ubica el pedido por su order_id y
- * actualiza la fecha de liquidación.
+ * Procesa una notificación de pago. Resuelve el pedido por su pack y lo
+ * re-procesa: si no existe lo crea, y si existe actualiza fechas/liquidación
+ * cuando corresponde (la fecha de liquidación se deriva de la entrega, no del
+ * pago, así que basta con re-procesar la orden).
  */
 export async function processMlPayment(
   tenantId: string,
@@ -589,97 +628,11 @@ export async function processMlPayment(
   if (!pago.order_id) {
     return { action: "ignored", warnings: [], reason: "payment_sin_order" };
   }
-
-  // Traemos la orden para resolver su pack_id (los pedidos se identifican por
-  // pack, no por order.id).
   let order: MlOrder;
   try {
     order = await getOrder(tenantId, String(pago.order_id));
   } catch {
     return { action: "ignored", warnings: [], reason: "orden_no_encontrada" };
   }
-  const key = packKey(order);
-
-  const existente = await findExistingPedido(tenantId, key);
-  if (!existente) {
-    // El pedido aún no llegó (payments puede llegar antes que orders).
-    return processMlOrder(tenantId, order, { source: "webhook" });
-  }
-
-  if (pago.money_release_date) {
-    await prisma.pedido.update({
-      where: { id: existente.id },
-      data: { fechaLiquidacionMl: new Date(pago.money_release_date) },
-    });
-    // Al liquidar, ajustamos el neto al valor real (las comisiones/envío ya
-    // están definitivos). Solo afecta a pedidos creados por la integración.
-    try {
-      const orders = await expandPack(tenantId, order);
-      const costos = await calcularCostosMl(tenantId, orders);
-      await ajustarNetoPedido(existente.id, costos);
-    } catch {
-      // si falla el ajuste, la fecha de liquidación ya quedó guardada
-    }
-    return {
-      action: "updated",
-      pedidoId: existente.id,
-      estado: existente.estado,
-      warnings: [],
-      reason: "liquidacion_y_neto_actualizados",
-    };
-  }
-
-  return {
-    action: "skipped_existing",
-    pedidoId: existente.id,
-    warnings: [],
-    reason: "sin_fecha_liquidacion",
-  };
-}
-
-/**
- * Re-escala los items de un pedido creado por la integración al neto real
- * (cuando ML liquida). Solo actúa si el pedido tiene el desglose de costos
- * guardado y el factor cambió de forma apreciable.
- */
-async function ajustarNetoPedido(pedidoId: string, costosNuevos: CostosMl): Promise<void> {
-  const pedido = await prisma.pedido.findUnique({
-    where: { id: pedidoId },
-    include: { items: true },
-  });
-  if (!pedido) return;
-
-  const oe = (pedido.origenExterno ?? {}) as Record<string, unknown>;
-  const viejos = oe.costos_ml as
-    | { precio_productos?: number; neto?: number }
-    | undefined;
-  if (!viejos?.precio_productos || !viejos.neto) return; // manual o sin desglose
-
-  const factorViejo = viejos.neto / viejos.precio_productos;
-  const factorNuevo = costosNuevos.factorNeto;
-  if (factorViejo <= 0 || Math.abs(factorNuevo - factorViejo) < 0.001) return;
-
-  const ratio = factorNuevo / factorViejo;
-  await prisma.$transaction([
-    ...pedido.items.map((it) =>
-      prisma.itemPedido.update({
-        where: { id: it.id },
-        data: { precioUnitario: Math.round(it.precioUnitario * ratio) },
-      })
-    ),
-    prisma.pedido.update({
-      where: { id: pedidoId },
-      data: {
-        origenExterno: {
-          ...oe,
-          costos_ml: {
-            precio_productos: costosNuevos.precioProductos,
-            comision: costosNuevos.comision,
-            envio: costosNuevos.envio,
-            neto: costosNuevos.neto,
-          },
-        } as Prisma.InputJsonValue,
-      },
-    }),
-  ]);
+  return processMlOrder(tenantId, order, { source: "webhook" });
 }
