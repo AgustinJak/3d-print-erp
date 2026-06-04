@@ -346,6 +346,7 @@ export interface MlShipment {
   id: number;
   status?: string; // pending, shipped, delivered, etc.
   substatus?: string | null;
+  logistic_type?: string | null; // "self_service" = Flex
   status_history?: {
     date_delivered?: string | null;
     date_shipped?: string | null;

@@ -64,6 +64,19 @@ export async function GET(request: NextRequest) {
     });
     const todosGastos = await prisma.gasto.findMany({ where: { tenantId } });
 
+    // ─── Flex: bonificación de ML vs pago a la logística (dato informativo) ───
+    const flexRows = await prisma.$queryRaw<Array<{ bonificado: number }>>`
+      SELECT COALESCE(SUM((origen_externo->>'bonificacion_flex')::numeric), 0)::float8 AS bonificado
+      FROM pedidos
+      WHERE tenant_id = ${tenantId}
+        AND origen_externo->>'es_flex' = 'true'
+        AND fecha_pedido >= ${inicioMes} AND fecha_pedido < ${finMes}
+    `;
+    const flexBonificado = flexRows[0]?.bonificado || 0;
+    const flexPagadoLogistica = gastosMes
+      .filter((g) => /flex/i.test(g.categoria))
+      .reduce((s, g) => s + g.monto, 0);
+
     // ─── Transferencias ───────────────────────────────────
     const todasTransferencias = await prisma.transferencia.findMany({
       where: { tenantId },
@@ -459,6 +472,11 @@ export async function GET(request: NextRequest) {
       cuotasPagadasMes,
       transferenciasMes,
       movimientos,
+      flex: {
+        bonificado: flexBonificado,
+        pagadoLogistica: flexPagadoLogistica,
+        sobrante: flexBonificado - flexPagadoLogistica,
+      },
     });
   } catch (e) {
     if (e instanceof NextResponse) return e;

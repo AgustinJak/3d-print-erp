@@ -126,6 +126,7 @@ interface FinanzasData {
   cuotasPagadasMes: CuotaPagada[];
   transferenciasMes: Transferencia[];
   movimientos: Movimiento[];
+  flex: { bonificado: number; pagadoLogistica: number; sobrante: number };
   datosMensuales: {
     mes: string;
     ingresos: number;
@@ -401,6 +402,41 @@ export default function FinanzasPage() {
           </Button>
         </div>
       </div>
+
+      {/* Flex — dato informativo */}
+      {data.flex && (data.flex.bonificado > 0 || data.flex.pagadoLogistica > 0) && (
+        <Card className="border-blue-500/30 bg-blue-500/5">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2 rounded-lg bg-blue-500/10">
+                <Package className="h-5 w-5 text-blue-500" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-blue-600 dark:text-blue-400">Flex (informativo)</h2>
+                <p className="text-xs text-muted-foreground">
+                  Bonificación de ML vs lo que pagás a la logística este mes. No suma a las billeteras.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground">Bonificado por ML</p>
+                <p className="text-xl font-bold text-blue-600">{formatMoney(data.flex.bonificado)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Pagado a logística (gastos &quot;Flex&quot;)</p>
+                <p className="text-xl font-bold">{formatMoney(data.flex.pagadoLogistica)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Sobrante (vueltito)</p>
+                <p className={`text-xl font-bold ${data.flex.sobrante >= 0 ? "text-green-600" : "text-red-600"}`}>
+                  {formatMoney(data.flex.sobrante)}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Pedidos en curso */}
       <Card className="border-amber-500/30 bg-amber-500/5">

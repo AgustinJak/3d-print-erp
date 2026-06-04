@@ -68,12 +68,13 @@ export async function POST(request: NextRequest) {
     for (const p of candidatos) {
       if (stats.actualizados >= max) break;
 
-      // Saltear solo si ya tiene liquidación REAL Y el estado ya no puede
-      // avanzar (sino hay que re-chequear el envío para actualizar el estado).
+      // Saltear solo si ya tiene liquidación REAL, el estado ya no puede avanzar
+      // y ya se evaluó si es Flex (sino hay que re-chequear el envío).
       const oe = (p.origenExterno ?? {}) as Record<string, unknown>;
       const liquidacionEstimada = oe.liquidacion_estimada === true;
       const tieneReal = p.fechaLiquidacionMl != null && !liquidacionEstimada && "liquidacion_estimada" in oe;
-      if (tieneReal && !estadoPuedeAvanzarAEsperandoLiq(p.estado)) {
+      const flexEvaluado = "es_flex" in oe;
+      if (tieneReal && !estadoPuedeAvanzarAEsperandoLiq(p.estado) && flexEvaluado) {
         stats.ya_resueltos++;
         continue;
       }

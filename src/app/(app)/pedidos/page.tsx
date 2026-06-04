@@ -520,7 +520,14 @@ export default function PedidosPage() {
                           </Select>
                         </TableCell>
                         <TableCell className="font-medium">
-                          {p.cliente?.nombre || <span className="text-muted-foreground">Sin cliente</span>}
+                          <div className="flex items-center gap-1.5">
+                            {p.cliente?.nombre || <span className="text-muted-foreground">Sin cliente</span>}
+                            {p.etiquetas.includes("flex") && (
+                              <Badge className="h-4 px-1 text-[9px] bg-blue-500/15 text-blue-500 border-blue-500/30 hover:bg-blue-500/20">
+                                FLEX
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="max-w-[260px]">
                           <div className="flex flex-col gap-0.5">

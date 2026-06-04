@@ -74,6 +74,7 @@ type ExistingPedido = {
   tieneFechaDespacho: boolean;     // ya tiene la fecha real de despacho de ML
   liquidacionCalculada: boolean;   // ya se intentó calcular la liquidación
   liquidacionEstimada: boolean;    // la liquidación es estimada (aún no entregado)
+  flexEvaluado: boolean;           // ya se evaluó si es Flex
 };
 
 async function findExistingPedido(
@@ -96,6 +97,7 @@ async function findExistingPedido(
       tieneFechaDespacho: oe.fecha_despacho_ml != null,
       liquidacionCalculada: "liquidacion_estimada" in oe,
       liquidacionEstimada: oe.liquidacion_estimada === true,
+      flexEvaluado: "es_flex" in oe,
     };
   }
 
@@ -120,6 +122,7 @@ async function findExistingPedido(
     tieneFechaDespacho: true,
     liquidacionCalculada: true,
     liquidacionEstimada: false,
+    flexEvaluado: true,
   };
 }
 
@@ -210,6 +213,9 @@ export async function actualizarLiquidacionYEstado(
   const fechas = await resolverFechasEnvio(tenantId, orders);
   await actualizarLiquidacion(pedido.id, fechas.liquidacion, fechas.liquidacionEstimada);
 
+  const bonif = fechas.esFlex ? (await calcularCostosMl(tenantId, orders)).grossEnvio : 0;
+  await registrarFlex(pedido.id, fechas.esFlex, bonif);
+
   const nuevoEstado = estadoPorEnvio(pedido.estado, fechas.enviado);
   if (nuevoEstado) {
     await prisma.pedido.update({ where: { id: pedido.id }, data: { estado: nuevoEstado } });
@@ -250,6 +256,7 @@ export async function processMlOrderGroup(
       !existente.tieneNeto ||
       !existente.tieneFechaDespacho ||
       !existente.liquidacionCalculada ||
+      !existente.flexEvaluado ||
       existente.liquidacionEstimada ||
       estadoPuedeAvanzarAEsperandoLiq(existente.estado); // re-chequear envío
     if (!necesita) {
@@ -257,12 +264,16 @@ export async function processMlOrderGroup(
     }
 
     const fechas = await resolverFechasEnvio(tenantId, orders);
+    let costos: CostosMl | null = null;
     if (!existente.tieneNeto) {
-      const costos = await calcularCostosMl(tenantId, orders);
+      costos = await calcularCostosMl(tenantId, orders);
       await ajustarNetoPedidoDesdeLista(existente.id, costos, fechas.despacho);
     } else if (fechas.despacho) {
       await actualizarFechaDespacho(existente.id, fechas.despacho);
     }
+    // Registrar Flex (sí/no) para no reevaluarlo; calcula bonificación si lo es.
+    if (fechas.esFlex && !costos) costos = await calcularCostosMl(tenantId, orders);
+    await registrarFlex(existente.id, fechas.esFlex, fechas.esFlex && costos ? costos.grossEnvio : 0);
     // Siempre marcamos la liquidación (aunque sea null) para no reprocesar
     // indefinidamente pedidos sin envío.
     await actualizarLiquidacion(existente.id, fechas.liquidacion, fechas.liquidacionEstimada);
@@ -409,6 +420,10 @@ export async function processMlOrderGroup(
         : fechas.enviado
           ? "ESPERANDO_LIQUIDACION_ML"
           : "CONFIRMADO";
+    const etiquetas: string[] = [];
+    if (necesitaRevision) etiquetas.push("revision_manual");
+    if (fechas.esFlex) etiquetas.push("flex");
+    const bonificacionFlex = fechas.esFlex ? costos.grossEnvio : 0;
     return tx.pedido.create({
       data: {
         tenantId,
@@ -422,8 +437,8 @@ export async function processMlOrderGroup(
         idMercadolibre: key,
         externoId: `ML-${key}`,
         contacto: buyer.nickname || null,
-        notas: buildNotas(principal, key, warnings, costos),
-        etiquetas: necesitaRevision ? ["revision_manual"] : [],
+        notas: buildNotas(principal, key, warnings, costos, { esFlex: fechas.esFlex, bonificacionFlex }),
+        etiquetas,
         origenExterno: {
           sistema: "mercadolibre",
           pack_id: principal.pack_id ?? null,
@@ -436,6 +451,8 @@ export async function processMlOrderGroup(
             envio: costos.envio,
             neto: costos.neto,
           },
+          es_flex: fechas.esFlex,
+          bonificacion_flex: bonificacionFlex,
           fecha_despacho_ml: fechaDespacho ? fechaDespacho.toISOString() : null,
           liquidacion_estimada: fechas.liquidacionEstimada,
           source: opts.source,
@@ -492,6 +509,7 @@ export interface FechasEnvio {
   liquidacion: Date | null;        // entrega + 8 días corridos
   liquidacionEstimada: boolean;    // true si se basó en la entrega ESTIMADA (no real)
   enviado: boolean;                // el envío ya salió (en camino o entregado)
+  esFlex: boolean;                 // logistic_type self_service (envío propio)
 }
 
 /**
@@ -512,11 +530,14 @@ async function resolverFechasEnvio(
   let entregaEstimada: Date | null = null; // estimada más tardía
   let algunoSinEntregar = false;
   let enviado = false;                      // algún envío ya salió
+  let esFlex = false;                       // logistic_type self_service
 
   for (const sid of shipmentIds) {
     try {
       const s = await getShipment(tenantId, sid);
       const opt = s.shipping_option;
+
+      if (s.logistic_type === "self_service") esFlex = true;
 
       // El envío ya salió del vendedor (en camino o entregado)
       if (envioYaSalio(s.status, s.substatus)) enviado = true;
@@ -557,7 +578,7 @@ async function resolverFechasEnvio(
     }
   }
 
-  return { despacho, liquidacion, liquidacionEstimada, enviado };
+  return { despacho, liquidacion, liquidacionEstimada, enviado, esFlex };
 }
 
 // Orden de avance de los estados (para no retroceder al automatizar).
@@ -603,6 +624,7 @@ export interface CostosMl {
   envio: number;           // costo de envío a cargo del vendedor
   neto: number;            // precioProductos - comision - envio
   factorNeto: number;      // neto / precioProductos (proporción que queda)
+  grossEnvio: number;      // gross_amount del envío (en Flex = bonificación de ML)
 }
 
 /**
@@ -630,10 +652,12 @@ export async function calcularCostosMl(
     new Set(orders.map((o) => o.shipping?.id).filter((id): id is number => id != null))
   );
   let envio = 0;
+  let grossEnvio = 0;
   for (const sid of shipmentIds) {
     try {
       const costs = await getShipmentCosts(tenantId, sid);
       for (const s of costs.senders || []) envio += s.cost || 0;
+      grossEnvio += costs.gross_amount || 0;
     } catch {
       // si falla traer el costo de envío, lo dejamos en 0 para ese shipment
     }
@@ -641,7 +665,7 @@ export async function calcularCostosMl(
 
   const neto = precioProductos - comision - envio;
   const factorNeto = precioProductos > 0 ? neto / precioProductos : 1;
-  return { precioProductos, comision, envio, neto, factorNeto };
+  return { precioProductos, comision, envio, neto, factorNeto, grossEnvio };
 }
 
 const DESGLOSE_MARKER = "💰 Desglose ML:";
@@ -657,10 +681,20 @@ function buildDesglose(costos: CostosMl): string {
   ].join("\n");
 }
 
-function buildNotas(order: MlOrder, key: string, warnings: string[], costos?: CostosMl): string {
+function buildNotas(
+  order: MlOrder,
+  key: string,
+  warnings: string[],
+  costos?: CostosMl,
+  flex?: { esFlex: boolean; bonificacionFlex: number }
+): string {
   const lines: string[] = [`🛒 Venta Mercado Libre: ${key}`];
   if (order.buyer.nickname) lines.push(`👤 ${order.buyer.nickname}`);
   if (order.pack_id) lines.push(`📦 Pack: ${order.pack_id}`);
+  if (flex?.esFlex) {
+    const fmt = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`;
+    lines.push("", `🚚 Envío FLEX — Bonificación ML: ${fmt(flex.bonificacionFlex)}`);
+  }
   if (costos) lines.push("", buildDesglose(costos));
   if (warnings.length > 0) {
     lines.push("", "⚠️ Revisar manualmente:");
@@ -730,6 +764,38 @@ async function actualizarFechaDespacho(pedidoId: string, fechaDespacho: Date): P
     data: {
       fechaEntrega: fechaDespacho,
       origenExterno: { ...oe, fecha_despacho_ml: fechaDespacho.toISOString() } as Prisma.InputJsonValue,
+    },
+  });
+}
+
+/**
+ * Registra si un pedido es Flex o no. Si lo es, agrega la etiqueta "flex" y la
+ * bonificación. Siempre guarda `es_flex` (true/false) para no reevaluarlo.
+ */
+async function registrarFlex(
+  pedidoId: string,
+  esFlex: boolean,
+  bonificacion: number
+): Promise<void> {
+  const pedido = await prisma.pedido.findUnique({
+    where: { id: pedidoId },
+    select: { etiquetas: true, origenExterno: true },
+  });
+  if (!pedido) return;
+  const oe = (pedido.origenExterno ?? {}) as Record<string, unknown>;
+  const etiquetas =
+    esFlex && !pedido.etiquetas.includes("flex")
+      ? [...pedido.etiquetas, "flex"]
+      : pedido.etiquetas;
+  await prisma.pedido.update({
+    where: { id: pedidoId },
+    data: {
+      etiquetas,
+      origenExterno: {
+        ...oe,
+        es_flex: esFlex,
+        bonificacion_flex: esFlex ? bonificacion : 0,
+      } as Prisma.InputJsonValue,
     },
   });
 }
