@@ -250,7 +250,8 @@ export async function processMlOrderGroup(
       !existente.tieneNeto ||
       !existente.tieneFechaDespacho ||
       !existente.liquidacionCalculada ||
-      existente.liquidacionEstimada;
+      existente.liquidacionEstimada ||
+      estadoPuedeAvanzarAEsperandoLiq(existente.estado); // re-chequear envío
     if (!necesita) {
       return { action: "skipped_existing", pedidoId: existente.id, estado: existente.estado, warnings, reason: "pedido_ya_existe" };
     }
@@ -555,6 +556,16 @@ function estadoPorEnvio(
   if (rank == null) return null; // cancelado / reclamo → no tocar
   if (rank < ESTADO_RANK.ESPERANDO_LIQUIDACION_ML) return "ESPERANDO_LIQUIDACION_ML";
   return null;
+}
+
+/**
+ * True si el estado todavía es anterior a "esperando liquidación", o sea que
+ * podría avanzar si el envío ya salió. Sirve para decidir si hay que volver a
+ * consultar el envío en ML.
+ */
+export function estadoPuedeAvanzarAEsperandoLiq(estado: string): boolean {
+  const rank = ESTADO_RANK[estado];
+  return rank != null && rank < ESTADO_RANK.ESPERANDO_LIQUIDACION_ML;
 }
 
 export interface CostosMl {

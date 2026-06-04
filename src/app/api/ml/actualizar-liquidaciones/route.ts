@@ -4,7 +4,10 @@ export const maxDuration = 60;
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { getMlAccount } from "@/lib/mercadolibre";
-import { actualizarLiquidacionYEstado } from "@/lib/mercadolibre-sync";
+import {
+  actualizarLiquidacionYEstado,
+  estadoPuedeAvanzarAEsperandoLiq,
+} from "@/lib/mercadolibre-sync";
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma";
 
@@ -65,11 +68,12 @@ export async function POST(request: NextRequest) {
     for (const p of candidatos) {
       if (stats.actualizados >= max) break;
 
-      // Saltear los que ya tienen liquidación REAL (no estimada)
+      // Saltear solo si ya tiene liquidación REAL Y el estado ya no puede
+      // avanzar (sino hay que re-chequear el envío para actualizar el estado).
       const oe = (p.origenExterno ?? {}) as Record<string, unknown>;
       const liquidacionEstimada = oe.liquidacion_estimada === true;
       const tieneReal = p.fechaLiquidacionMl != null && !liquidacionEstimada && "liquidacion_estimada" in oe;
-      if (tieneReal) {
+      if (tieneReal && !estadoPuedeAvanzarAEsperandoLiq(p.estado)) {
         stats.ya_resueltos++;
         continue;
       }
