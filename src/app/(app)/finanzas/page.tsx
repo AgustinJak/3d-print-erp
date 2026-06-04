@@ -237,6 +237,16 @@ export default function FinanzasPage() {
   });
   const [savingTransfer, setSavingTransfer] = useState(false);
 
+  // Gasto Flex (pago a la logística)
+  const [flexDialog, setFlexDialog] = useState(false);
+  const [flexForm, setFlexForm] = useState({
+    monto: "",
+    descripcion: "Pago Flex logística",
+    fecha: new Date().toISOString().slice(0, 10),
+    billetera: "empresarial",
+  });
+  const [savingFlex, setSavingFlex] = useState(false);
+
   // Timeline
   const [tipoFiltro, setTipoFiltro] = useState<"todos" | "gasto" | "cuota" | "transferencia" | "pedido">("todos");
   const [billeteraFiltro, setBilleteraFiltro] = useState<"todas" | "fabricacion" | "empresarial">("todas");
@@ -326,6 +336,41 @@ export default function FinanzasPage() {
     fetchData();
   };
 
+  const openFlexGasto = () => {
+    setFlexForm({
+      monto: "",
+      descripcion: "Pago Flex logística",
+      fecha: new Date().toISOString().slice(0, 10),
+      billetera: "empresarial",
+    });
+    setFlexDialog(true);
+  };
+
+  const submitFlexGasto = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingFlex(true);
+    const res = await fetch("/api/gastos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        categoria: "Flex",
+        monto: flexForm.monto,
+        descripcion: flexForm.descripcion,
+        fecha: flexForm.fecha,
+        billetera: flexForm.billetera,
+      }),
+    });
+    setSavingFlex(false);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || "Error al guardar");
+      return;
+    }
+    toast.success("Pago Flex registrado");
+    setFlexDialog(false);
+    fetchData();
+  };
+
   if (initialLoading) return <TableSkeleton cols={4} />;
   if (!data) return null;
 
@@ -407,16 +452,21 @@ export default function FinanzasPage() {
       {data.flex && (data.flex.bonificado > 0 || data.flex.pagadoLogistica > 0) && (
         <Card className="border-blue-500/30 bg-blue-500/5">
           <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="p-2 rounded-lg bg-blue-500/10">
-                <Package className="h-5 w-5 text-blue-500" />
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-blue-500/10">
+                  <Package className="h-5 w-5 text-blue-500" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-blue-600 dark:text-blue-400">Flex (informativo)</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Bonificación de ML vs lo que pagás a la logística este mes. No suma a las billeteras.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-sm font-semibold text-blue-600 dark:text-blue-400">Flex (informativo)</h2>
-                <p className="text-xs text-muted-foreground">
-                  Bonificación de ML vs lo que pagás a la logística este mes. No suma a las billeteras.
-                </p>
-              </div>
+              <Button size="sm" variant="outline" onClick={openFlexGasto}>
+                <PlusCircle className="h-4 w-4 mr-1.5" /> Cargar pago Flex
+              </Button>
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div>
@@ -1125,6 +1175,66 @@ export default function FinanzasPage() {
               <Button type="button" variant="outline" onClick={() => setTransferDialog(false)}>Cancelar</Button>
               <Button type="submit" disabled={savingTransfer}>
                 {savingTransfer ? "Guardando..." : "Confirmar"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: gasto Flex (pago a la logística) */}
+      <Dialog open={flexDialog} onOpenChange={setFlexDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cargar pago Flex</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={submitFlexGasto} className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Lo que le pagás a la logística por los envíos Flex. Se registra como gasto con categoría
+              &quot;Flex&quot; y aparece en el card de arriba.
+            </p>
+            <div className="space-y-2">
+              <Label>Monto *</Label>
+              <Input
+                type="number"
+                step="1"
+                value={flexForm.monto}
+                onChange={(e) => setFlexForm({ ...flexForm, monto: e.target.value })}
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Fecha</Label>
+                <Input
+                  type="date"
+                  value={flexForm.fecha}
+                  onChange={(e) => setFlexForm({ ...flexForm, fecha: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Billetera</Label>
+                <select
+                  value={flexForm.billetera}
+                  onChange={(e) => setFlexForm({ ...flexForm, billetera: e.target.value })}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="empresarial">Empresarial</option>
+                  <option value="fabricacion">Fabricación</option>
+                </select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Descripción</Label>
+              <Input
+                value={flexForm.descripcion}
+                onChange={(e) => setFlexForm({ ...flexForm, descripcion: e.target.value })}
+                placeholder="Pago Flex logística"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setFlexDialog(false)}>Cancelar</Button>
+              <Button type="submit" disabled={savingFlex}>
+                {savingFlex ? "Guardando..." : "Registrar pago"}
               </Button>
             </div>
           </form>
