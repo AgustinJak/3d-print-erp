@@ -458,6 +458,35 @@ function parseFechaDia(iso?: string | null): Date | null {
   return m ? new Date(`${m[1]}T12:00:00`) : null;
 }
 
+// Substatus de `ready_to_ship` que indican que el paquete YA salió del vendedor
+// (lo dejó en el correo / lo retiró el transportista / está en tránsito). ML los
+// muestra como "En camino" aunque el status todavía sea ready_to_ship.
+const SUBSTATUS_DESPACHADO = new Set([
+  "dropped_off",
+  "picked_up",
+  "in_hub",
+  "in_warehouse",
+  "in_transit",
+  "arrived",
+  "out_for_delivery",
+  "soon_deliver",
+  "waiting_for_withdrawal",
+  "ready_for_withdrawal",
+  "receiver_absent",
+  "delivery_failed",
+]);
+
+/** True si el envío ya salió del vendedor (en camino o entregado). */
+function envioYaSalio(status?: string, substatus?: string | null): boolean {
+  if (status === "shipped" || status === "delivered" || status === "not_delivered") {
+    return true;
+  }
+  if (status === "ready_to_ship" && substatus && SUBSTATUS_DESPACHADO.has(substatus)) {
+    return true;
+  }
+  return false;
+}
+
 export interface FechasEnvio {
   despacho: Date | null;           // cuándo dar la etiqueta (estimated_schedule_limit)
   liquidacion: Date | null;        // entrega + 8 días corridos
@@ -489,8 +518,8 @@ async function resolverFechasEnvio(
       const s = await getShipment(tenantId, sid);
       const opt = s.shipping_option;
 
-      // "en camino" o "entregado" → el envío ya salió del vendedor
-      if (s.status === "shipped" || s.status === "delivered") enviado = true;
+      // El envío ya salió del vendedor (en camino o entregado)
+      if (envioYaSalio(s.status, s.substatus)) enviado = true;
 
       const d =
         parseFechaDia(opt?.estimated_schedule_limit?.date) ??
