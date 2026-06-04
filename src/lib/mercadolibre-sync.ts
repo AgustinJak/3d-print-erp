@@ -69,10 +69,11 @@ type ExistingPedido = {
   id: string;
   estado: string;
   tieneFechaLiq: boolean;
-  esIntegracion: boolean;       // creado por la integración (externoId ML-*)
-  tieneNeto: boolean;           // ya tiene el desglose de costos calculado
-  tieneFechaDespacho: boolean;  // ya tiene la fecha real de despacho de ML
-  liquidacionEstimada: boolean; // la liquidación es estimada (aún no entregado)
+  esIntegracion: boolean;          // creado por la integración (externoId ML-*)
+  tieneNeto: boolean;              // ya tiene el desglose de costos calculado
+  tieneFechaDespacho: boolean;     // ya tiene la fecha real de despacho de ML
+  liquidacionCalculada: boolean;   // ya se intentó calcular la liquidación
+  liquidacionEstimada: boolean;    // la liquidación es estimada (aún no entregado)
 };
 
 async function findExistingPedido(
@@ -93,6 +94,7 @@ async function findExistingPedido(
       esIntegracion: true,
       tieneNeto: oe.costos_ml != null,
       tieneFechaDespacho: oe.fecha_despacho_ml != null,
+      liquidacionCalculada: "liquidacion_estimada" in oe,
       liquidacionEstimada: oe.liquidacion_estimada === true,
     };
   }
@@ -116,6 +118,7 @@ async function findExistingPedido(
     esIntegracion: false, // cargado a mano → no lo tocamos
     tieneNeto: true,
     tieneFechaDespacho: true,
+    liquidacionCalculada: true,
     liquidacionEstimada: false,
   };
 }
@@ -192,7 +195,10 @@ export async function processMlOrderGroup(
     // la fecha de despacho, o si la liquidación todavía es estimada (puede haber
     // pasado a entregado). Preserva estado/prioridad que el usuario haya tocado.
     const necesita =
-      !existente.tieneNeto || !existente.tieneFechaDespacho || existente.liquidacionEstimada;
+      !existente.tieneNeto ||
+      !existente.tieneFechaDespacho ||
+      !existente.liquidacionCalculada ||
+      existente.liquidacionEstimada;
     if (!necesita) {
       return { action: "skipped_existing", pedidoId: existente.id, estado: existente.estado, warnings, reason: "pedido_ya_existe" };
     }
@@ -204,9 +210,9 @@ export async function processMlOrderGroup(
     } else if (fechas.despacho) {
       await actualizarFechaDespacho(existente.id, fechas.despacho);
     }
-    if (fechas.liquidacion) {
-      await actualizarLiquidacion(existente.id, fechas.liquidacion, fechas.liquidacionEstimada);
-    }
+    // Siempre marcamos la liquidación (aunque sea null) para no reprocesar
+    // indefinidamente pedidos sin envío.
+    await actualizarLiquidacion(existente.id, fechas.liquidacion, fechas.liquidacionEstimada);
     return { action: "updated", pedidoId: existente.id, estado: existente.estado, warnings, reason: "datos_ml_actualizados" };
   }
 
@@ -593,10 +599,10 @@ async function actualizarFechaDespacho(pedidoId: string, fechaDespacho: Date): P
   });
 }
 
-/** Actualiza la fecha de liquidación y si es estimada o real. */
+/** Actualiza la fecha de liquidación (si la hay) y marca si es estimada o real. */
 async function actualizarLiquidacion(
   pedidoId: string,
-  fecha: Date,
+  fecha: Date | null,
   estimada: boolean
 ): Promise<void> {
   const pedido = await prisma.pedido.findUnique({
@@ -608,7 +614,7 @@ async function actualizarLiquidacion(
   await prisma.pedido.update({
     where: { id: pedidoId },
     data: {
-      fechaLiquidacionMl: fecha,
+      ...(fecha ? { fechaLiquidacionMl: fecha } : {}),
       origenExterno: { ...oe, liquidacion_estimada: estimada } as Prisma.InputJsonValue,
     },
   });
