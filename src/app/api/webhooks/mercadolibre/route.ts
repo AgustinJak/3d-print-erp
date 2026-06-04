@@ -1,23 +1,26 @@
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 import { prisma } from "@/lib/prisma";
 import { getOrder } from "@/lib/mercadolibre";
-import { processMlOrder, processMlPayment, type ProcessResult } from "@/lib/mercadolibre-sync";
-import { NextRequest, NextResponse } from "next/server";
+import { processMlOrder } from "@/lib/mercadolibre-sync";
+import { NextRequest, NextResponse, after } from "next/server";
 import type { Prisma } from "@/generated/prisma";
 
 /**
  * Receptor de notificaciones de Mercado Libre.
  *
  * ML hace POST con un body tipo:
- *   { resource: "/orders/123", topic: "orders_v2", user_id: 456, application_id: 999, attempts: 1 }
+ *   { resource: "/orders/123", topic: "orders_v2", user_id: 456, application_id: 999 }
  *
- * Reglas:
- *  - Siempre respondemos 200 ante problemas de datos (ML no debe reintentar algo
- *    que nunca se va a resolver solo). Reservamos 5xx para fallos transitorios.
- *  - La identidad se valida resolviendo el tenant por el `user_id` (debe existir
- *    una cuenta conectada con ese ml_user_id). Los datos reales se traen siempre
- *    desde la API de ML con nuestro token, nunca del body → no se pueden falsear.
+ * Estrategia:
+ *  - Respondemos 200 INMEDIATAMENTE (ML exige respuesta rápida o reintenta /
+ *    deshabilita la app) y procesamos el pedido en segundo plano con `after()`.
+ *  - Solo procesamos `orders_v2` (las ventas). El topic `payments` no aporta
+ *    (la liquidación se deriva del envío) y ML lo manda como /collections/* que
+ *    no se puede consultar → lo ignoramos sin ruido.
+ *  - La identidad se valida resolviendo el tenant por `user_id`. Los datos se
+ *    traen siempre desde la API de ML, nunca del body → no se pueden falsear.
  */
 
 interface MlNotification {
@@ -34,6 +37,8 @@ function extractId(resource: string | undefined): string | null {
   return parts[parts.length - 1] || null;
 }
 
+const TOPICS_ORDEN = new Set(["orders_v2", "orders", "created_orders"]);
+
 export async function POST(request: NextRequest) {
   const ipAddress =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
@@ -44,121 +49,73 @@ export async function POST(request: NextRequest) {
   try {
     body = (await request.json()) as MlNotification;
   } catch {
-    // Body inválido: respondemos 200 para que ML no reintente (es ruido)
     return NextResponse.json({ ok: true, ignored: "invalid_json" }, { status: 200 });
   }
 
   const topic = body.topic || "unknown";
   const userId = body.user_id != null ? String(body.user_id) : null;
 
-  // Resolver tenant por la cuenta conectada con ese ml_user_id
-  let tenantId: string | null = null;
-  if (userId) {
-    const cuenta = await prisma.cuentaMercadolibre.findFirst({
-      where: { mlUserId: userId },
-      select: { tenantId: true },
-    });
-    tenantId = cuenta?.tenantId ?? null;
+  // Solo nos interesan las notificaciones de órdenes. El resto (payments,
+  // messages, etc.) se responde 200 sin procesar ni loguear (evita ruido).
+  if (!TOPICS_ORDEN.has(topic)) {
+    return NextResponse.json({ ok: true, ignored: `topic:${topic}` }, { status: 200 });
   }
 
-  // Sin cuenta conectada para ese usuario → no es para nosotros. 200 y a otra cosa.
-  if (!tenantId) {
+  const orderId = extractId(body.resource);
+  if (!userId || !orderId) {
+    return NextResponse.json({ ok: true, ignored: "datos_incompletos" }, { status: 200 });
+  }
+
+  // Resolver tenant por la cuenta conectada con ese ml_user_id
+  const cuenta = await prisma.cuentaMercadolibre.findFirst({
+    where: { mlUserId: userId },
+    select: { tenantId: true },
+  });
+  if (!cuenta) {
     return NextResponse.json({ ok: true, ignored: "no_account" }, { status: 200 });
   }
+  const tenantId = cuenta.tenantId;
 
-  const logBase = {
-    tenantId,
-    origen: "mercadolibre",
-    evento: topic,
-    ipAddress,
-  };
-
-  try {
-    let result: ProcessResult;
-
-    if (topic === "orders_v2" || topic === "orders" || topic === "created_orders") {
-      const orderId = extractId(body.resource);
-      if (!orderId) {
-        await prisma.webhookLog.create({
-          data: {
-            ...logBase,
-            estado: "ignorado",
-            errorMsg: "resource_sin_order_id",
-            payload: body as unknown as Prisma.InputJsonValue,
-          },
-        });
-        return NextResponse.json({ ok: true, ignored: "no_order_id" }, { status: 200 });
-      }
+  // Procesar en segundo plano: ML recibe el 200 de inmediato.
+  after(async () => {
+    try {
       const order = await getOrder(tenantId, orderId);
-      result = await processMlOrder(tenantId, order, { source: "webhook" });
-    } else if (topic === "payments") {
-      const paymentId = extractId(body.resource);
-      if (!paymentId) {
-        await prisma.webhookLog.create({
-          data: {
-            ...logBase,
-            estado: "ignorado",
-            errorMsg: "resource_sin_payment_id",
-            payload: body as unknown as Prisma.InputJsonValue,
-          },
-        });
-        return NextResponse.json({ ok: true, ignored: "no_payment_id" }, { status: 200 });
-      }
-      result = await processMlPayment(tenantId, paymentId);
-    } else {
-      // Tópico que no procesamos (ej: messages, items): lo registramos y listo
+      const result = await processMlOrder(tenantId, order, { source: "webhook" });
       await prisma.webhookLog.create({
         data: {
-          ...logBase,
-          estado: "ignorado",
-          errorMsg: `topic_no_manejado: ${topic}`,
+          tenantId,
+          origen: "mercadolibre",
+          evento: topic,
+          externoId: orderId,
+          estado: result.action === "ignored" ? "ignorado" : "ok",
+          errorMsg:
+            result.warnings.length > 0
+              ? `${result.action}: ${result.warnings.length} warnings`
+              : `${result.action}${result.reason ? `: ${result.reason}` : ""}`,
+          pedidoId: result.pedidoId ?? null,
           payload: body as unknown as Prisma.InputJsonValue,
+          ipAddress,
         },
       });
-      return NextResponse.json({ ok: true, ignored: "topic" }, { status: 200 });
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : "unknown_error";
+      await prisma.webhookLog
+        .create({
+          data: {
+            tenantId,
+            origen: "mercadolibre",
+            evento: topic,
+            externoId: orderId,
+            estado: "error",
+            errorMsg: errorMsg.slice(0, 500),
+            payload: body as unknown as Prisma.InputJsonValue,
+            ipAddress,
+          },
+        })
+        .catch(() => {});
+      console.error("[webhooks/mercadolibre] error procesando orden:", e);
     }
+  });
 
-    await prisma.webhookLog.create({
-      data: {
-        ...logBase,
-        externoId: extractId(body.resource),
-        estado: result.action === "ignored" ? "ignorado" : "ok",
-        errorMsg:
-          result.warnings.length > 0
-            ? `${result.action}: ${result.warnings.length} warnings`
-            : `${result.action}${result.reason ? `: ${result.reason}` : ""}`,
-        pedidoId: result.pedidoId ?? null,
-        payload: body as unknown as Prisma.InputJsonValue,
-      },
-    });
-
-    return NextResponse.json({ ok: true, ...result }, { status: 200 });
-  } catch (e) {
-    const errorMsg = e instanceof Error ? e.message : "unknown_error";
-
-    // Distinguir error de datos (no reintentar) vs transitorio (reintentar)
-    const esErrorDeDatos = /no pudo mapearse|ningún item/i.test(errorMsg);
-
-    await prisma.webhookLog
-      .create({
-        data: {
-          ...logBase,
-          externoId: extractId(body.resource),
-          estado: "error",
-          errorMsg: errorMsg.slice(0, 500),
-          payload: body as unknown as Prisma.InputJsonValue,
-        },
-      })
-      .catch(() => {});
-
-    if (esErrorDeDatos) {
-      // Problema de datos: respondemos 200 para que ML no reintente eternamente.
-      // Queda registrado en webhook_logs para revisión manual.
-      return NextResponse.json({ ok: false, error: errorMsg, retry: false }, { status: 200 });
-    }
-
-    // Error transitorio (API ML caída, token, DB): 500 para que ML reintente.
-    console.error("[webhooks/mercadolibre] error transitorio:", e);
-    return NextResponse.json({ error: errorMsg }, { status: 500 });
-  }
+  return NextResponse.json({ ok: true, queued: orderId }, { status: 200 });
 }
