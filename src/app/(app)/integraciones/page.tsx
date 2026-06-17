@@ -122,6 +122,7 @@ function IntegracionesContent() {
   const [status, setStatus] = useState<ShopStatus | null>(null);
   const [mlStatus, setMlStatus] = useState<MlStatus | null>(null);
   const [mlPubs, setMlPubs] = useState<MlPublicacionesData | null>(null);
+  const [showMapeadas, setShowMapeadas] = useState(false);
   const [mlBusy, setMlBusy] = useState<null | "sync" | "disconnect" | "liquidaciones">(null);
   const [logs, setLogs] = useState<WebhookLog[]>([]);
   const [pedidosRevision, setPedidosRevision] = useState<PedidoRevision[]>([]);
@@ -600,11 +601,45 @@ function IntegracionesContent() {
                 </div>
               )}
 
-              {/* Resumen de ya mapeadas / ignoradas */}
-              {(mlPubs.stats.mapeadas > 0 || mlPubs.stats.ignoradas > 0) && (
-                <div className="p-3 border-t bg-muted/30 text-xs text-muted-foreground flex gap-4">
-                  <span><CheckCircle2 className="h-3 w-3 inline mr-1 text-emerald-500" />{mlPubs.stats.mapeadas} mapeadas</span>
-                  <span><XCircle className="h-3 w-3 inline mr-1" />{mlPubs.stats.ignoradas} ignoradas (otro negocio)</span>
+              {/* Ya mapeadas (expandible, con opción de cambiar el modelo) */}
+              {mlPubs.mapeadas.length > 0 && (
+                <div className="border-t">
+                  <button
+                    type="button"
+                    onClick={() => setShowMapeadas((v) => !v)}
+                    className="w-full p-3 flex items-center justify-between text-xs text-muted-foreground hover:bg-muted/30 transition-colors"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                      {mlPubs.stats.mapeadas} publicaciones mapeadas — tocá para revisar / cambiar modelo
+                    </span>
+                    <span>{showMapeadas ? "▲" : "▼"}</span>
+                  </button>
+                  {showMapeadas && (
+                    <div className="border-t">
+                      <p className="px-3 py-2 text-[11px] text-muted-foreground bg-amber-500/5">
+                        ℹ️ Cambiar el modelo acá afecta a los pedidos <strong>nuevos</strong>. Los pedidos ya
+                        creados con el modelo anterior se ajustan editándolos en la sección Pedidos.
+                      </p>
+                      <div className="divide-y">
+                        {mlPubs.mapeadas.map((pub) => (
+                          <PublicacionMapeadaRow
+                            key={pub.id}
+                            pub={pub}
+                            modelos={mlPubs.modelos}
+                            onCambiar={asignarPublicacion}
+                            onIgnorar={ignorarPublicacion}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {mlPubs.stats.ignoradas > 0 && (
+                <div className="p-3 border-t bg-muted/30 text-xs text-muted-foreground">
+                  <XCircle className="h-3 w-3 inline mr-1" />{mlPubs.stats.ignoradas} ignoradas (otro negocio)
                 </div>
               )}
             </Card>
@@ -1040,6 +1075,63 @@ function PublicacionMapRow({
           onClick={() => onAsignar(pub.mla, seleccion)}
         >
           <Check className="h-3.5 w-3.5 mr-1.5" /> Asignar
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onIgnorar(pub.mla)}
+          title="No es de este negocio (ej: juguete)"
+        >
+          <XCircle className="h-3.5 w-3.5 mr-1.5" /> Otro negocio
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function PublicacionMapeadaRow({
+  pub,
+  modelos,
+  onCambiar,
+  onIgnorar,
+}: {
+  pub: MlPublicacion;
+  modelos: Array<{ id: string; nombre: string; serie: string | null }>;
+  onCambiar: (mla: string, modeloId: string) => void;
+  onIgnorar: (mla: string) => void;
+}) {
+  const [seleccion, setSeleccion] = useState<string>(pub.modeloId || "");
+  const cambiado = seleccion !== pub.modeloId;
+
+  return (
+    <div className="p-3 space-y-2 hover:bg-muted/20 transition-colors">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{pub.titulo || pub.mla}</p>
+        <div className="flex items-center gap-2 flex-wrap mt-0.5">
+          <code className="text-[10px] font-mono text-muted-foreground">{pub.mla}</code>
+          <Badge className="h-4 px-1.5 text-[10px] bg-emerald-500/15 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/20">
+            {pub.modeloNombre}
+          </Badge>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <select
+          value={seleccion}
+          onChange={(e) => setSeleccion(e.target.value)}
+          className="flex-1 min-w-[200px] rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+        >
+          {modelos.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.nombre}{m.serie ? ` (${m.serie})` : ""}
+            </option>
+          ))}
+        </select>
+        <Button
+          size="sm"
+          disabled={!cambiado || !seleccion}
+          onClick={() => onCambiar(pub.mla, seleccion)}
+        >
+          <Check className="h-3.5 w-3.5 mr-1.5" /> Cambiar modelo
         </Button>
         <Button
           size="sm"
