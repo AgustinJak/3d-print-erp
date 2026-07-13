@@ -16,6 +16,7 @@ import {
   LogOut,
   Radar,
   Plug,
+  Home,
 } from "lucide-react";
 import {
   Sidebar,
@@ -57,6 +58,10 @@ const navNegocio = [
 
 const navSistema = [
   { title: "Integraciones", href: "/integraciones", icon: Plug },
+];
+
+const navPersonal = [
+  { title: "Casa", href: "/casa", icon: Home },
 ];
 
 export function AppSidebar() {
@@ -118,6 +123,7 @@ export function AppSidebar() {
         {renderGroup("Catálogo", navCatalogo)}
         {renderGroup("Negocio", navNegocio)}
         {!isDemo && renderGroup("Sistema", navSistema)}
+        {!isDemo && renderGroup("Personal", navPersonal)}
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-2">
