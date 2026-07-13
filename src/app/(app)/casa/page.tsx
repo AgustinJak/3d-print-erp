@@ -150,6 +150,13 @@ export default function CasaPage() {
 
   const t = data.totales;
 
+  // Total e ingresos en vivo (reactivos a los inputs, sin esperar el guardado)
+  const nTai = parseFloat(ingTai) || 0;
+  const nSendero = parseFloat(ingSendero) || 0;
+  const totalLocal = nTai + nSendero;
+  const propTaiLocal = totalLocal > 0 ? nTai / totalLocal : 0;
+  const propSenderoLocal = totalLocal > 0 ? nSendero / totalLocal : 0;
+
   return (
     <div className="space-y-4">
       {/* Header + mes */}
@@ -178,21 +185,21 @@ export default function CasaPage() {
               <Label className="text-xs">{PERSONAS.tai}</Label>
               <Input type="number" value={ingTai} onChange={(e) => setIngTai(e.target.value)}
                 onBlur={() => guardarIngreso("tai", ingTai)} placeholder="0" />
-              {data.ingresos.total > 0 && (
-                <p className="text-[11px] text-muted-foreground">{Math.round(data.ingresos.propTai * 100)}% del total</p>
+              {totalLocal > 0 && (
+                <p className="text-[11px] text-muted-foreground">{Math.round(propTaiLocal * 100)}% del total</p>
               )}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">{PERSONAS.sendero}</Label>
               <Input type="number" value={ingSendero} onChange={(e) => setIngSendero(e.target.value)}
                 onBlur={() => guardarIngreso("sendero", ingSendero)} placeholder="0" />
-              {data.ingresos.total > 0 && (
-                <p className="text-[11px] text-muted-foreground">{Math.round(data.ingresos.propSendero * 100)}% del total</p>
+              {totalLocal > 0 && (
+                <p className="text-[11px] text-muted-foreground">{Math.round(propSenderoLocal * 100)}% del total</p>
               )}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Total</Label>
-              <p className="text-2xl font-bold">{fmt(data.ingresos.total)}</p>
+              <p className="text-2xl font-bold">{fmt(totalLocal)}</p>
             </div>
           </div>
         </CardContent>
