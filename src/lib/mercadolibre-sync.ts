@@ -1,5 +1,21 @@
 import { prisma } from "@/lib/prisma";
 import { normalizeForMatch } from "@/lib/webhook-security";
+
+/**
+ * Normaliza colapsando TODO lo no alfanumérico, así "95 cm" === "95cm".
+ * `normalizeForMatch` deja espacios, por eso los tamaños nunca matcheaban.
+ */
+const normalizeVariante = (s: string) => normalizeForMatch(s).replace(/s+/g, "");
+
+/** Busca la variante del modelo que corresponde a un valor que mandó ML. */
+function buscarVariante<T extends { nombre: string }>(variantes: T[], valor: string): T | undefined {
+  const exacto = normalizeForMatch(valor);
+  const colapsado = normalizeVariante(valor);
+  return (
+    variantes.find((v) => normalizeForMatch(v.nombre) === exacto) ??
+    variantes.find((v) => normalizeVariante(v.nombre) === colapsado)
+  );
+}
 import {
   getOrder,
   getPayment,
@@ -298,6 +314,7 @@ export async function processMlOrderGroup(
     costoUnitario: number;
     ajusteManual: number;
     variantesInfo: Prisma.InputJsonValue;
+    mlaOrigen: string;
   }> = [];
 
   let itemsIgnorados = 0;
@@ -339,25 +356,50 @@ export async function processMlOrderGroup(
       continue;
     }
 
+    // ── Variantes: las que manda ML + las que la publicación lleva SIEMPRE ──
+    // Muchas publicaciones no tienen variaciones en ML: el "95cm" y el "Con
+    // Funda" viven sólo en el título. Esas se configuran una vez por publicación
+    // (`variantesImplicitas`) y se aplican acá. Sin esto el pedido entraba con el
+    // costoFab base y la billetera de fabricación quedaba corta.
     const variantesMatched: Array<Record<string, unknown>> = [];
+    const idsAplicados = new Set<string>();
     let costoExtraVariantes = 0;
+
+    const aplicarVariante = (
+      v: (typeof modelo.variantes)[number],
+      origen: "variacion_ml" | "implicita_publicacion",
+      mlAtributo?: string,
+    ) => {
+      if (idsAplicados.has(v.id)) return; // no cobrar dos veces la misma variante
+      idsAplicados.add(v.id);
+      costoExtraVariantes += v.costoFabAdicional;
+      variantesMatched.push({
+        nombre: v.nombre,
+        matched: true,
+        varianteId: v.id,
+        costoFabAdicional: v.costoFabAdicional,
+        origen,
+        ...(mlAtributo ? { mlAtributo } : {}),
+      });
+    };
+
     for (const attr of oi.item.variation_attributes || []) {
-      const target = normalizeForMatch(attr.value_name);
-      const match = modelo.variantes.find((v) => normalizeForMatch(v.nombre) === target);
+      const match = buscarVariante(modelo.variantes, attr.value_name);
       if (match) {
-        variantesMatched.push({
-          nombre: match.nombre,
-          mlAtributo: attr.name,
-          matched: true,
-          varianteId: match.id,
-          costoFabAdicional: match.costoFabAdicional,
-        });
-        costoExtraVariantes += match.costoFabAdicional;
+        aplicarVariante(match, "variacion_ml", attr.name);
       } else {
-        // La variante de ML (color/tamaño elegido por el comprador) no coincide
-        // con una variante del modelo. Se guarda igual para que se vea qué
-        // imprimir, pero NO marca revisión manual (es info, no un problema).
+        // Opción cosmética (color, personaje) que no existe como variante del
+        // modelo. Se guarda para saber qué imprimir; no afecta el costo.
         variantesMatched.push({ nombre: attr.value_name, mlAtributo: attr.name, matched: false });
+      }
+    }
+
+    for (const varianteId of mapeo.variantesImplicitas) {
+      const v = modelo.variantes.find((x) => x.id === varianteId);
+      if (v) {
+        aplicarVariante(v, "implicita_publicacion");
+      } else {
+        warnings.push(`Variante implícita ya no existe en "${titulo}" (${mla})`);
       }
     }
 
@@ -368,6 +410,7 @@ export async function processMlOrderGroup(
       costoUnitario: modelo.costoFab + costoExtraVariantes,
       ajusteManual: 0,
       variantesInfo: variantesMatched as unknown as Prisma.InputJsonValue,
+      mlaOrigen: mla,
     });
   }
 

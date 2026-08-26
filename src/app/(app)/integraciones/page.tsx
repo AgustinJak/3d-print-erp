@@ -101,6 +101,12 @@ interface MlPublicacion {
   ignorar: boolean;
   vecesVista: number;
   sugerencia: { id: string; nombre: string; score: number } | null;
+  variantesDisponibles: Array<{ id: string; nombre: string; costoFabAdicional: number }>;
+  variantesImplicitas: string[];
+  sugerenciaVariantes: string[];
+  costoBase: number;
+  costoConImplicitas: number;
+  costoSiAplicaSugerencia: number;
 }
 
 interface MlPublicacionesData {
@@ -243,6 +249,37 @@ function IntegracionesContent() {
       fetchAll();
     } else {
       toast.error("Error al asignar");
+    }
+  };
+
+  /** Variantes que la publicacion lleva SIEMPRE (el 95cm/Con Funda del titulo). */
+  const guardarVariantesImplicitas = async (mla: string, variantesImplicitas: string[]) => {
+    const res = await fetch("/api/ml/publicaciones", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mla, variantesImplicitas }),
+    });
+    if (res.ok) {
+      toast.success("Variantes de la publicacion guardadas");
+      fetchAll();
+    } else {
+      toast.error("Error al guardar las variantes");
+    }
+  };
+
+  /** Completa las variantes implicitas de las publicaciones que no las tengan. */
+  const aplicarSugerenciasVariantes = async () => {
+    const res = await fetch("/api/ml/publicaciones", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      toast.success(`${data.aplicadas ?? 0} publicaciones completadas`);
+      fetchAll();
+    } else {
+      toast.error(data.error ?? "Error al aplicar sugerencias");
     }
   };
 
@@ -621,6 +658,22 @@ function IntegracionesContent() {
                         ℹ️ Cambiar el modelo acá afecta a los pedidos <strong>nuevos</strong>. Los pedidos ya
                         creados con el modelo anterior se ajustan editándolos en la sección Pedidos.
                       </p>
+                      <div className="px-3 py-2 border-b flex items-center justify-between gap-2 flex-wrap">
+                        <p className="text-[11px] text-muted-foreground">
+                          Muchas publicaciones no tienen variaciones en ML: el{" "}
+                          <strong>95cm</strong> y el <strong>Con Funda</strong> están sólo en el título.
+                          Marcá acá abajo las que cada publicación lleva siempre para que el costo de
+                          fabricación entre bien.
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 shrink-0"
+                          onClick={aplicarSugerenciasVariantes}
+                        >
+                          Completar con sugerencias
+                        </Button>
+                      </div>
                       <div className="divide-y">
                         {mlPubs.mapeadas.map((pub) => (
                           <PublicacionMapeadaRow
@@ -629,6 +682,7 @@ function IntegracionesContent() {
                             modelos={mlPubs.modelos}
                             onCambiar={asignarPublicacion}
                             onIgnorar={ignorarPublicacion}
+                            onVariantes={guardarVariantesImplicitas}
                           />
                         ))}
                       </div>
@@ -1094,14 +1148,33 @@ function PublicacionMapeadaRow({
   modelos,
   onCambiar,
   onIgnorar,
+  onVariantes,
 }: {
   pub: MlPublicacion;
   modelos: Array<{ id: string; nombre: string; serie: string | null }>;
   onCambiar: (mla: string, modeloId: string) => void;
   onIgnorar: (mla: string) => void;
+  onVariantes: (mla: string, ids: string[]) => void;
 }) {
   const [seleccion, setSeleccion] = useState<string>(pub.modeloId || "");
   const cambiado = seleccion !== pub.modeloId;
+
+  // Variantes implicitas: las que ML NO manda porque viven en el titulo.
+  const [vars, setVars] = useState<string[]>(pub.variantesImplicitas);
+  const varsCambiadas =
+    vars.length !== pub.variantesImplicitas.length ||
+    vars.some((v) => !pub.variantesImplicitas.includes(v));
+  const costoActual =
+    pub.costoBase +
+    vars.reduce(
+      (acc, id) =>
+        acc + (pub.variantesDisponibles.find((v) => v.id === id)?.costoFabAdicional ?? 0),
+      0,
+    );
+  const haySugerencia =
+    pub.sugerenciaVariantes.length > 0 && pub.variantesImplicitas.length === 0;
+  const toggleVar = (id: string) =>
+    setVars((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   return (
     <div className="p-3 space-y-2 hover:bg-muted/20 transition-colors">
@@ -1142,6 +1215,80 @@ function PublicacionMapeadaRow({
           <XCircle className="h-3.5 w-3.5 mr-1.5" /> Otro negocio
         </Button>
       </div>
+
+      {pub.variantesDisponibles.length > 0 && (
+        <div className="rounded-md border border-dashed p-2.5 space-y-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <p className="text-[11px] text-muted-foreground">
+              Variantes que esta publicacion lleva <strong>siempre</strong> (ML no las
+              manda: estan solo en el titulo)
+            </p>
+            <span className="text-[11px] font-mono">
+              costo: <strong>{"$"}{costoActual.toLocaleString("es-AR")}</strong>
+              {costoActual !== pub.costoBase && (
+                <span className="text-muted-foreground">
+                  {" "}(base {"$"}{pub.costoBase.toLocaleString("es-AR")})
+                </span>
+              )}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {pub.variantesDisponibles.map((v) => {
+              const activa = vars.includes(v.id);
+              const sugerida = pub.sugerenciaVariantes.includes(v.id);
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => toggleVar(v.id)}
+                  className={`h-6 px-2 rounded-full border text-[11px] transition-colors ${activa ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted border-input"}`}
+                  title={sugerida ? "Sugerida por el titulo" : undefined}
+                >
+                  {v.nombre}
+                  {v.costoFabAdicional > 0 && (
+                    <span className="opacity-70">
+                      {" "}+{v.costoFabAdicional.toLocaleString("es-AR")}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              className="h-7"
+              disabled={!varsCambiadas}
+              onClick={() => onVariantes(pub.mla, vars)}
+            >
+              <Check className="h-3.5 w-3.5 mr-1.5" /> Guardar variantes
+            </Button>
+            {haySugerencia && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7"
+                onClick={() => setVars(pub.sugerenciaVariantes)}
+              >
+                Usar sugerencia ({"$"}
+                {pub.costoSiAplicaSugerencia.toLocaleString("es-AR")})
+              </Button>
+            )}
+            {varsCambiadas && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7"
+                onClick={() => setVars(pub.variantesImplicitas)}
+              >
+                Deshacer
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

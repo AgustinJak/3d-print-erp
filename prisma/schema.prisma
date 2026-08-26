@@ -190,6 +190,7 @@ model ItemPedido {
   costoUnitario   Float   @map("costo_unitario")
   ajusteManual    Float   @default(0) @map("ajuste_manual")
   variantesInfo   Json?   @map("variantes_info")
+  mlaOrigen       String? @map("mla_origen")        // publicación de ML que originó el item
 
   pedido   Pedido    @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
   modelo   Modelo    @relation(fields: [modeloId], references: [id])
@@ -355,6 +356,7 @@ model PublicacionMl {
   titulo       String?                                 // título de la publicación (cache)
   ultimoMla    String?  @map("ultimo_pedido")          // último order_id donde apareció
   vecesVista   Int      @default(1) @map("veces_vista")
+  variantesImplicitas String[] @default([]) @map("variantes_implicitas") // variantes que la publicación lleva SIEMPRE (95cm, Con Funda...)
   creadoEn     DateTime @default(now()) @map("creado_en")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
