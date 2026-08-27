@@ -533,6 +533,22 @@ export default function ModelosPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  /**
+   * Pide al servidor el próximo SKU. El inventario es la fuente de verdad: el
+   * código se genera acá y después se copia a Mercado Libre y al Shop.
+   */
+  const sugerirSkuModelo = async () => {
+    const categoria = categorias.find((c) => form.categoriaIds.includes(c.id))?.nombre ?? "";
+    const params = new URLSearchParams({ serie: form.serie || "", categoria });
+    const res = await fetch(`/api/modelos/skus?${params}`);
+    const data = await res.json();
+    if (data.sku) {
+      updateField("sku", data.sku);
+    } else {
+      toast.error(`Para generar el SKU falta cargar: ${data.falta}`);
+    }
+  };
+
   /* ─── Render ──────────────────────────────────────── */
 
   return (
@@ -997,14 +1013,21 @@ export default function ModelosPage() {
               <div className="space-y-2">
                 <Label htmlFor="sku">
                   SKU
-                  <span className="ml-1 text-xs text-muted-foreground">(opcional, para integración con Shop)</span>
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    (lo genera el inventario; se copia a ML y al Shop)
+                  </span>
                 </Label>
-                <Input
-                  id="sku"
-                  value={form.sku}
-                  onChange={(e) => updateField("sku", e.target.value)}
-                  placeholder="Ej: SS-BTS-LLA-044"
-                />
+                <div className="flex gap-2">
+                  <Input
+                    id="sku"
+                    value={form.sku}
+                    onChange={(e) => updateField("sku", e.target.value)}
+                    placeholder="Ej: SS-BTS-LLA-044"
+                  />
+                  <Button type="button" variant="outline" onClick={sugerirSkuModelo}>
+                    Sugerir
+                  </Button>
+                </div>
               </div>
             </div>
 
