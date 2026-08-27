@@ -117,6 +117,32 @@ interface MlPublicacionesData {
   stats: { sinMapear: number; mapeadas: number; ignoradas: number };
 }
 
+interface RecalculoCambio {
+  itemId: string;
+  fecha: string;
+  venta: string | null;
+  estado: string;
+  modelo: string;
+  cantidad: number;
+  costoAntes: number;
+  costoDespues: number;
+  delta: number;
+  variantes: string[];
+}
+
+interface RecalculoPreview {
+  itemsRevisados: number;
+  resumen: {
+    suben: number;
+    bajan: number;
+    deltaSuben: number;
+    deltaBajan: number;
+    deltaNeto: number;
+  };
+  suben: RecalculoCambio[];
+  bajan: RecalculoCambio[];
+}
+
 type Tab = "estado" | "mercadolibre" | "logs" | "revision" | "skus";
 
 /* ─── Page ───────────────────────────────────────────── */
@@ -129,7 +155,8 @@ function IntegracionesContent() {
   const [mlStatus, setMlStatus] = useState<MlStatus | null>(null);
   const [mlPubs, setMlPubs] = useState<MlPublicacionesData | null>(null);
   const [showMapeadas, setShowMapeadas] = useState(false);
-  const [mlBusy, setMlBusy] = useState<null | "sync" | "disconnect" | "liquidaciones">(null);
+  const [mlBusy, setMlBusy] = useState<null | "sync" | "disconnect" | "liquidaciones" | "recalculo">(null);
+  const [recalculo, setRecalculo] = useState<RecalculoPreview | null>(null);
   const [logs, setLogs] = useState<WebhookLog[]>([]);
   const [pedidosRevision, setPedidosRevision] = useState<PedidoRevision[]>([]);
   const [skusAudit, setSkusAudit] = useState<SkusAudit | null>(null);
@@ -232,6 +259,59 @@ function IntegracionesContent() {
       fetchAll();
     } catch {
       toast.error("Error al actualizar liquidaciones");
+    } finally {
+      setMlBusy(null);
+    }
+  };
+
+  /**
+   * Recalcula el costo de los pedidos de ML con la configuración actual.
+   * Marcar variantes implícitas sólo afecta a los pedidos nuevos, así que la
+   * historia queda desalineada cada vez que se configura una publicación.
+   * Primero se pide una vista previa; recién con "Aplicar" se escribe.
+   */
+  const previsualizarRecalculo = async () => {
+    setMlBusy("recalculo");
+    try {
+      const res = await fetch("/api/ml/recalcular-costos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ soloPreview: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Error al calcular");
+        return;
+      }
+      setRecalculo(data);
+      if (data.resumen.suben === 0 && data.resumen.bajan === 0) {
+        toast.success("Todo alineado: ningún pedido necesita corrección");
+      }
+    } catch {
+      toast.error("Error al calcular");
+    } finally {
+      setMlBusy(null);
+    }
+  };
+
+  const aplicarRecalculo = async (soloAumentos: boolean) => {
+    setMlBusy("recalculo");
+    try {
+      const res = await fetch("/api/ml/recalcular-costos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ soloPreview: false, soloAumentos }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Error al aplicar");
+        return;
+      }
+      toast.success(`${data.aplicados} pedidos corregidos`);
+      setRecalculo(null);
+      fetchAll();
+    } catch {
+      toast.error("Error al aplicar");
     } finally {
       setMlBusy(null);
     }
@@ -555,6 +635,13 @@ function IntegracionesContent() {
                       <><RefreshCw className="mr-2 h-4 w-4" /> Actualizar liquidaciones y estados</>
                     )}
                   </Button>
+                  <Button variant="outline" onClick={previsualizarRecalculo} disabled={mlBusy !== null}>
+                    {mlBusy === "recalculo" ? (
+                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Calculando…</>
+                    ) : (
+                      <><RefreshCw className="mr-2 h-4 w-4" /> Recalcular costos</>
+                    )}
+                  </Button>
                   <Button variant="outline" onClick={disconnectMl} disabled={mlBusy !== null}>
                     {mlBusy === "disconnect" ? (
                       <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Desconectando…</>
@@ -563,6 +650,83 @@ function IntegracionesContent() {
                     )}
                   </Button>
                 </div>
+
+                {recalculo && (recalculo.resumen.suben > 0 || recalculo.resumen.bajan > 0) && (
+                  <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
+                    <div>
+                      <p className="text-sm font-medium">Recálculo de costos — vista previa</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Compara el costo guardado en cada pedido contra el que dan hoy el modelo y las
+                        variantes implícitas de su publicación. Todavía no se escribió nada.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-md border p-2">
+                        <p className="font-medium text-emerald-600">{recalculo.resumen.suben} suben</p>
+                        <p className="font-mono">
+                          +{"$"}{Math.round(recalculo.resumen.deltaSuben).toLocaleString("es-AR")}
+                        </p>
+                        <p className="text-muted-foreground mt-0.5">costo que faltaba contar</p>
+                      </div>
+                      <div className="rounded-md border p-2">
+                        <p className="font-medium text-amber-600">{recalculo.resumen.bajan} bajan</p>
+                        <p className="font-mono">
+                          {"$"}{Math.round(recalculo.resumen.deltaBajan).toLocaleString("es-AR")}
+                        </p>
+                        <p className="text-muted-foreground mt-0.5">
+                          ojo: puede ser un ajuste hecho a mano
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="max-h-56 overflow-y-auto rounded-md border divide-y text-[11px]">
+                      {[...recalculo.suben, ...recalculo.bajan].map((c) => (
+                        <div key={c.itemId} className="flex items-center justify-between gap-2 p-1.5">
+                          <span className="truncate">
+                            <span className="text-muted-foreground">{c.fecha}</span> {c.modelo}
+                            {c.cantidad > 1 && (
+                              <span className="text-muted-foreground"> ×{c.cantidad}</span>
+                            )}
+                            {c.variantes.length > 0 && (
+                              <span className="text-muted-foreground">
+                                {" "}· {c.variantes.join(" + ")}
+                              </span>
+                            )}
+                          </span>
+                          <span className="font-mono shrink-0">
+                            {"$"}{Math.round(c.costoAntes).toLocaleString("es-AR")} →{" "}
+                            {"$"}{Math.round(c.costoDespues).toLocaleString("es-AR")}{" "}
+                            <span className={c.delta > 0 ? "text-emerald-600" : "text-amber-600"}>
+                              ({c.delta > 0 ? "+" : ""}
+                              {"$"}{Math.round(c.delta).toLocaleString("es-AR")})
+                            </span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Button size="sm" onClick={() => aplicarRecalculo(false)} disabled={mlBusy !== null}>
+                        <Check className="h-3.5 w-3.5 mr-1.5" /> Aplicar todo
+                      </Button>
+                      {recalculo.resumen.bajan > 0 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => aplicarRecalculo(true)}
+                          disabled={mlBusy !== null}
+                          title="No toca los que bajan, por si son ajustes hechos a mano"
+                        >
+                          Aplicar sólo los que suben
+                        </Button>
+                      )}
+                      <Button size="sm" variant="ghost" onClick={() => setRecalculo(null)}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </>
             ) : (
               <div className="space-y-3">

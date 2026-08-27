@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
+import { parsePrice } from "@/lib/utils";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -53,19 +54,59 @@ export async function PUT(
         }
       }
 
-      // If variantes provided, delete old and recreate
+      // Sincronizar variantes PRESERVANDO los ids: se emparejan por nombre.
+      //
+      // Antes se borraban todas y se recreaban, así que el id cambiaba en CADA
+      // guardado del modelo. Eso dejaba colgadas las `variantesImplicitas` de
+      // las publicaciones de ML (que guardan ids) y el `varianteId` del
+      // snapshot de los pedidos históricos.
       if (body.variantes !== undefined) {
-        await tx.varianteModelo.deleteMany({ where: { modeloId: id } });
-        if (body.variantes.length > 0) {
-          await tx.varianteModelo.createMany({
-            data: body.variantes.map((v: { nombre: string; precioAdicional?: number; costoFabAdicional?: number; notas?: string }) => ({
-              modeloId: id,
-              nombre: v.nombre,
-              precioAdicional: v.precioAdicional ? parseFloat(String(v.precioAdicional)) : 0,
-              costoFabAdicional: v.costoFabAdicional ? parseFloat(String(v.costoFabAdicional)) : 0,
-              notas: v.notas || null,
-            })),
+        type VarianteInput = {
+          nombre: string;
+          precioAdicional?: number | string;
+          costoFabAdicional?: number | string;
+          notas?: string;
+        };
+        const entrantes: VarianteInput[] = body.variantes ?? [];
+        const actuales = await tx.varianteModelo.findMany({ where: { modeloId: id } });
+        const clave = (s: string) => s.trim().toLowerCase();
+        const porNombre = new Map(actuales.map((v) => [clave(v.nombre), v]));
+        const conservados = new Set<string>();
+
+        for (const v of entrantes) {
+          if (!v?.nombre?.trim()) continue;
+          const data = {
+            nombre: v.nombre,
+            precioAdicional: parsePrice(v.precioAdicional),
+            costoFabAdicional: parsePrice(v.costoFabAdicional),
+            notas: v.notas || null,
+          };
+          const existente = porNombre.get(clave(v.nombre));
+          if (existente) {
+            conservados.add(existente.id);
+            await tx.varianteModelo.update({ where: { id: existente.id }, data });
+          } else {
+            await tx.varianteModelo.create({ data: { modeloId: id, ...data } });
+          }
+        }
+
+        // Las que ya no vienen se borran, y se limpia toda referencia a ellas
+        // en las variantes implícitas de las publicaciones de ML.
+        const idsBorrados = actuales.filter((v) => !conservados.has(v.id)).map((v) => v.id);
+        if (idsBorrados.length > 0) {
+          await tx.varianteModelo.deleteMany({ where: { id: { in: idsBorrados } } });
+          const pubs = await tx.publicacionMl.findMany({
+            where: { tenantId, modeloId: id, variantesImplicitas: { hasSome: idsBorrados } },
+            select: { id: true, variantesImplicitas: true },
           });
+          for (const p of pubs) {
+            await tx.publicacionMl.update({
+              where: { id: p.id },
+              data: {
+                variantesImplicitas: p.variantesImplicitas.filter((x) => !idsBorrados.includes(x)),
+              },
+            });
+          }
         }
       }
 
@@ -75,12 +116,12 @@ export async function PUT(
           nombre: body.nombre,
           sku: body.sku !== undefined ? (body.sku?.trim() ? body.sku.trim() : null) : undefined,
           serie: body.serie || null,
-          pesoGr: body.pesoGr ? parseFloat(body.pesoGr) : null,
-          costoFab: body.costoFab != null ? parseFloat(body.costoFab) : undefined,
-          precioVenta: body.precioVenta != null ? parseFloat(body.precioVenta) : undefined,
+          pesoGr: body.pesoGr ? parsePrice(body.pesoGr) : null,
+          costoFab: body.costoFab != null ? parsePrice(body.costoFab) : undefined,
+          precioVenta: body.precioVenta != null ? parsePrice(body.precioVenta) : undefined,
           precioCreditoPorc: body.precioCreditoPorc != null ? parseFloat(body.precioCreditoPorc) : undefined,
-          precioMayorista: body.precioMayorista !== undefined ? (body.precioMayorista ? parseFloat(body.precioMayorista) : null) : undefined,
-          precioPromo: body.precioPromo !== undefined ? (body.precioPromo ? parseFloat(body.precioPromo) : null) : undefined,
+          precioMayorista: body.precioMayorista !== undefined ? (body.precioMayorista ? parsePrice(body.precioMayorista) : null) : undefined,
+          precioPromo: body.precioPromo !== undefined ? (body.precioPromo ? parsePrice(body.precioPromo) : null) : undefined,
           notas: body.notas || null,
           archivo3mfUrl: body.archivo3mfUrl || null,
           imagenUrl: body.imagenUrl || null,

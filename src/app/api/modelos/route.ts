@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
+import { parsePrice } from "@/lib/utils";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -54,12 +55,12 @@ export async function POST(request: NextRequest) {
         nombre: body.nombre,
         sku: body.sku?.trim() ? body.sku.trim() : null,
         serie: body.serie || null,
-        pesoGr: body.pesoGr ? parseFloat(body.pesoGr) : null,
-        costoFab: body.costoFab ? parseFloat(body.costoFab) : 0,
-        precioVenta: body.precioVenta ? parseFloat(body.precioVenta) : 0,
+        pesoGr: body.pesoGr ? parsePrice(body.pesoGr) : null,
+        costoFab: body.costoFab ? parsePrice(body.costoFab) : 0,
+        precioVenta: body.precioVenta ? parsePrice(body.precioVenta) : 0,
         precioCreditoPorc: body.precioCreditoPorc != null ? parseFloat(body.precioCreditoPorc) : 10,
-        precioMayorista: body.precioMayorista ? parseFloat(body.precioMayorista) : null,
-        precioPromo: body.precioPromo ? parseFloat(body.precioPromo) : null,
+        precioMayorista: body.precioMayorista ? parsePrice(body.precioMayorista) : null,
+        precioPromo: body.precioPromo ? parsePrice(body.precioPromo) : null,
         notas: body.notas || null,
         archivo3mfUrl: body.archivo3mfUrl || null,
         imagenUrl: body.imagenUrl || null,
@@ -72,8 +73,8 @@ export async function POST(request: NextRequest) {
         variantes: body.variantes?.length > 0
           ? { create: body.variantes.map((v: { nombre: string; precioAdicional?: number; costoFabAdicional?: number; notas?: string }) => ({
               nombre: v.nombre,
-              precioAdicional: v.precioAdicional ? parseFloat(String(v.precioAdicional)) : 0,
-              costoFabAdicional: v.costoFabAdicional ? parseFloat(String(v.costoFabAdicional)) : 0,
+              precioAdicional: parsePrice(v.precioAdicional),
+              costoFabAdicional: parsePrice(v.costoFabAdicional),
               notas: v.notas || null,
             })) }
           : undefined,

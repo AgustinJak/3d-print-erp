@@ -22,6 +22,7 @@ import { Card } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/data-loading";
 import { EmptyState } from "@/components/empty-state";
 import { FileUpload } from "@/components/file-upload";
+import { parsePrice } from "@/lib/utils";
 
 /* ─── Types ────────────────────────────────────────────── */
 
@@ -473,12 +474,13 @@ export default function ModelosPage() {
         ...form,
         imagenUrl: form.imagenesUrls[0] || "",
         imagenesUrls: form.imagenesUrls,
-        pesoGr: form.pesoGr ? parseFloat(form.pesoGr) : null,
-        costoFab: parseFloat(form.costoFab) || 0,
-        precioVenta: parseFloat(form.precioVenta) || 0,
-        precioCreditoPorc: parseFloat(form.precioCreditoPorc) || 10,
-        precioMayorista: form.precioMayorista ? parseFloat(form.precioMayorista) : null,
-        precioPromo: form.precioPromo ? parseFloat(form.precioPromo) : null,
+        // parsePrice y no parseFloat: "7.500" es siete mil quinientos, no 7,5
+        pesoGr: form.pesoGr ? parsePrice(form.pesoGr) : null,
+        costoFab: parsePrice(form.costoFab),
+        precioVenta: parsePrice(form.precioVenta),
+        precioCreditoPorc: parseFloat(form.precioCreditoPorc) || 10, // porcentaje, no lleva miles
+        precioMayorista: form.precioMayorista ? parsePrice(form.precioMayorista) : null,
+        precioPromo: form.precioPromo ? parsePrice(form.precioPromo) : null,
       }),
     });
     setDialogOpen(false);
@@ -1021,8 +1023,9 @@ export default function ModelosPage() {
                 <Label htmlFor="pesoGr">Peso (g)</Label>
                 <Input
                   id="pesoGr"
-                  type="number"
-                  step="0.1"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="300"
                   value={form.pesoGr}
                   onChange={(e) => updateField("pesoGr", e.target.value)}
                 />
@@ -1035,8 +1038,9 @@ export default function ModelosPage() {
                 <Label htmlFor="costoFab">Costo Fabricación *</Label>
                 <Input
                   id="costoFab"
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="7.500"
                   value={form.costoFab}
                   onChange={(e) => updateField("costoFab", e.target.value)}
                   required
@@ -1046,8 +1050,9 @@ export default function ModelosPage() {
                 <Label htmlFor="precioVenta">Precio Venta *</Label>
                 <Input
                   id="precioVenta"
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="23.000"
                   value={form.precioVenta}
                   onChange={(e) => updateField("precioVenta", e.target.value)}
                   required
@@ -1072,8 +1077,9 @@ export default function ModelosPage() {
                 <Label htmlFor="precioMayorista">Precio Mayorista</Label>
                 <Input
                   id="precioMayorista"
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="18.000"
                   value={form.precioMayorista}
                   onChange={(e) => updateField("precioMayorista", e.target.value)}
                 />
@@ -1086,8 +1092,9 @@ export default function ModelosPage() {
                 <Label htmlFor="precioPromo">Precio Promo</Label>
                 <Input
                   id="precioPromo"
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="20.000"
                   value={form.precioPromo}
                   onChange={(e) => updateField("precioPromo", e.target.value)}
                 />
@@ -1151,14 +1158,14 @@ export default function ModelosPage() {
                         <div className="space-y-1">
                           <Label className="text-xs text-muted-foreground">+$ venta</Label>
                           <Input
-                            type="number"
-                            step="1"
+                            type="text"
+                            inputMode="decimal"
                             placeholder="0"
                             title="Precio adicional de venta"
                             value={v.precioAdicional || ""}
                             onChange={(e) => {
                               const updated = [...form.variantes];
-                              updated[idx] = { ...updated[idx], precioAdicional: parseFloat(e.target.value) || 0 };
+                              updated[idx] = { ...updated[idx], precioAdicional: parsePrice(e.target.value) };
                               updateField("variantes", updated);
                             }}
                           />
@@ -1166,14 +1173,14 @@ export default function ModelosPage() {
                         <div className="space-y-1">
                           <Label className="text-xs text-muted-foreground">+$ costo</Label>
                           <Input
-                            type="number"
-                            step="1"
+                            type="text"
+                            inputMode="decimal"
                             placeholder="0"
                             title="Costo de fabricación adicional"
                             value={v.costoFabAdicional || ""}
                             onChange={(e) => {
                               const updated = [...form.variantes];
-                              updated[idx] = { ...updated[idx], costoFabAdicional: parseFloat(e.target.value) || 0 };
+                              updated[idx] = { ...updated[idx], costoFabAdicional: parsePrice(e.target.value) };
                               updateField("variantes", updated);
                             }}
                           />
