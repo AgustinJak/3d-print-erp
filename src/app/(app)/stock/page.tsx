@@ -161,6 +161,11 @@ export default function StockPage() {
                             <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
                           </span>
                         )}
+                        {s.cantidad < 0 && (
+                          <Badge variant="outline" className="h-4 px-1 text-[10px] border-red-500/40 text-red-600">
+                            en negativo — falta contar
+                          </Badge>
+                        )}
                       </div>
                       <div className="text-[11px] text-muted-foreground">
                         {s.sku ?? "sin SKU"}
@@ -191,12 +196,11 @@ export default function StockPage() {
                           variant="outline"
                           className="h-7 w-7"
                           onClick={() => guardar(s.id, "delta", -1)}
-                          disabled={s.cantidad === 0}
                         >
                           <Minus className="h-3 w-3" />
                         </Button>
                         <Input
-                          className="h-7 w-14 text-center tabular-nums"
+                          className={`h-7 w-14 text-center tabular-nums ${s.cantidad < 0 ? "text-red-600 font-semibold" : ""}`}
                           value={editando[s.id] ?? String(s.cantidad)}
                           onChange={(e) => setEditando((p) => ({ ...p, [s.id]: e.target.value }))}
                           onBlur={() => {

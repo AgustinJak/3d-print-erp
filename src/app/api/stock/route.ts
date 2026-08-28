@@ -150,8 +150,13 @@ export async function PATCH(request: NextRequest) {
 
     if (typeof body.delta === "number" && body.delta !== 0) {
       delta = Math.round(body.delta);
-      data.cantidad = Math.max(0, actual.cantidad + delta);
+      // Sin clampear en 0, igual que el RPC `bodega_mover_stock`: un negativo
+      // significa que se vendió algo que no estaba registrado y conviene que se
+      // vea. Además mantiene `cantidad = suma de los deltas`, reconciliable
+      // contra `movimientos_stock`.
+      data.cantidad = actual.cantidad + delta;
     } else if (typeof body.cantidad === "number") {
+      // El conteo físico sí se clampea: no se pueden contar unidades negativas.
       const nueva = Math.max(0, Math.round(body.cantidad));
       delta = nueva - actual.cantidad;
       data.cantidad = nueva;
