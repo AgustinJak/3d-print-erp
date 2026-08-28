@@ -9,7 +9,7 @@ import {
   ShoppingCart,
   Factory,
   Users,
-  Palette,
+  Palette, Boxes,
   DollarSign,
   Receipt,
   History,
@@ -46,6 +46,7 @@ const navCatalogo = [
   { title: "Categorías", href: "/categorias", icon: Tag },
   { title: "Modelos", href: "/modelos", icon: Box },
   { title: "Filamentos", href: "/filamentos", icon: Palette },
+  { title: "Stock", href: "/stock", icon: Boxes },
 ];
 
 const navNegocio = [

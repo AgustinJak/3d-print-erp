@@ -105,6 +105,7 @@ model Modelo {
   consolidadoEn        Modelo?  @relation("Consolidacion", fields: [consolidadoEnId], references: [id], onDelete: SetNull)
   consolidaciones      Modelo[] @relation("Consolidacion")
   publicacionesMl      PublicacionMl[]
+  stock                Stock[]
 
   @@unique([tenantId, sku])
   @@map("modelos")
@@ -120,6 +121,7 @@ model VarianteModelo {
   costoFabAdicional  Float   @default(0) @map("costo_fab_adicional")
   notas              String?
   activo          Boolean @default(true)
+  afectaStock     Boolean @default(false) @map("afecta_stock") // ¿define una pieza física distinta? (95cm sí, Con Funda no)
 
   modelo Modelo @relation(fields: [modeloId], references: [id], onDelete: Cascade)
 
@@ -415,4 +417,45 @@ model CasaGasto {
 
   @@index([tenantId, anio, mes])
   @@map("casa_gastos")
+}
+/// Unidad de stock: un modelo + las variantes que definen una pieza física
+/// distinta (`afectaStock`). "Bola de JOJOS · Verde Metalizado" y
+/// "Tanjiro Katana · 95cm" son filas separadas; la funda NO abre una fila
+/// porque no limita la venta.
+model Stock {
+  id        String   @id @default(cuid())
+  tenantId  String   @default("sendero3d") @map("tenant_id")
+  modeloId  String   @map("modelo_id")
+  variantes String[] @default([])                    // ids de VarianteModelo con afectaStock
+  clave     String                                   // "<modeloId>|<varId,varId>" ordenado
+  etiqueta  String?                                  // legible: "Tanjiro Katana · 95cm"
+  cantidad  Int      @default(0)                     // lo que hay hoy
+  minimo    Int      @default(0)                     // colchón: por debajo, hay que reponer
+  bodegaModelId String? @map("bodega_model_id")       // pieza de bodega.models que suma acá al producirse
+  creadoEn  DateTime @default(now()) @map("creado_en")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  modelo      Modelo             @relation(fields: [modeloId], references: [id], onDelete: Cascade)
+  movimientos MovimientoStock[]
+
+  @@unique([tenantId, clave])
+  @@index([tenantId, modeloId])
+  @@map("stock")
+}
+
+/// Historial de todo lo que entra y sale del stock. Sin esto no hay forma de
+/// auditar por qué una cantidad quedó donde quedó.
+model MovimientoStock {
+  id       String   @id @default(cuid())
+  stockId  String   @map("stock_id")
+  delta    Int                                        // + producción / − venta
+  motivo   String                                     // "venta" | "produccion" | "ajuste"
+  pedidoId String?  @map("pedido_id")
+  nota     String?
+  creadoEn DateTime @default(now()) @map("creado_en")
+
+  stock Stock @relation(fields: [stockId], references: [id], onDelete: Cascade)
+
+  @@index([stockId, creadoEn])
+  @@map("movimientos_stock")
 }
