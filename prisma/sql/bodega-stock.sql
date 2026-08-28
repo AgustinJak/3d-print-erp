@@ -73,12 +73,68 @@ as $$
   where s.tenant_id = 'sendero3d';
 $$;
 
+-- Un modelo de Bodega no puede estar mapeado a dos unidades de stock: al
+-- marcarlo producido no se sabría cuál sumar, y se elegiría una en silencio.
+create unique index if not exists stock_bodega_model_id_key
+  on public.stock (bodega_model_id)
+  where bodega_model_id is not null;
+
+create or replace function public.bodega_mapear_modelo(
+  p_stock_id        text,
+  p_bodega_model_id text default null   -- null desmapea
+) returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $
+declare
+  v_existe   boolean;
+  v_liberado text;
+begin
+  select true into v_existe from public.stock s where s.id = p_stock_id;
+  if v_existe is null then
+    raise exception 'unidad de stock % inexistente', p_stock_id;
+  end if;
+
+  if p_bodega_model_id is not null
+     and not exists (select 1 from bodega.models m where m.id = p_bodega_model_id) then
+    raise exception 'modelo de bodega % inexistente', p_bodega_model_id;
+  end if;
+
+  -- Re-mapear es la operación normal mientras se ordena el catálogo, así que en
+  -- vez de fallar se libera el mapeo anterior. Se devuelve cuál se liberó para
+  -- que la UI lo muestre: si se hiciera en silencio, alguien perdería su mapeo
+  -- sin enterarse.
+  if p_bodega_model_id is not null then
+    update public.stock s
+       set bodega_model_id = null
+     where s.bodega_model_id = p_bodega_model_id
+       and s.id <> p_stock_id
+    returning s.etiqueta into v_liberado;
+  end if;
+
+  update public.stock s
+     set bodega_model_id = p_bodega_model_id,
+         updated_at = now()
+   where s.id = p_stock_id;
+
+  return jsonb_build_object(
+    'ok', true,
+    'stock_id', p_stock_id,
+    'bodega_model_id', p_bodega_model_id,
+    'liberado', v_liberado          -- unidad que perdió este modelo, o null
+  );
+end;
+$;
+
 -- Permisos: sólo quien inició sesión puede llamarlas.
 revoke all on function public.bodega_mover_stock(text,int,text,text,text) from public, anon;
 grant execute on function public.bodega_mover_stock(text,int,text,text,text) to authenticated;
 
 revoke all on function public.bodega_unidades_stock() from public, anon;
 grant execute on function public.bodega_unidades_stock() to authenticated;
+revoke all on function public.bodega_mapear_modelo(text,text) from public, anon;
+grant execute on function public.bodega_mapear_modelo(text,text) to authenticated;
 
 -- RLS: mismo criterio que las otras 18 tablas del ERP — activado y sin policies.
 -- Prisma se conecta como postgres y lo bypasea, así que la app no se entera.
