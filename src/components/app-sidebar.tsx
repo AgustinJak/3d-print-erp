@@ -17,6 +17,7 @@ import {
   Radar,
   Plug,
   Home,
+  Store,
 } from "lucide-react";
 import {
   Sidebar,
@@ -55,6 +56,7 @@ const navNegocio = [
   { title: "Finanzas", href: "/finanzas", icon: DollarSign },
   { title: "Gastos", href: "/gastos", icon: Receipt },
   { title: "Historial", href: "/historial", icon: History },
+  { title: "Shay Juguetes", href: "/shay", icon: Store },
 ];
 
 const navSistema = [
