@@ -518,3 +518,28 @@ model ReglaInsumo {
   @@index([tenantId, modeloId])
   @@map("reglas_insumo")
 }
+
+/// Ventas de un negocio ajeno que comparte la cuenta de Mercado Libre.
+///
+/// Las publicaciones marcadas `ignorar` no generan pedido en el ERP —son de
+/// Shay Juguetes— pero la plata entra a la misma cuenta y hay que pasársela.
+/// Acá queda el cierre de cada mes: el total y el detalle pedido por pedido.
+///
+/// Se guarda calculado (y no se recalcula al vuelo) porque son ~5 llamadas a la
+/// API de ML por mes: demasiado lento para hacerlo en cada carga de Finanzas.
+model VentaTercero {
+  id          String   @id @default(cuid())
+  tenantId    String   @default("sendero3d") @map("tenant_id")
+  socio       String // "shayjuguetes"
+  anio        Int
+  mes         Int
+  unidades    Int      @default(0)
+  bruto       Float    @default(0) // lo que pagó el comprador por el producto
+  comision    Float    @default(0) // lo que se llevó ML
+  neto        Float    @default(0) // bruto - comisión
+  pedidos     Json // detalle: una fila por item vendido
+  calculadoEn DateTime @default(now()) @updatedAt @map("calculado_en")
+
+  @@unique([tenantId, socio, anio, mes])
+  @@map("ventas_terceros")
+}

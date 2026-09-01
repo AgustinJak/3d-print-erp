@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { TableSkeleton } from "@/components/data-loading";
 import { toast } from "sonner";
+import { ShayCard } from "./shay-card";
 
 interface Socio {
   nombre: string;
@@ -447,6 +448,9 @@ export default function FinanzasPage() {
           </Button>
         </div>
       </div>
+
+      {/* Ventas de Shay en la cuenta compartida: plata que hay que pasarle */}
+      <ShayCard mes={mes} anio={anio} nombreMes={MESES[mes - 1]} />
 
       {/* Flex — dato informativo */}
       {data.flex && (data.flex.bonificado > 0 || data.flex.pagadoLogistica > 0) && (
