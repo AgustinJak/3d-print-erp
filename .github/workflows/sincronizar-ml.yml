@@ -1,0 +1,33 @@
+# Sincroniza Mercado Libre cada 15 minutos.
+#
+# Por qué acá y no sólo en Vercel: en el plan Hobby los crons de Vercel corren
+# una vez por día. GitHub Actions es gratis y sí corre cada 15 minutos, así que
+# los pedidos entran solos aunque nadie abra la página.
+#
+# Es la red de seguridad del webhook de ML, no su reemplazo: con el webhook bien
+# configurado el pedido entra en segundos; esto lo recupera si la notificación
+# se pierde.
+#
+# Para activarlo hace falta un solo secret en el repo
+# (Settings › Secrets and variables › Actions):
+#   CRON_SECRET  →  el mismo valor que la variable CRON_SECRET en Vercel
+name: Sincronizar Mercado Libre
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: # botón para correrlo a mano
+
+jobs:
+  sincronizar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Llamar al endpoint de sincronización
+        run: |
+          codigo=$(curl -s -o respuesta.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://3d-print-erp.vercel.app/api/cron/ml")
+          echo "HTTP $codigo"
+          cat respuesta.json
+          # Un 401 significa que el secret no coincide con el de Vercel.
+          test "$codigo" = "200"

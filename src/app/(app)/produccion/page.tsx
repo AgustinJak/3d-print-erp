@@ -18,6 +18,7 @@ import {
 import { TableSkeleton } from "@/components/data-loading";
 import { EmptyState } from "@/components/empty-state";
 import { ESTADOS_PEDIDO, PRIORIDADES } from "@/lib/constants";
+import { useDatosEnVivo } from "@/hooks/use-datos-en-vivo";
 
 interface VarianteInfo {
   nombre: string;
@@ -58,6 +59,8 @@ export default function ProduccionPage() {
   }, []);
 
   useEffect(() => { fetchPedidos(); }, [fetchPedidos]);
+  // La cola se reordena sola cuando entra un pedido nuevo.
+  useDatosEnVivo(fetchPedidos);
 
   const handleStatusChange = async (id: string, estado: string) => {
     await fetch(`/api/pedidos/${id}`, {

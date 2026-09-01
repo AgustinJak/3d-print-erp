@@ -1,121 +1,37 @@
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-import { prisma } from "@/lib/prisma";
-import { reasignarReservas } from "@/lib/reservas";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
-import { getMlAccount } from "@/lib/mercadolibre";
-import {
-  actualizarLiquidacionYEstado,
-  estadoPuedeAvanzarAEsperandoLiq,
-} from "@/lib/mercadolibre-sync";
+import { actualizarLiquidaciones } from "@/lib/ml-lote";
 import { NextRequest, NextResponse } from "next/server";
-import type { Prisma } from "@/generated/prisma";
 
 /**
- * Recorre los pedidos del inventario que son de Mercado Libre y todavía no
- * tienen la liquidación resuelta (o la tienen estimada), los busca en ML por
- * su id_mercadolibre y les asigna la fecha de liquidación + el estado según el
- * envío. Cubre los pedidos cargados a mano y los que quedaron fuera del
- * back-fill de 30 días.
+ * Recorre los pedidos de Mercado Libre que todavía no tienen la liquidación
+ * resuelta (o la tienen estimada) y les asigna fecha + estado según el envío.
+ * Cubre los pedidos cargados a mano y los que quedaron fuera del back-fill.
  *
  * Re-ejecutable: los que ya tienen liquidación real se saltean sin llamar a ML.
+ * La pasada vive en `lib/ml-lote` — la misma que corre por cron.
  *
  * POST /api/ml/actualizar-liquidaciones?max=80
  */
 export async function POST(request: NextRequest) {
   try {
     const { tenantId } = await getAuthenticatedTenantNonDemo();
+    const { searchParams } = new URL(request.url);
 
-    const cuenta = await getMlAccount(tenantId);
-    if (!cuenta) {
+    const r = await actualizarLiquidaciones(tenantId, {
+      max: parseInt(searchParams.get("max") || "40", 10),
+    });
+
+    if (!r.ok) {
       return NextResponse.json(
         { error: "No hay cuenta de Mercado Libre conectada" },
         { status: 400 }
       );
     }
 
-    const { searchParams } = new URL(request.url);
-    const max = Math.min(Math.max(parseInt(searchParams.get("max") || "40", 10), 1), 300);
-
-    // Candidatos: pedidos ML en estados activos con id_mercadolibre cargado.
-    const candidatos = await prisma.pedido.findMany({
-      where: {
-        tenantId,
-        idMercadolibre: { not: null },
-        estado: {
-          in: [
-            "CONFIRMADO",
-            "EN_PRODUCCION",
-            "TERMINADO",
-            "ENTREGADO",
-            "ESPERANDO_LIQUIDACION_ML",
-          ],
-        },
-      },
-      select: {
-        id: true,
-        estado: true,
-        idMercadolibre: true,
-        fechaLiquidacionMl: true,
-        origenExterno: true,
-      },
-      orderBy: { fechaPedido: "desc" },
-    });
-
-    const stats = { revisados: 0, actualizados: 0, ya_resueltos: 0, no_encontrados: 0, errores: 0 };
-    const detalleErrores: string[] = [];
-
-    for (const p of candidatos) {
-      if (stats.actualizados >= max) break;
-
-      // Saltear solo si ya tiene liquidación REAL, el estado ya no puede avanzar
-      // y ya se evaluó si es Flex (sino hay que re-chequear el envío).
-      const oe = (p.origenExterno ?? {}) as Record<string, unknown>;
-      const liquidacionEstimada = oe.liquidacion_estimada === true;
-      const tieneReal = p.fechaLiquidacionMl != null && !liquidacionEstimada && "liquidacion_estimada" in oe;
-      const flexEvaluado = "es_flex" in oe;
-      if (tieneReal && !estadoPuedeAvanzarAEsperandoLiq(p.estado) && flexEvaluado) {
-        stats.ya_resueltos++;
-        continue;
-      }
-
-      stats.revisados++;
-      try {
-        const res = await actualizarLiquidacionYEstado(tenantId, {
-          id: p.id,
-          estado: p.estado,
-          idMercadolibre: p.idMercadolibre,
-        });
-        if (res.ok) stats.actualizados++;
-        else if (res.reason === "no_encontrado_en_ml") stats.no_encontrados++;
-      } catch (e) {
-        stats.errores++;
-        const msg = e instanceof Error ? e.message : "error";
-        if (detalleErrores.length < 20) {
-          detalleErrores.push(`Pedido ${p.idMercadolibre}: ${msg}`.slice(0, 200));
-        }
-      }
-    }
-
-    // Los pedidos que pasaron a "en camino" ya descontaron su stock; queda
-    // repartir lo que se haya liberado entre los que siguen abiertos.
-    await reasignarReservas(tenantId);
-
-    await prisma.webhookLog
-      .create({
-        data: {
-          tenantId,
-          origen: "mercadolibre",
-          evento: "actualizar_liquidaciones",
-          estado: stats.errores > 0 ? "error" : "ok",
-          errorMsg: `actualizados:${stats.actualizados} ya_resueltos:${stats.ya_resueltos} no_encontrados:${stats.no_encontrados} errores:${stats.errores}`,
-          payload: { max, stats, detalleErrores } as unknown as Prisma.InputJsonValue,
-        },
-      })
-      .catch(() => {});
-
-    return NextResponse.json({ ok: true, total_candidatos: candidatos.length, stats, errores: detalleErrores });
+    return NextResponse.json({ ok: true, candidatos: r.candidatos, stats: r.stats, errores: r.errores });
   } catch (e) {
     if (e instanceof NextResponse) return e;
     const msg = e instanceof Error ? e.message : "error";

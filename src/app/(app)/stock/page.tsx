@@ -11,6 +11,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/data-loading";
+import { useDatosEnVivo } from "@/hooks/use-datos-en-vivo";
 
 interface UnidadStock {
   id: string;
@@ -79,6 +80,8 @@ export default function StockPage() {
   }, []);
 
   useEffect(() => { fetchStock(); }, [fetchStock]);
+  // Se actualiza sola cuando entra un pedido o cambia el stock desde otro lado.
+  useDatosEnVivo(fetchStock);
 
   const guardar = async (id: string, campo: "cantidad" | "minimo" | "delta", valor: number) => {
     const res = await fetch("/api/stock", {

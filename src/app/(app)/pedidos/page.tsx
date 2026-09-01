@@ -26,6 +26,7 @@ import { TableSkeleton } from "@/components/data-loading";
 import { EmptyState } from "@/components/empty-state";
 import { InlineDateEdit } from "@/components/inline-date-edit";
 import { ESTADOS_PEDIDO, PRIORIDADES, CANALES_VENTA } from "@/lib/constants";
+import { useDatosEnVivo } from "@/hooks/use-datos-en-vivo";
 import { PedidoDialog } from "./pedido-dialog";
 
 interface VarianteInfo {
@@ -190,6 +191,8 @@ export default function PedidosPage() {
   }, []);
 
   useEffect(() => { fetchPedidos(); }, [fetchPedidos]);
+  // Un pedido que entra por Mercado Libre o por la Shop aparece solo, sin F5.
+  useDatosEnVivo(fetchPedidos);
 
   const filtered = pedidos.filter((p) => {
     const matchSearch =
