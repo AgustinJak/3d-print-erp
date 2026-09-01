@@ -528,16 +528,25 @@ model ReglaInsumo {
 /// Se guarda calculado (y no se recalcula al vuelo) porque son ~5 llamadas a la
 /// API de ML por mes: demasiado lento para hacerlo en cada carga de Finanzas.
 model VentaTercero {
-  id          String   @id @default(cuid())
-  tenantId    String   @default("sendero3d") @map("tenant_id")
-  socio       String // "shayjuguetes"
-  anio        Int
-  mes         Int
-  unidades    Int      @default(0)
-  bruto       Float    @default(0) // lo que pagó el comprador por el producto
-  comision    Float    @default(0) // lo que se llevó ML
-  neto        Float    @default(0) // bruto - comisión
-  pedidos     Json // detalle: una fila por item vendido
+  id       String @id @default(cuid())
+  tenantId String @default("sendero3d") @map("tenant_id")
+  socio    String // "shayjuguetes"
+  anio     Int
+  mes      Int
+  unidades Int    @default(0)
+  bruto    Float  @default(0) // lo que pagó el comprador por el producto
+  comision Float  @default(0) // lo que se llevó ML
+  neto     Float  @default(0) // bruto - comisión
+  pedidos  Json // detalle: una fila por item vendido
+
+  // Lo que se le descuenta a Shay de su parte. Se carga a mano cada mes; si un
+  // mes está vacío, la UI propone lo del mes anterior.
+  publicidad   Float   @default(0) // campañas de ML del mes
+  percepciones Float   @default(0) // percepciones de IVA / IIBB retenidas
+  iibb         Float   @default(0) // convenio multilateral, su parte
+  monotributo  Float   @default(0) // su parte del monotributo
+  notas        String?
+
   calculadoEn DateTime @default(now()) @updatedAt @map("calculado_en")
 
   @@unique([tenantId, socio, anio, mes])

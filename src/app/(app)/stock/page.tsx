@@ -89,7 +89,18 @@ export default function StockPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, [campo]: valor }),
     });
-    if (res.ok) { fetchStock(); } else { toast.error("No se pudo guardar"); }
+    if (!res.ok) {
+      toast.error("No se pudo guardar");
+      return;
+    }
+    // El conteo se guarda siempre; lo que puede fallar es el reparto entre
+    // pedidos. Se avisa en vez de dejarlo pasar: si no, el pedido seguiría
+    // diciendo que falta stock que ya está.
+    const data = await res.json().catch(() => null);
+    if (data?.repartoError) {
+      toast.warning("Se guardó el conteo, pero no se pudo repartir entre los pedidos");
+    }
+    fetchStock();
   };
 
   const visibles = stock.filter((s) => {

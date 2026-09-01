@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
@@ -255,9 +256,20 @@ export async function PATCH(request: NextRequest) {
     });
 
     // Cambió la pila: hay que repartirla de nuevo entre los pedidos abiertos.
-    const reparto = await reasignarReservas(tenantId);
+    //
+    // Si el reparto falla, el conteo YA quedó guardado y no se pierde: se avisa
+    // y listo. El próximo reparto (otro ajuste, un pedido nuevo, el cron)
+    // corrige todo, porque se recalcula entero cada vez.
+    let reparto = null;
+    let repartoError: string | null = null;
+    try {
+      reparto = await reasignarReservas(tenantId);
+    } catch (err) {
+      repartoError = err instanceof Error ? err.message : "error";
+      console.error("[api/stock] no se pudo repartir el stock:", err);
+    }
 
-    return NextResponse.json({ ok: true, stock: actualizado, reparto });
+    return NextResponse.json({ ok: true, stock: actualizado, reparto, repartoError });
   } catch (e) {
     if (e instanceof NextResponse) return e;
     const msg = e instanceof Error ? e.message : "error";

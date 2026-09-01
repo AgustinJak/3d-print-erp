@@ -525,8 +525,13 @@ export async function coberturaDePedidos(
       .flat()
       .every((c) => c.motivo === "a_pedido");
 
+    // Un pedido que ya salió no tiene nada que esperar: su cobertura es
+    // historia. Vale tanto si consumió reservas como si es viejo y se despachó
+    // antes de que existieran — si no, quedaría pidiendo stock para siempre.
+    const yaSalio = CONSUMEN.has(p.estado) || consumidos.has(p.id);
+
     out.set(p.id, {
-      estado: consumidos.has(p.id)
+      estado: yaSalio
         ? "despachado"
         : soloAPedido && total > 0
           ? "a_pedido"

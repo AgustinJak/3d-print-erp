@@ -5,6 +5,8 @@ import { ChevronDown, ChevronRight, Download, RefreshCw, Store } from "lucide-re
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { parsePrice } from "@/lib/utils";
 import { toast } from "sonner";
 
 /**
@@ -34,17 +36,39 @@ interface PedidoTercero {
   comprador: string | null;
 }
 
-interface Cierre {
+interface Descuentos {
+  publicidad: number;
+  percepciones: number;
+  iibb: number;
+  monotributo: number;
+}
+
+interface Cierre extends Descuentos {
   socio: string;
   anio: number;
   mes: number;
   unidades: number;
   bruto: number;
   comision: number;
-  neto: number;
+  neto: number;   // bruto - comisión de ML
+  aPasar: number; // neto - descuentos
+  notas: string | null;
   pedidos: PedidoTercero[];
   calculadoEn: string;
 }
+
+type Previo = Descuentos & { anio: number; mes: number };
+
+const CAMPOS = [
+  { campo: "publicidad" as const, label: "Publicidad", ayuda: "Campañas de Mercado Libre del mes" },
+  { campo: "percepciones" as const, label: "Percepciones", ayuda: "Percepciones de IVA / IIBB retenidas" },
+  { campo: "iibb" as const, label: "Convenio multilateral", ayuda: "Su parte de IIBB convenio multilateral" },
+  { campo: "monotributo" as const, label: "Monotributo", ayuda: "Su parte del monotributo del mes" },
+];
+
+const MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+type CampoDescuento = (typeof CAMPOS)[number]["campo"];
 
 const money = (n: number) => "$" + Math.round(n).toLocaleString("es-AR");
 const fecha = (iso: string) => new Date(iso).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
@@ -52,7 +76,11 @@ const fecha = (iso: string) => new Date(iso).toLocaleDateString("es-AR", { day: 
 export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; nombreMes: string }) {
   // Se guarda junto con el mes que se leyó: así, al cambiar de mes, no se
   // muestran los números del mes anterior mientras llega la respuesta.
-  const [cargado, setCargado] = useState<{ periodo: string; cierre: Cierre | null } | null>(null);
+  const [cargado, setCargado] = useState<{
+    periodo: string;
+    cierre: Cierre | null;
+    previo: Previo | null;
+  } | null>(null);
   const [calculando, setCalculando] = useState(false);
   const [abierto, setAbierto] = useState(false);
 
@@ -65,9 +93,15 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
       try {
         const res = await fetch(`/api/finanzas/terceros?anio=${anio}&mes=${mes}`);
         const data = await res.json();
-        if (vigente) setCargado({ periodo: clave, cierre: res.ok ? data.cierre : null });
+        if (vigente) {
+          setCargado({
+            periodo: clave,
+            cierre: res.ok ? data.cierre : null,
+            previo: res.ok ? (data.previo ?? null) : null,
+          });
+        }
       } catch {
-        if (vigente) setCargado({ periodo: clave, cierre: null });
+        if (vigente) setCargado({ periodo: clave, cierre: null, previo: null });
       }
     })();
     return () => {
@@ -75,8 +109,58 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
     };
   }, [anio, mes]);
 
+  const [borrador, setBorrador] = useState<Partial<Record<CampoDescuento, string>>>({});
+
   const cierre = cargado?.periodo === periodo ? cargado.cierre : null;
   const cargando = cargado?.periodo !== periodo;
+  const previo = cargado?.periodo === periodo ? cargado.previo : null;
+
+  const descuentoTotal = cierre
+    ? cierre.publicidad + cierre.percepciones + cierre.iibb + cierre.monotributo
+    : 0;
+  const sinDescuentos = descuentoTotal === 0;
+
+  /** Guarda un solo campo al salir del input. Los otros quedan como están. */
+  const guardarCampo = async (campo: CampoDescuento) => {
+    const crudo = borrador[campo];
+    if (crudo === undefined || !cierre) return;
+    const valor = parsePrice(crudo);
+    setBorrador((b) => {
+      const c = { ...b };
+      delete c[campo];
+      return c;
+    });
+    if (valor === cierre[campo]) return;
+    await patch({ [campo]: valor });
+  };
+
+  const copiarPrevio = async () => {
+    if (!previo) return;
+    await patch({
+      publicidad: previo.publicidad,
+      percepciones: previo.percepciones,
+      iibb: previo.iibb,
+      monotributo: previo.monotributo,
+    });
+  };
+
+  const patch = async (campos: Record<string, number>) => {
+    try {
+      const res = await fetch("/api/finanzas/terceros", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ anio, mes, ...campos }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "No se pudo guardar");
+        return;
+      }
+      setCargado((c) => (c ? { ...c, cierre: data.cierre } : c));
+    } catch {
+      toast.error("No se pudo guardar");
+    }
+  };
 
   const calcular = async () => {
     setCalculando(true);
@@ -90,7 +174,7 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
       if (!res.ok) {
         toast.error(data.error ?? "No se pudo calcular");
       } else {
-        setCargado({ periodo, cierre: data.cierre });
+        setCargado((c) => ({ periodo, cierre: data.cierre, previo: c?.previo ?? null }));
         toast.success(`${nombreMes}: ${data.cierre.unidades} unidades, ${money(data.cierre.bruto)}`);
       }
     } catch {
@@ -108,7 +192,12 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
     lines.push(["Unidades", cierre.unidades].join(sep));
     lines.push(["Bruto", Math.round(cierre.bruto)].join(sep));
     lines.push(["Comision ML", Math.round(cierre.comision)].join(sep));
-    lines.push(["Neto a pasar", Math.round(cierre.neto)].join(sep));
+    lines.push(["Neto de ML", Math.round(cierre.neto)].join(sep));
+    lines.push(["Publicidad", Math.round(cierre.publicidad)].join(sep));
+    lines.push(["Percepciones", Math.round(cierre.percepciones)].join(sep));
+    lines.push(["Convenio multilateral", Math.round(cierre.iibb)].join(sep));
+    lines.push(["Monotributo", Math.round(cierre.monotributo)].join(sep));
+    lines.push(["A PASARLE", Math.round(cierre.aPasar)].join(sep));
     lines.push("");
     lines.push(
       ["Fecha", "N de venta", "ID de orden", "Publicacion", "MLA", "Comprador",
@@ -213,6 +302,54 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
                   {abierto ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                   {cierre.pedidos.length} {cierre.pedidos.length === 1 ? "venta" : "ventas"}
                 </button>
+              </div>
+            </div>
+
+            {/* Lo que se le descuenta de su parte */}
+            <div className="mt-4 pt-3 border-t border-pink-500/20">
+              <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Descuentos sobre su parte
+                </p>
+                {previo && sinDescuentos && (
+                  <button
+                    className="text-[11px] text-pink-600 dark:text-pink-400 hover:underline"
+                    onClick={copiarPrevio}
+                  >
+                    copiar los de {MESES_CORTOS[previo.mes - 1]} {previo.anio}
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {CAMPOS.map(({ campo, label, ayuda }) => (
+                  <div key={campo}>
+                    <label className="text-[11px] text-muted-foreground block mb-1" title={ayuda}>
+                      {label}
+                    </label>
+                    <Input
+                      className="h-7 text-sm tabular-nums"
+                      inputMode="decimal"
+                      value={borrador[campo] ?? String(cierre[campo] || "")}
+                      placeholder="0"
+                      onChange={(e) => setBorrador((b) => ({ ...b, [campo]: e.target.value }))}
+                      onBlur={() => guardarCampo(campo)}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-baseline justify-between gap-3 mt-3 flex-wrap">
+                <div>
+                  <p className="text-xs text-muted-foreground">A pasarle</p>
+                  <p className="text-2xl font-bold tabular-nums text-pink-600 dark:text-pink-400">
+                    {money(cierre.aPasar)}
+                  </p>
+                </div>
+                <p className="text-[11px] text-muted-foreground text-right">
+                  {money(cierre.neto)} neto
+                  {descuentoTotal > 0 && <> − {money(descuentoTotal)} de descuentos</>}
+                </p>
               </div>
             </div>
 

@@ -30,16 +30,31 @@ export interface PedidoTercero {
   comprador: string | null;
 }
 
-export interface CierreTercero {
+/** Lo que se le descuenta a Shay de su parte. Se carga a mano cada mes. */
+export interface DescuentosTercero {
+  publicidad: number;   // campañas de ML del mes
+  percepciones: number; // percepciones de IVA / IIBB retenidas
+  iibb: number;         // convenio multilateral, su parte
+  monotributo: number;  // su parte del monotributo
+  notas: string | null;
+}
+
+export interface CierreTercero extends DescuentosTercero {
   socio: string;
   anio: number;
   mes: number;
   unidades: number;
   bruto: number;
   comision: number;
-  neto: number;
+  neto: number;         // bruto - comisión de ML
+  aPasar: number;       // neto - los descuentos: la plata que realmente va
   pedidos: PedidoTercero[];
   calculadoEn: string;
+}
+
+/** neto de ML menos lo que se le descuenta: lo que hay que transferirle. */
+export function calcularAPasar(c: { neto: number } & DescuentosTercero): number {
+  return c.neto - c.publicidad - c.percepciones - c.iibb - c.monotributo;
 }
 
 /** Primer y último instante del mes, en hora argentina. */
@@ -142,13 +157,103 @@ export async function calcularCierreTercero(
     update: { ...totales, pedidos: pedidos as unknown as Prisma.InputJsonValue },
   });
 
+  return armarCierre(fila, pedidos);
+}
+
+interface FilaCierre {
+  socio: string;
+  anio: number;
+  mes: number;
+  unidades: number;
+  bruto: number;
+  comision: number;
+  neto: number;
+  publicidad: number;
+  percepciones: number;
+  iibb: number;
+  monotributo: number;
+  notas: string | null;
+  calculadoEn: Date;
+}
+
+function armarCierre(fila: FilaCierre, pedidos: PedidoTercero[]): CierreTercero {
+  const base = {
+    socio: fila.socio,
+    anio: fila.anio,
+    mes: fila.mes,
+    unidades: fila.unidades,
+    bruto: fila.bruto,
+    comision: fila.comision,
+    neto: fila.neto,
+    publicidad: fila.publicidad,
+    percepciones: fila.percepciones,
+    iibb: fila.iibb,
+    monotributo: fila.monotributo,
+    notas: fila.notas,
+  };
   return {
-    socio,
-    anio,
-    mes,
-    ...totales,
+    ...base,
+    aPasar: calcularAPasar(base),
     pedidos,
     calculadoEn: fila.calculadoEn.toISOString(),
+  };
+}
+
+/**
+ * Guarda los descuentos del mes. No toca las ventas: recalcular el mes contra
+ * ML los deja intactos.
+ */
+export async function guardarDescuentos(
+  tenantId: string,
+  anio: number,
+  mes: number,
+  campos: Partial<DescuentosTercero>,
+  socio = SOCIO_SHAY
+): Promise<CierreTercero | null> {
+  const data: Partial<DescuentosTercero> = {};
+  for (const k of ["publicidad", "percepciones", "iibb", "monotributo"] as const) {
+    if (typeof campos[k] === "number" && Number.isFinite(campos[k])) data[k] = campos[k];
+  }
+  if ("notas" in campos) data.notas = campos.notas ?? null;
+
+  const fila = await prisma.ventaTercero.update({
+    where: { tenantId_socio_anio_mes: { tenantId, socio, anio, mes } },
+    data,
+  });
+  return armarCierre(fila, (fila.pedidos ?? []) as unknown as PedidoTercero[]);
+}
+
+/**
+ * Los descuentos del mes anterior que tenga algo cargado. Sirven de propuesta:
+ * el monotributo y el convenio se repiten mes a mes casi iguales.
+ */
+export async function descuentosPrevios(
+  tenantId: string,
+  anio: number,
+  mes: number,
+  socio = SOCIO_SHAY
+): Promise<(DescuentosTercero & { anio: number; mes: number }) | null> {
+  const previos = await prisma.ventaTercero.findMany({
+    where: {
+      tenantId,
+      socio,
+      OR: [{ anio: { lt: anio } }, { anio, mes: { lt: mes } }],
+    },
+    orderBy: [{ anio: "desc" }, { mes: "desc" }],
+    take: 6,
+  });
+  const conDatos = previos.find(
+    (p) => p.publicidad || p.percepciones || p.iibb || p.monotributo
+  );
+  if (!conDatos) return null;
+  return {
+    anio: conDatos.anio,
+    mes: conDatos.mes,
+    publicidad: conDatos.publicidad,
+    percepciones: conDatos.percepciones,
+    iibb: conDatos.iibb,
+    monotributo: conDatos.monotributo,
+    notas: conDatos.notas,
   };
 }
 
@@ -163,15 +268,5 @@ export async function leerCierreTercero(
     where: { tenantId_socio_anio_mes: { tenantId, socio, anio, mes } },
   });
   if (!fila) return null;
-  return {
-    socio: fila.socio,
-    anio: fila.anio,
-    mes: fila.mes,
-    unidades: fila.unidades,
-    bruto: fila.bruto,
-    comision: fila.comision,
-    neto: fila.neto,
-    pedidos: (fila.pedidos ?? []) as unknown as PedidoTercero[],
-    calculadoEn: fila.calculadoEn.toISOString(),
-  };
+  return armarCierre(fila, (fila.pedidos ?? []) as unknown as PedidoTercero[]);
 }
