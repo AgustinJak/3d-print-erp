@@ -16,6 +16,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Cron de sincronización: no hay usuario logueado detrás. Se autentica solo,
+  // con CRON_SECRET, dentro del endpoint.
+  if (pathname.startsWith("/api/cron/")) {
+    return NextResponse.next();
+  }
+
   // Callback de OAuth de Mercado Libre: ML redirige al usuario sin garantía de
   // cookies. La identidad del tenant se valida con el `state` firmado (HMAC).
   if (pathname.startsWith("/api/ml/oauth/callback")) {
