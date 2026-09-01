@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
+import { asegurarFilasDeStock } from "@/lib/stock-filas";
 import { parsePrice } from "@/lib/utils";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
@@ -137,6 +138,10 @@ export async function PUT(
         },
       });
     });
+
+    // Si se reactivó, o le aparecieron variantes que definen piezas distintas,
+    // tiene que tener su fila en /stock. No pisa lo que ya existe.
+    await asegurarFilasDeStock(tenantId, id);
 
     return NextResponse.json(modelo);
   } catch (e) {

@@ -65,7 +65,7 @@ export default function StockPage() {
   const [resumen, setResumen] = useState<Resumen | null>(null);
   const [loading, setLoading] = useState(true);
   const [busqueda, setBusqueda] = useState("");
-  const [soloFaltantes, setSoloFaltantes] = useState(true);
+  const [soloFaltantes, setSoloFaltantes] = useState(false);
   const [editando, setEditando] = useState<Record<string, string>>({});
 
   const fetchStock = useCallback(async () => {

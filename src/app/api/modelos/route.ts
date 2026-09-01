@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
+import { asegurarFilasDeStock } from "@/lib/stock-filas";
 import { parsePrice } from "@/lib/utils";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
@@ -86,6 +87,10 @@ export async function POST(request: NextRequest) {
         variantes: true,
       },
     });
+    // Que aparezca en /stock desde el día uno: si no, queda publicado pero
+    // invisible, y no se puede ni contar ni reservar.
+    await asegurarFilasDeStock(tenantId, modelo.id);
+
     return NextResponse.json(modelo, { status: 201 });
   } catch (e) {
     if (e instanceof NextResponse) return e;
