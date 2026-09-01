@@ -102,10 +102,11 @@ model Modelo {
   itemsPedido          ItemPedido[]
   sugerenciasTendencia SugerenciaProducto[]
 
-  consolidadoEn        Modelo?  @relation("Consolidacion", fields: [consolidadoEnId], references: [id], onDelete: SetNull)
-  consolidaciones      Modelo[] @relation("Consolidacion")
-  publicacionesMl      PublicacionMl[]
-  stock                Stock[]
+  consolidadoEn   Modelo?         @relation("Consolidacion", fields: [consolidadoEnId], references: [id], onDelete: SetNull)
+  consolidaciones Modelo[]        @relation("Consolidacion")
+  publicacionesMl PublicacionMl[]
+  stock           Stock[]
+  reglasInsumo    ReglaInsumo[]
 
   @@unique([tenantId, sku])
   @@map("modelos")
@@ -114,14 +115,14 @@ model Modelo {
 // ==================== VARIANTES DE MODELO ====================
 
 model VarianteModelo {
-  id              String  @id @default(cuid())
-  modeloId        String  @map("modelo_id")
-  nombre          String
-  precioAdicional    Float   @default(0) @map("precio_adicional")
-  costoFabAdicional  Float   @default(0) @map("costo_fab_adicional")
-  notas              String?
-  activo          Boolean @default(true)
-  afectaStock     Boolean @default(false) @map("afecta_stock") // ¿define una pieza física distinta? (95cm sí, Con Funda no)
+  id                String  @id @default(cuid())
+  modeloId          String  @map("modelo_id")
+  nombre            String
+  precioAdicional   Float   @default(0) @map("precio_adicional")
+  costoFabAdicional Float   @default(0) @map("costo_fab_adicional")
+  notas             String?
+  activo            Boolean @default(true)
+  afectaStock       Boolean @default(false) @map("afecta_stock") // ¿define una pieza física distinta? (95cm sí, Con Funda no)
 
   modelo Modelo @relation(fields: [modeloId], references: [id], onDelete: Cascade)
 
@@ -150,32 +151,33 @@ enum Prioridad {
 }
 
 model Pedido {
-  id                  String       @id @default(cuid())
-  prioridad           Prioridad    @default(MEDIA)
-  clienteId           String?      @map("cliente_id")
-  fechaPedido         DateTime     @default(now()) @map("fecha_pedido")
-  fechaEntrega        DateTime?    @map("fecha_entrega")
-  estado              EstadoPedido @default(PENDIENTE_PAGO)
-  metodoEnvio         String?      @map("metodo_envio")
-  metodoPago          String?      @map("metodo_pago")
-  precioEnvio         Float        @default(0) @map("precio_envio")
-  senia               Float        @default(0)
-  comprobanteUrl      String?      @map("comprobante_url")
-  fechaLiquidacionMl  DateTime?    @map("fecha_liquidacion_ml")
-  idMercadolibre      String?      @map("id_mercadolibre")
-  contacto            String?
-  notas               String?
-  etiquetas           String[]     @default([])
-  canalVenta          String       @default("directa") @map("canal_venta")
-  ordenProduccion     Int?         @map("orden_produccion")
-  origenExterno       Json?        @map("origen_externo")
-  externoId           String?      @map("externo_id")
-  tenantId            String       @default("sendero3d") @map("tenant_id")
-  creadoEn            DateTime     @default(now()) @map("creado_en")
-  updatedAt           DateTime     @updatedAt @map("updated_at")
+  id                 String       @id @default(cuid())
+  prioridad          Prioridad    @default(MEDIA)
+  clienteId          String?      @map("cliente_id")
+  fechaPedido        DateTime     @default(now()) @map("fecha_pedido")
+  fechaEntrega       DateTime?    @map("fecha_entrega")
+  estado             EstadoPedido @default(PENDIENTE_PAGO)
+  metodoEnvio        String?      @map("metodo_envio")
+  metodoPago         String?      @map("metodo_pago")
+  precioEnvio        Float        @default(0) @map("precio_envio")
+  senia              Float        @default(0)
+  comprobanteUrl     String?      @map("comprobante_url")
+  fechaLiquidacionMl DateTime?    @map("fecha_liquidacion_ml")
+  idMercadolibre     String?      @map("id_mercadolibre")
+  contacto           String?
+  notas              String?
+  etiquetas          String[]     @default([])
+  canalVenta         String       @default("directa") @map("canal_venta")
+  ordenProduccion    Int?         @map("orden_produccion")
+  origenExterno      Json?        @map("origen_externo")
+  externoId          String?      @map("externo_id")
+  tenantId           String       @default("sendero3d") @map("tenant_id")
+  creadoEn           DateTime     @default(now()) @map("creado_en")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
 
-  cliente Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
-  items   ItemPedido[]
+  cliente  Cliente?       @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  items    ItemPedido[]
+  reservas ReservaStock[]
 
   @@unique([tenantId, externoId])
   @@map("pedidos")
@@ -184,18 +186,19 @@ model Pedido {
 // ==================== ITEMS DEL PEDIDO ====================
 
 model ItemPedido {
-  id              String  @id @default(cuid())
-  pedidoId        String  @map("pedido_id")
-  modeloId        String  @map("modelo_id")
-  cantidad        Int     @default(1)
-  precioUnitario  Float   @map("precio_unitario")
-  costoUnitario   Float   @map("costo_unitario")
-  ajusteManual    Float   @default(0) @map("ajuste_manual")
-  variantesInfo   Json?   @map("variantes_info")
-  mlaOrigen       String? @map("mla_origen")        // publicación de ML que originó el item
+  id             String  @id @default(cuid())
+  pedidoId       String  @map("pedido_id")
+  modeloId       String  @map("modelo_id")
+  cantidad       Int     @default(1)
+  precioUnitario Float   @map("precio_unitario")
+  costoUnitario  Float   @map("costo_unitario")
+  ajusteManual   Float   @default(0) @map("ajuste_manual")
+  variantesInfo  Json?   @map("variantes_info")
+  mlaOrigen      String? @map("mla_origen") // publicación de ML que originó el item
 
-  pedido   Pedido    @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
-  modelo   Modelo    @relation(fields: [modeloId], references: [id])
+  pedido   Pedido         @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  modelo   Modelo         @relation(fields: [modeloId], references: [id])
+  reservas ReservaStock[]
 
   @@map("items_pedido")
 }
@@ -237,7 +240,7 @@ model EventoTendencia {
   id          String    @id @default(cuid())
   tenantId    String    @default("sendero3d") @map("tenant_id")
   titulo      String
-  tipo        String    // pelicula, serie, anime, concierto, fecha_comercial, gaming, evento
+  tipo        String // pelicula, serie, anime, concierto, fecha_comercial, gaming, evento
   fecha       DateTime
   fechaFin    DateTime? @map("fecha_fin")
   descripcion String?
@@ -256,7 +259,7 @@ model EventoTendencia {
 }
 
 model SugerenciaProducto {
-  id             String  @id @default(cuid())
+  id                String  @id @default(cuid())
   eventoId          String  @map("evento_id")
   nombre            String
   descripcion       String?
@@ -281,10 +284,10 @@ model Gasto {
   categoria     String
   monto         Float
   descripcion   String?
-  billetera     String   @default("fabricacion")              // "fabricacion" | "empresarial"
-  grupoCuotasId String?  @map("grupo_cuotas_id")              // UUID común para cuotas del mismo gasto
-  cuotaNumero   Int?     @map("cuota_numero")                 // 1, 2, 3...
-  cuotaTotal    Int?     @map("cuota_total")                  // N total de cuotas
+  billetera     String   @default("fabricacion") // "fabricacion" | "empresarial"
+  grupoCuotasId String?  @map("grupo_cuotas_id") // UUID común para cuotas del mismo gasto
+  cuotaNumero   Int?     @map("cuota_numero") // 1, 2, 3...
+  cuotaTotal    Int?     @map("cuota_total") // N total de cuotas
   tenantId      String   @default("sendero3d") @map("tenant_id")
   creadoEn      DateTime @default(now()) @map("creado_en")
   updatedAt     DateTime @updatedAt @map("updated_at")
@@ -300,8 +303,8 @@ model Transferencia {
   id          String   @id @default(cuid())
   fecha       DateTime @default(now())
   monto       Float
-  desde       String                                          // "fabricacion" | "empresarial" | "externo"
-  hacia       String                                          // "fabricacion" | "empresarial" | "externo"
+  desde       String // "fabricacion" | "empresarial" | "externo"
+  hacia       String // "fabricacion" | "empresarial" | "externo"
   descripcion String?
   tenantId    String   @default("sendero3d") @map("tenant_id")
   creadoEn    DateTime @default(now()) @map("creado_en")
@@ -313,17 +316,17 @@ model Transferencia {
 // ==================== INTEGRACIÓN / WEBHOOKS ====================
 
 model WebhookLog {
-  id          String   @id @default(cuid())
-  tenantId    String   @map("tenant_id")
-  origen      String                              // ej: "shop"
-  evento      String                              // ej: "pedido.confirmado"
-  externoId   String?  @map("externo_id")         // ej: "SS-00001"
-  estado      String                              // "ok", "error", "ignorado"
-  errorMsg    String?  @map("error_msg")
-  pedidoId    String?  @map("pedido_id")          // pedido creado/relacionado
-  payload     Json
-  ipAddress   String?  @map("ip_address")
-  recibidoEn  DateTime @default(now()) @map("recibido_en")
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  origen     String // ej: "shop"
+  evento     String // ej: "pedido.confirmado"
+  externoId  String?  @map("externo_id") // ej: "SS-00001"
+  estado     String // "ok", "error", "ignorado"
+  errorMsg   String?  @map("error_msg")
+  pedidoId   String?  @map("pedido_id") // pedido creado/relacionado
+  payload    Json
+  ipAddress  String?  @map("ip_address")
+  recibidoEn DateTime @default(now()) @map("recibido_en")
 
   @@index([tenantId, recibidoEn])
   @@index([tenantId, externoId])
@@ -335,11 +338,11 @@ model WebhookLog {
 model CuentaMercadolibre {
   id           String   @id @default(cuid())
   tenantId     String   @unique @map("tenant_id")
-  mlUserId     String   @map("ml_user_id")            // user_id de la cuenta ML
-  nickname     String?                                // apodo de la cuenta (para mostrar en UI)
+  mlUserId     String   @map("ml_user_id") // user_id de la cuenta ML
+  nickname     String? // apodo de la cuenta (para mostrar en UI)
   accessToken  String   @map("access_token")
   refreshToken String   @map("refresh_token")
-  expiresAt    DateTime @map("expires_at")            // cuándo expira el access_token
+  expiresAt    DateTime @map("expires_at") // cuándo expira el access_token
   scope        String?
   creadoEn     DateTime @default(now()) @map("creado_en")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -350,17 +353,17 @@ model CuentaMercadolibre {
 // ==================== MAPEO PUBLICACIONES ML → MODELO ====================
 
 model PublicacionMl {
-  id           String   @id @default(cuid())
-  tenantId     String   @map("tenant_id")
-  mla          String                                  // ID de publicación ML (MLA...)
-  modeloId     String?  @map("modelo_id")              // modelo asociado (null = sin mapear)
-  ignorar      Boolean  @default(false)                // true = no es de este negocio (ej: juguete)
-  titulo       String?                                 // título de la publicación (cache)
-  ultimoMla    String?  @map("ultimo_pedido")          // último order_id donde apareció
-  vecesVista   Int      @default(1) @map("veces_vista")
+  id                  String   @id @default(cuid())
+  tenantId            String   @map("tenant_id")
+  mla                 String // ID de publicación ML (MLA...)
+  modeloId            String?  @map("modelo_id") // modelo asociado (null = sin mapear)
+  ignorar             Boolean  @default(false) // true = no es de este negocio (ej: juguete)
+  titulo              String? // título de la publicación (cache)
+  ultimoMla           String?  @map("ultimo_pedido") // último order_id donde apareció
+  vecesVista          Int      @default(1) @map("veces_vista")
   variantesImplicitas String[] @default([]) @map("variantes_implicitas") // variantes que la publicación lleva SIEMPRE (95cm, Con Funda...)
-  creadoEn     DateTime @default(now()) @map("creado_en")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  creadoEn            DateTime @default(now()) @map("creado_en")
+  updatedAt           DateTime @updatedAt @map("updated_at")
 
   modelo Modelo? @relation(fields: [modeloId], references: [id], onDelete: SetNull)
 
@@ -374,7 +377,7 @@ model PublicacionMl {
 model CasaIngreso {
   id        String   @id @default(cuid())
   tenantId  String   @default("sendero3d") @map("tenant_id")
-  persona   String                                     // "tai" | "sendero"
+  persona   String // "tai" | "sendero"
   monto     Float    @default(0)
   mes       Int
   anio      Int
@@ -390,8 +393,8 @@ model CasaFijo {
   tenantId    String   @default("sendero3d") @map("tenant_id")
   nombre      String
   monto       Float    @default(0)
-  reparto     String   @default("proporcional")        // "proporcional" | "mitad" | "personal"
-  personaPaga String?  @map("persona_paga")            // "tai"|"sendero" si reparto="personal"
+  reparto     String   @default("proporcional") // "proporcional" | "mitad" | "personal"
+  personaPaga String?  @map("persona_paga") // "tai"|"sendero" si reparto="personal"
   activo      Boolean  @default(true)
   orden       Int      @default(0)
   creadoEn    DateTime @default(now()) @map("creado_en")
@@ -403,14 +406,14 @@ model CasaFijo {
 model CasaGasto {
   id          String   @id @default(cuid())
   tenantId    String   @default("sendero3d") @map("tenant_id")
-  grupo       String                                    // "fijo" | "ocio" | "inversion"
+  grupo       String // "fijo" | "ocio" | "inversion"
   nombre      String
   monto       Float    @default(0)
   reparto     String   @default("proporcional")
   personaPaga String?  @map("persona_paga")
   mes         Int
   anio        Int
-  fijoId      String?  @map("fijo_id")                  // si se generó desde la plantilla
+  fijoId      String?  @map("fijo_id") // si se generó desde la plantilla
   fecha       DateTime @default(now())
   creadoEn    DateTime @default(now()) @map("creado_en")
   updatedAt   DateTime @updatedAt @map("updated_at")
@@ -418,25 +421,28 @@ model CasaGasto {
   @@index([tenantId, anio, mes])
   @@map("casa_gastos")
 }
+
 /// Unidad de stock: un modelo + las variantes que definen una pieza física
 /// distinta (`afectaStock`). "Bola de JOJOS · Verde Metalizado" y
 /// "Tanjiro Katana · 95cm" son filas separadas; la funda NO abre una fila
 /// porque no limita la venta.
 model Stock {
-  id        String   @id @default(cuid())
-  tenantId  String   @default("sendero3d") @map("tenant_id")
-  modeloId  String   @map("modelo_id")
-  variantes String[] @default([])                    // ids de VarianteModelo con afectaStock
-  clave     String                                   // "<modeloId>|<varId,varId>" ordenado
-  etiqueta  String?                                  // legible: "Tanjiro Katana · 95cm"
-  cantidad  Int      @default(0)                     // lo que hay hoy
-  minimo    Int      @default(0)                     // colchón: por debajo, hay que reponer
-  bodegaModelId String? @map("bodega_model_id")       // pieza de bodega.models que suma acá al producirse
-  creadoEn  DateTime @default(now()) @map("creado_en")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(cuid())
+  tenantId      String   @default("sendero3d") @map("tenant_id")
+  modeloId      String   @map("modelo_id")
+  variantes     String[] @default([]) // ids de VarianteModelo con afectaStock
+  clave         String // "<modeloId>|<varId,varId>" ordenado
+  etiqueta      String? // legible: "Tanjiro Katana · 95cm"
+  cantidad      Int      @default(0) // lo que hay hoy
+  minimo        Int      @default(0) // colchón: por debajo, hay que reponer
+  bodegaModelId String?  @map("bodega_model_id") // pieza de bodega.models que suma acá al producirse
+  creadoEn      DateTime @default(now()) @map("creado_en")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
-  modelo      Modelo             @relation(fields: [modeloId], references: [id], onDelete: Cascade)
-  movimientos MovimientoStock[]
+  modelo       Modelo            @relation(fields: [modeloId], references: [id], onDelete: Cascade)
+  movimientos  MovimientoStock[]
+  reservas     ReservaStock[]
+  reglasInsumo ReglaInsumo[]
 
   @@unique([tenantId, clave])
   @@index([tenantId, modeloId])
@@ -448,8 +454,8 @@ model Stock {
 model MovimientoStock {
   id       String   @id @default(cuid())
   stockId  String   @map("stock_id")
-  delta    Int                                        // + producción / − venta
-  motivo   String                                     // "venta" | "produccion" | "ajuste"
+  delta    Int // + producción / − venta
+  motivo   String // "venta" | "produccion" | "ajuste"
   pedidoId String?  @map("pedido_id")
   nota     String?
   creadoEn DateTime @default(now()) @map("creado_en")
@@ -458,4 +464,57 @@ model MovimientoStock {
 
   @@index([stockId, creadoEn])
   @@map("movimientos_stock")
+}
+
+/// Reserva de stock para un pedido.
+///
+/// Mientras está `RESERVADA` la pieza sigue en el galpón pero ya tiene dueño:
+/// no se le puede prometer a otro pedido. `Stock.cantidad` NO baja todavía —
+/// lo que baja es el disponible (`cantidad - reservado`). Cuando el pedido sale
+/// la reserva pasa a `CONSUMIDA` y recién ahí se descuenta la cantidad física.
+///
+/// Las `RESERVADA` son efímeras: `reasignarReservas()` las borra y las vuelve a
+/// calcular enteras cada vez que algo cambia, así nunca quedan a la deriva.
+/// Las `CONSUMIDA` son historia y no se recalculan.
+model ReservaStock {
+  id          String    @id @default(cuid())
+  tenantId    String    @default("sendero3d") @map("tenant_id")
+  stockId     String    @map("stock_id")
+  pedidoId    String    @map("pedido_id")
+  itemId      String?   @map("item_id")
+  cantidad    Int
+  estado      String    @default("RESERVADA") // RESERVADA | CONSUMIDA
+  tipo        String    @default("producto") // producto | insumo (funda)
+  creadoEn    DateTime  @default(now()) @map("creado_en")
+  consumidaEn DateTime? @map("consumida_en")
+
+  stock  Stock       @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  pedido Pedido      @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  item   ItemPedido? @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, estado])
+  @@index([pedidoId])
+  @@index([stockId, estado])
+  @@map("reservas_stock")
+}
+
+/// Receta: qué insumo se consume cuando un item lleva ciertas variantes.
+/// "Yamato Katana + Con Funda + 95cm consume 1 de `Funda Yamato 95cm`".
+///
+/// Existe porque la funda no abre fila de stock propia en la katana (no limita
+/// la venta) pero sí sale de una pila que hay que reponer.
+model ReglaInsumo {
+  id       String   @id @default(cuid())
+  tenantId String   @default("sendero3d") @map("tenant_id")
+  modeloId String   @map("modelo_id")
+  requiere String[] @default([]) // ids de VarianteModelo que deben estar TODAS
+  stockId  String   @map("stock_id") // la unidad de stock del insumo
+  cantidad Int      @default(1)
+  creadoEn DateTime @default(now()) @map("creado_en")
+
+  modelo Modelo @relation(fields: [modeloId], references: [id], onDelete: Cascade)
+  stock  Stock  @relation(fields: [stockId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, modeloId])
+  @@map("reglas_insumo")
 }

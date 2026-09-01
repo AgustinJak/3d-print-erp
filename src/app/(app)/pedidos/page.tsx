@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronRight, AlertTriangle, ShoppingCart, GripVertical, CalendarClock, Clock, Copy } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronRight, AlertTriangle, ShoppingCart, GripVertical, CalendarClock, Clock, Copy, PackageCheck, Printer } from "lucide-react";
 import { toast } from "sonner";
 import {
   DragDropContext,
@@ -50,6 +50,23 @@ interface ItemPedido {
   };
 }
 
+interface ComponenteCobertura {
+  tipo: "producto" | "insumo";
+  etiqueta: string;
+  necesita: number;
+  reservado: number;
+  falta: number;
+  motivo?: "a_pedido" | "combinacion_sin_fila" | "falta_regla";
+}
+
+/** Qué parte del pedido está cubierta con el stock que hay hoy. */
+interface Cobertura {
+  estado: "completa" | "parcial" | "sin_stock" | "a_pedido" | "despachado";
+  falta: number;
+  posicion: number | null;
+  componentes: Record<string, ComponenteCobertura[]>;
+}
+
 interface Pedido {
   id: string;
   prioridad: keyof typeof PRIORIDADES;
@@ -70,6 +87,7 @@ interface Pedido {
   idMercadolibre: string | null;
   cliente: { id: string; nombre: string } | null;
   items: ItemPedido[];
+  cobertura: Cobertura | null;
 }
 
 function calcTotal(items: ItemPedido[]) {
@@ -81,6 +99,72 @@ function calcTotal(items: ItemPedido[]) {
 function calcCosto(items: ItemPedido[]) {
   return items.reduce((sum, item) =>
     sum + (item.costoUnitario * item.cantidad), 0
+  );
+}
+
+/**
+ * Estado del pedido frente al stock. "Con stock" significa que las piezas ya
+ * están apartadas y nadie más se las puede llevar; "falta" es lo que hay que
+ * imprimir sí o sí antes de despachar.
+ */
+function BadgeStock({ cobertura }: { cobertura: Cobertura | null }) {
+  if (!cobertura || cobertura.estado === "despachado") return null;
+  if (cobertura.estado === "completa") {
+    return (
+      <Badge className="h-4 px-1 text-[9px] bg-emerald-500/15 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/20">
+        <PackageCheck className="h-2.5 w-2.5 mr-0.5" />
+        CON STOCK
+      </Badge>
+    );
+  }
+  if (cobertura.estado === "a_pedido") {
+    return (
+      <Badge variant="outline" className="h-4 px-1 text-[9px] text-muted-foreground">
+        <Printer className="h-2.5 w-2.5 mr-0.5" />
+        A PEDIDO
+      </Badge>
+    );
+  }
+  return (
+    <Badge className="h-4 px-1 text-[9px] bg-red-500/15 text-red-600 border-red-500/30 hover:bg-red-500/20">
+      <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />
+      FALTA {cobertura.falta}
+    </Badge>
+  );
+}
+
+const MOTIVO_COMPONENTE: Record<string, string> = {
+  a_pedido: "se imprime a pedido",
+  combinacion_sin_fila: "sin unidad de stock",
+  falta_regla: "sin funda definida",
+};
+
+/** Pieza por pieza: qué está apartado para este item y qué hay que imprimir. */
+function StockDeItem({ comps }: { comps?: ComponenteCobertura[] }) {
+  if (!comps || comps.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {comps.map((c, i) => (
+        <Badge
+          key={i}
+          variant="outline"
+          className={
+            "text-[10px] px-1.5 py-0 font-normal " +
+            (c.falta === 0
+              ? "border-emerald-500/50 text-emerald-600 dark:text-emerald-400"
+              : "border-red-500/50 text-red-600 dark:text-red-400")
+          }
+        >
+          {c.tipo === "insumo" ? "funda: " : ""}
+          {c.etiqueta}
+          {c.falta === 0
+            ? " ✓"
+            : c.motivo
+              ? " — " + (MOTIVO_COMPONENTE[c.motivo] ?? c.motivo)
+              : " — faltan " + c.falta}
+        </Badge>
+      ))}
+    </div>
   );
 }
 
@@ -377,6 +461,7 @@ export default function PedidosPage() {
                                   <div key={item.id} className="text-sm">
                                     <span className="text-muted-foreground mr-1">{item.cantidad}×</span>
                                     <span className="font-medium">{item.modelo.nombre}</span>
+                                    <StockDeItem comps={p.cobertura?.componentes[item.id]} />
                                   </div>
                                 ))}
                               </div>
@@ -527,6 +612,7 @@ export default function PedidosPage() {
                                 FLEX
                               </Badge>
                             )}
+                            <BadgeStock cobertura={p.cobertura} />
                           </div>
                         </TableCell>
                         <TableCell className="max-w-[260px]">
@@ -637,7 +723,14 @@ export default function PedidosPage() {
                               </div>
 
                               <div className="space-y-2">
-                                <h4 className="font-semibold text-sm">Detalle de items</h4>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h4 className="font-semibold text-sm">Detalle de items</h4>
+                                  {p.cobertura?.posicion != null && (
+                                    <Badge variant="outline" className="h-4 px-1.5 text-[10px] font-normal text-muted-foreground">
+                                      puesto {p.cobertura.posicion} en la cola
+                                    </Badge>
+                                  )}
+                                </div>
                                 <div className="space-y-1">
                                   {p.items.map((item) => (
                                     <div key={item.id} className="text-sm border rounded-md p-2 space-y-0.5">
@@ -666,6 +759,7 @@ export default function PedidosPage() {
                                           ))}
                                         </div>
                                       )}
+                                      <StockDeItem comps={p.cobertura?.componentes[item.id]} />
                                       <div className="flex gap-3 text-xs text-muted-foreground">
                                         <span>Cant: {item.cantidad}</span>
                                         <span>Precio: ${item.precioUnitario.toFixed(0)}</span>

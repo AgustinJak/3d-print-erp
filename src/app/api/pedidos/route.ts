@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
+import { coberturaDePedidos, reasignarReservas } from "@/lib/reservas";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -37,7 +38,12 @@ export async function GET(request: NextRequest) {
         items: { include: itemsInclude },
       },
     });
-    return NextResponse.json(pedidos);
+    // Qué tiene cubierto cada pedido con el stock que hay hoy, y en qué
+    // posición de la cola quedó. Se calcula al vuelo: no se guarda nada.
+    const cobertura = await coberturaDePedidos(tenantId, pedidos);
+    return NextResponse.json(
+      pedidos.map((p) => ({ ...p, cobertura: cobertura.get(p.id) ?? null }))
+    );
   } catch (e) {
     if (e instanceof NextResponse) return e;
     throw e;
@@ -110,6 +116,9 @@ export async function POST(request: NextRequest) {
         items: { include: itemsInclude },
       },
     });
+    // Pedido nuevo: que agarre el stock que le toque según la cola.
+    await reasignarReservas(tenantId);
+
     return NextResponse.json(pedido, { status: 201 });
   } catch (e) {
     if (e instanceof NextResponse) return e;

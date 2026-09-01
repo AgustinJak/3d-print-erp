@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
+import { clavesDeOrden } from "@/lib/reservas";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextResponse } from "next/server";
 
@@ -14,7 +15,7 @@ export async function GET() {
         tenantId,
         estado: { in: ["CONFIRMADO", "EN_PRODUCCION"] },
       },
-      orderBy: [{ ordenProduccion: { sort: "asc", nulls: "last" } }, { prioridad: "desc" }, { fechaEntrega: "asc" }],
+
       include: {
         cliente: { select: { id: true, nombre: true } },
         items: {
@@ -32,6 +33,15 @@ export async function GET() {
           },
         },
       },
+    });
+
+    // Mismo orden con el que se reparte el stock (ver `clavesDeOrden`): el que
+    // aparece primero acá es el que se queda con la pieza si no alcanza.
+    pedidos.sort((a, b) => {
+      const ka = clavesDeOrden(a);
+      const kb = clavesDeOrden(b);
+      for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] - kb[i];
+      return 0;
     });
 
     return NextResponse.json(pedidos);

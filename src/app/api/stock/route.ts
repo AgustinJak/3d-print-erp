@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
+import { coberturaDePedidos, ESTADOS_QUE_RESERVAN, reasignarReservas } from "@/lib/reservas";
 import { NextRequest, NextResponse } from "next/server";
 
 const MESES_DEMANDA = 6;
@@ -24,7 +25,7 @@ export async function GET() {
     const desde = new Date();
     desde.setMonth(desde.getMonth() - MESES_DEMANDA);
 
-    const [filas, items] = await Promise.all([
+    const [filas, items, reservas] = await Promise.all([
       prisma.stock.findMany({
         where: { tenantId },
         include: {
@@ -45,7 +46,15 @@ export async function GET() {
         where: { pedido: { tenantId, fechaPedido: { gte: desde }, estado: { not: "CANCELADO" } } },
         select: { modeloId: true, cantidad: true, variantesInfo: true },
       }),
+      // Lo que ya tiene dueño: sigue en el galpón pero no se puede prometer.
+      prisma.reservaStock.groupBy({
+        by: ["stockId"],
+        where: { tenantId, estado: "RESERVADA" },
+        _sum: { cantidad: true },
+      }),
     ]);
+
+    const reservado = new Map(reservas.map((r) => [r.stockId, r._sum.cantidad ?? 0]));
 
     // demanda por modelo y por variante (para repartir entre las filas)
     const demModelo = new Map<string, number>();
@@ -85,7 +94,10 @@ export async function GET() {
       const extra = f.variantes.reduce(
         (a, id) => a + (f.modelo.variantes.find((v) => v.id === id)?.costoFabAdicional ?? 0), 0);
 
-      const falta = Math.max(0, f.minimo - f.cantidad);
+      const res = reservado.get(f.id) ?? 0;
+      const disponible = f.cantidad - res;
+      // Hay que imprimir para llegar al colchón Y para cubrir lo comprometido.
+      const falta = Math.max(0, f.minimo - disponible);
       return {
         id: f.id,
         etiqueta: f.etiqueta ?? f.modelo.nombre,
@@ -95,28 +107,92 @@ export async function GET() {
         categoriaColor: f.modelo.categorias[0]?.categoria.color ?? null,
         publicado: f.modelo.publicacionesMl.length > 0,
         cantidad: f.cantidad,
+        reservado: res,
+        disponible,
         minimo: f.minimo,
         falta,
         costoUnitario: f.modelo.costoFab + extra,
         costoFaltante: (f.modelo.costoFab + extra) * falta,
         demandaMensual: Number((demanda / MESES_DEMANDA).toFixed(1)),
         // meses que aguanta el stock actual al ritmo de venta
-        cobertura: demanda > 0 ? Number((f.cantidad / (demanda / MESES_DEMANDA)).toFixed(1)) : null,
+        cobertura: demanda > 0 ? Number((disponible / (demanda / MESES_DEMANDA)).toFixed(1)) : null,
+        // se completa más abajo, cuando se sabe qué pedidos están esperando
+        esperando: null as { unidades: number; pedidos: number } | null,
       };
     });
 
-    salida.sort((a, b) => b.falta - a.falta || b.demandaMensual - a.demandaMensual);
+    // ── Qué pedidos están esperando cada pieza ──────────────────────────────
+    // Es la razón por la que hay que imprimir hoy y no la semana que viene.
+    const abiertos = await prisma.pedido.findMany({
+      where: { tenantId, estado: { in: [...ESTADOS_QUE_RESERVAN] as never } },
+      select: {
+        id: true,
+        estado: true,
+        ordenProduccion: true,
+        prioridad: true,
+        canalVenta: true,
+        fechaEntrega: true,
+        fechaPedido: true,
+        cliente: { select: { nombre: true } },
+        items: { select: { id: true, modeloId: true, cantidad: true, variantesInfo: true } },
+      },
+    });
+    const cobertura = await coberturaDePedidos(tenantId, abiertos);
+
+    const esperanPorStock = new Map<string, { unidades: number; pedidos: Set<string> }>();
+    const avisos: Array<{ tipo: string; etiqueta: string; pedido: string; unidades: number }> = [];
+
+    for (const p of abiertos) {
+      const cob = cobertura.get(p.id);
+      if (!cob) continue;
+      const quien = p.cliente?.nombre ?? "sin cliente";
+      for (const comps of Object.values(cob.componentes)) {
+        for (const c of comps) {
+          if (c.falta === 0) continue;
+          if (c.stockId) {
+            const e = esperanPorStock.get(c.stockId) ?? { unidades: 0, pedidos: new Set<string>() };
+            e.unidades += c.falta;
+            e.pedidos.add(p.id);
+            esperanPorStock.set(c.stockId, e);
+          } else if (c.motivo !== "a_pedido") {
+            // No hay a qué descontarle: falta la fila de stock o la receta.
+            avisos.push({ tipo: c.motivo ?? "sin_fila", etiqueta: c.etiqueta, pedido: quien, unidades: c.falta });
+          }
+        }
+      }
+    }
+
+    for (const s of salida) {
+      const e = esperanPorStock.get(s.id);
+      s.esperando = e ? { unidades: e.unidades, pedidos: e.pedidos.size } : null;
+    }
+
+    salida.sort(
+      (a, b) =>
+        (b.esperando?.unidades ?? 0) - (a.esperando?.unidades ?? 0) ||
+        b.falta - a.falta ||
+        b.demandaMensual - a.demandaMensual
+    );
 
     const aProducir = salida.filter((s) => s.falta > 0);
+    const pedidosEsperando = new Set(
+      abiertos.filter((p) => (cobertura.get(p.id)?.falta ?? 0) > 0).map((p) => p.id)
+    );
+
     return NextResponse.json({
       stock: salida,
+      avisos,
       resumen: {
         unidadesDeStock: salida.length,
         conObjetivo: salida.filter((s) => s.minimo > 0).length,
-        enCero: salida.filter((s) => s.minimo > 0 && s.cantidad === 0).length,
+        enCero: salida.filter((s) => s.minimo > 0 && s.disponible <= 0).length,
         unidadesAProducir: aProducir.reduce((a, s) => a + s.falta, 0),
         costoAProducir: aProducir.reduce((a, s) => a + s.costoFaltante, 0),
         unidadesEnStock: salida.reduce((a, s) => a + s.cantidad, 0),
+        unidadesReservadas: salida.reduce((a, s) => a + s.reservado, 0),
+        comprometidoSinStock: salida.filter((s) => s.disponible < 0).length,
+        pedidosEsperando: pedidosEsperando.size,
+        unidadesEsperadas: [...esperanPorStock.values()].reduce((a, e) => a + e.unidades, 0),
       },
     });
   } catch (e) {
@@ -178,7 +254,10 @@ export async function PATCH(request: NextRequest) {
       return r;
     });
 
-    return NextResponse.json({ ok: true, stock: actualizado });
+    // Cambió la pila: hay que repartirla de nuevo entre los pedidos abiertos.
+    const reparto = await reasignarReservas(tenantId);
+
+    return NextResponse.json({ ok: true, stock: actualizado, reparto });
   } catch (e) {
     if (e instanceof NextResponse) return e;
     const msg = e instanceof Error ? e.message : "error";

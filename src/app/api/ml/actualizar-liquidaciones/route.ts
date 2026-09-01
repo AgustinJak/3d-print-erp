@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 import { prisma } from "@/lib/prisma";
+import { reasignarReservas } from "@/lib/reservas";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { getMlAccount } from "@/lib/mercadolibre";
 import {
@@ -96,6 +97,10 @@ export async function POST(request: NextRequest) {
         }
       }
     }
+
+    // Los pedidos que pasaron a "en camino" ya descontaron su stock; queda
+    // repartir lo que se haya liberado entre los que siguen abiertos.
+    await reasignarReservas(tenantId);
 
     await prisma.webhookLog
       .create({

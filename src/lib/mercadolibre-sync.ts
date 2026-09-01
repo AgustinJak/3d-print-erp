@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { aplicarEstadoPedido, reasignarReservas } from "@/lib/reservas";
 import { normalizeForMatch } from "@/lib/webhook-security";
 
 /**
@@ -235,6 +236,8 @@ export async function actualizarLiquidacionYEstado(
   const nuevoEstado = estadoPorEnvio(pedido.estado, fechas.enviado);
   if (nuevoEstado) {
     await prisma.pedido.update({ where: { id: pedido.id }, data: { estado: nuevoEstado } });
+    // El paquete salió: lo que estaba reservado se descuenta de verdad.
+    await aplicarEstadoPedido(tenantId, pedido.id, nuevoEstado, { reasignar: false });
   }
   return {
     ok: true,
@@ -297,6 +300,7 @@ export async function processMlOrderGroup(
     const nuevoEstado = estadoPorEnvio(existente.estado, fechas.enviado);
     if (nuevoEstado) {
       await prisma.pedido.update({ where: { id: existente.id }, data: { estado: nuevoEstado } });
+      await aplicarEstadoPedido(tenantId, existente.id, nuevoEstado, { reasignar: opts.source === "webhook" });
     }
     return { action: "updated", pedidoId: existente.id, estado: nuevoEstado ?? existente.estado, warnings, reason: "datos_ml_actualizados" };
   }
@@ -508,8 +512,20 @@ export async function processMlOrderGroup(
     });
   });
 
+  // Pedido nuevo: que agarre el stock que le corresponde según la cola. En el
+  // backfill se reparte una sola vez al final, no por pedido.
+  if (opts.source === "webhook") {
+    await reasignarReservas(tenantId);
+  } else if (CONSUMEN_AL_CREAR.has(result.estado)) {
+    // Backfill de un pedido que ya salió: no reserva nada, pero deja el estado
+    // coherente para que el reparto final no lo tenga en cuenta.
+    await aplicarEstadoPedido(tenantId, result.id, result.estado, { reasignar: false });
+  }
+
   return { action: "created", pedidoId: result.id, estado: result.estado, warnings };
 }
+
+const CONSUMEN_AL_CREAR = new Set(["ESPERANDO_LIQUIDACION_ML", "ENTREGADO", "COMPLETADO"]);
 
 /** Parsea la parte de día de un ISO y la fija al mediodía local (evita shifts). */
 function parseFechaDia(iso?: string | null): Date | null {

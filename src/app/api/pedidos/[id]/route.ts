@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
+import { aplicarEstadoPedido, devolverPedido, reasignarReservas } from "@/lib/reservas";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -70,6 +71,14 @@ export async function PUT(
           items: { include: itemsInclude },
         },
       });
+      // El estado manda sobre el stock: despachado descuenta de verdad,
+      // cancelado devuelve. La prioridad y la fecha de entrega cambian el
+      // orden de la cola, así que también obligan a repartir de nuevo.
+      if (body.estado) {
+        await aplicarEstadoPedido(tenantId, id, pedido.estado);
+      } else {
+        await reasignarReservas(tenantId);
+      }
       return NextResponse.json(pedido);
     }
 
@@ -131,6 +140,9 @@ export async function PUT(
         items: { include: itemsInclude },
       },
     });
+    // Los items se borraron y se recrearon: las reservas viejas cayeron con
+    // ellos, hay que repartir de nuevo lo que este pedido necesita ahora.
+    await aplicarEstadoPedido(tenantId, id, pedido.estado);
     return NextResponse.json(pedido);
   } catch (e) {
     if (e instanceof NextResponse) return e;
@@ -145,7 +157,11 @@ export async function DELETE(
   try {
     const { tenantId } = await getAuthenticatedTenant();
     const { id } = await params;
+    // Si el pedido ya había descontado stock, la pieza vuelve a la pila antes
+    // de borrarlo: si no, el descuento quedaría sin dueño y sin explicación.
+    await devolverPedido(tenantId, id, "pedido_eliminado");
     await prisma.pedido.delete({ where: { id, tenantId } });
+    await reasignarReservas(tenantId);
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (e instanceof NextResponse) return e;

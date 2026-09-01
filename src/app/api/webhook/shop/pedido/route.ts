@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
+import { reasignarReservas } from "@/lib/reservas";
 import { verifyWebhookSignature, normalizeForMatch } from "@/lib/webhook-security";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -330,7 +331,17 @@ export async function POST(request: NextRequest) {
       return { pedido, clienteId: cliente.id, warnings };
     });
 
-    // 7. Loguear éxito
+    // 7. Reservar el stock que le toca a este pedido según la cola.
+    //    Si falla, el pedido igual quedó guardado: se arregla en el próximo
+    //    reparto (es idempotente), pero queda registrado en el log.
+    try {
+      await reasignarReservas(tenantId);
+    } catch (err) {
+      console.error("[webhook/shop/pedido] no se pudo repartir el stock:", err);
+      result.warnings.push("no se pudo reservar stock: " + (err instanceof Error ? err.message : "?"));
+    }
+
+    // 8. Loguear éxito
     await prisma.webhookLog.create({
       data: {
         tenantId,

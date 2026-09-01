@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { getMlAccount, searchOrders, type MlOrder } from "@/lib/mercadolibre";
 import { processMlOrderGroup } from "@/lib/mercadolibre-sync";
+import { reasignarReservas } from "@/lib/reservas";
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma";
 
@@ -96,6 +97,10 @@ export async function POST(request: NextRequest) {
         }
       }
     }
+
+    // Un solo reparto de stock al final: durante el lote no se reasigna por
+    // pedido (sería el mismo cálculo N veces).
+    await reasignarReservas(tenantId);
 
     // Log resumen
     await prisma.webhookLog

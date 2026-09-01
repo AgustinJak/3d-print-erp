@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
+import { reasignarReservas } from "@/lib/reservas";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -19,7 +20,10 @@ export async function PUT(request: NextRequest) {
 
     await prisma.$transaction(updates);
 
-    return NextResponse.json({ ok: true });
+    // Cambió el orden de la cola: el stock se reparte de nuevo con ese criterio.
+    const reparto = await reasignarReservas(tenantId);
+
+    return NextResponse.json({ ok: true, reparto });
   } catch (e) {
     if (e instanceof NextResponse) return e;
     throw e;
