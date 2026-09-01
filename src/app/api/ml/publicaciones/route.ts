@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+import { costoModelo, costoVariante } from "@/lib/costos";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { normalizeForMatch } from "@/lib/webhook-security";
@@ -48,7 +49,8 @@ export async function GET() {
               id: true,
               nombre: true,
               costoFab: true,
-              variantes: { select: { id: true, nombre: true, costoFabAdicional: true } },
+              costoInsumos: true,
+              variantes: { select: { id: true, nombre: true, costoFabAdicional: true, costoInsumosAdicional: true } },
             },
           },
         },
@@ -81,7 +83,7 @@ export async function GET() {
       // del título, que ML no manda como variación). Ver ml-variantes-implicitas.
       const variantes = p.modelo?.variantes ?? [];
       const sugeridas = p.modeloId ? sugerirVariantesImplicitas(p.titulo, variantes) : [];
-      const costoBase = p.modelo?.costoFab ?? 0;
+      const costoBase = p.modelo ? costoModelo(p.modelo) : 0;
 
       return {
         id: p.id,
@@ -149,7 +151,8 @@ export async function POST(request: NextRequest) {
             id: true,
             nombre: true,
             costoFab: true,
-            variantes: { select: { id: true, nombre: true, costoFabAdicional: true } },
+            costoInsumos: true,
+            variantes: { select: { id: true, nombre: true, costoFabAdicional: true, costoInsumosAdicional: true } },
           },
         },
       },
@@ -180,8 +183,8 @@ export async function POST(request: NextRequest) {
         titulo: p.titulo,
         modelo: p.modelo.nombre,
         variantes: nombres,
-        costoAntes: p.modelo.costoFab + costoDeVariantes(p.variantesImplicitas, p.modelo.variantes),
-        costoDespues: p.modelo.costoFab + costoDeVariantes(ids, p.modelo.variantes),
+        costoAntes: costoModelo(p.modelo) + costoDeVariantes(p.variantesImplicitas, p.modelo.variantes),
+        costoDespues: costoModelo(p.modelo) + costoDeVariantes(ids, p.modelo.variantes),
       });
 
       if (!soloPreview) {

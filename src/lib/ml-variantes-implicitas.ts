@@ -16,6 +16,7 @@ export interface VarianteRef {
   id: string;
   nombre: string;
   costoFabAdicional: number;
+  costoInsumosAdicional?: number;
 }
 
 const norm = (s: string) => normalizeForMatch(s);
@@ -69,6 +70,6 @@ export function sugerirVariantesImplicitas(
 export function costoDeVariantes(ids: string[], variantes: VarianteRef[]): number {
   return ids.reduce((acc, id) => {
     const v = variantes.find((x) => x.id === id);
-    return acc + (v?.costoFabAdicional ?? 0);
+    return acc + (v ? v.costoFabAdicional + (v.costoInsumosAdicional ?? 0) : 0);
   }, 0);
 }

@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
+import { costoModelo } from "@/lib/costos";
 import { coberturaDePedidos, reasignarReservas } from "@/lib/reservas";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
@@ -72,11 +73,11 @@ export async function POST(request: NextRequest) {
         if (precioUnitario == null || costoUnitario == null) {
           const modelo = await prisma.modelo.findUnique({
             where: { id: item.modeloId },
-            select: { precioVenta: true, costoFab: true },
+            select: { precioVenta: true, costoFab: true, costoInsumos: true },
           });
           if (modelo) {
             precioUnitario = precioUnitario ?? modelo.precioVenta;
-            costoUnitario = costoUnitario ?? modelo.costoFab;
+            costoUnitario = costoUnitario ?? costoModelo(modelo);
           }
         }
 

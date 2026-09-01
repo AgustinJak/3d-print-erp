@@ -82,7 +82,8 @@ model Modelo {
   sku               String?
   serie             String?
   pesoGr            Float?   @map("peso_gr")
-  costoFab          Float    @default(0) @map("costo_fab")
+  costoFab          Float    @default(0) @map("costo_fab") // imprimir la pieza
+  costoInsumos      Float    @default(0) @map("costo_insumos") // lo que se le agrega después
   precioVenta       Float    @default(0) @map("precio_venta")
   precioCreditoPorc Float    @default(10) @map("precio_credito_porc")
   precioMayorista   Float?   @map("precio_mayorista")
@@ -115,14 +116,15 @@ model Modelo {
 // ==================== VARIANTES DE MODELO ====================
 
 model VarianteModelo {
-  id                String  @id @default(cuid())
-  modeloId          String  @map("modelo_id")
-  nombre            String
-  precioAdicional   Float   @default(0) @map("precio_adicional")
-  costoFabAdicional Float   @default(0) @map("costo_fab_adicional")
-  notas             String?
-  activo            Boolean @default(true)
-  afectaStock       Boolean @default(false) @map("afecta_stock") // ¿define una pieza física distinta? (95cm sí, Con Funda no)
+  id                    String  @id @default(cuid())
+  modeloId              String  @map("modelo_id")
+  nombre                String
+  precioAdicional       Float   @default(0) @map("precio_adicional")
+  costoFabAdicional     Float   @default(0) @map("costo_fab_adicional")
+  costoInsumosAdicional Float   @default(0) @map("costo_insumos_adicional")
+  notas                 String?
+  activo                Boolean @default(true)
+  afectaStock           Boolean @default(false) @map("afecta_stock") // ¿define una pieza física distinta? (95cm sí, Con Funda no)
 
   modelo Modelo @relation(fields: [modeloId], references: [id], onDelete: Cascade)
 

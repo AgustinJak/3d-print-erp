@@ -65,6 +65,7 @@ export async function PUT(
           nombre: string;
           precioAdicional?: number | string;
           costoFabAdicional?: number | string;
+          costoInsumosAdicional?: number | string;
           notas?: string;
         };
         const entrantes: VarianteInput[] = body.variantes ?? [];
@@ -79,6 +80,7 @@ export async function PUT(
             nombre: v.nombre,
             precioAdicional: parsePrice(v.precioAdicional),
             costoFabAdicional: parsePrice(v.costoFabAdicional),
+            costoInsumosAdicional: parsePrice(v.costoInsumosAdicional),
             notas: v.notas || null,
           };
           const existente = porNombre.get(clave(v.nombre));
@@ -118,6 +120,7 @@ export async function PUT(
           serie: body.serie || null,
           pesoGr: body.pesoGr ? parsePrice(body.pesoGr) : null,
           costoFab: body.costoFab != null ? parsePrice(body.costoFab) : undefined,
+          costoInsumos: body.costoInsumos != null ? parsePrice(body.costoInsumos) : undefined,
           precioVenta: body.precioVenta != null ? parsePrice(body.precioVenta) : undefined,
           precioCreditoPorc: body.precioCreditoPorc != null ? parseFloat(body.precioCreditoPorc) : undefined,
           precioMayorista: body.precioMayorista !== undefined ? (body.precioMayorista ? parsePrice(body.precioMayorista) : null) : undefined,

@@ -23,6 +23,7 @@ import { TableSkeleton } from "@/components/data-loading";
 import { EmptyState } from "@/components/empty-state";
 import { FileUpload } from "@/components/file-upload";
 import { parsePrice } from "@/lib/utils";
+import { costoModelo } from "@/lib/costos";
 
 /* ─── Types ────────────────────────────────────────────── */
 
@@ -36,6 +37,7 @@ interface Variante {
   nombre: string;
   precioAdicional: number;
   costoFabAdicional: number;
+  costoInsumosAdicional?: number;
   notas: string;
 }
 
@@ -53,6 +55,7 @@ interface Modelo {
   consolidadoEn?: ModeloRef | null;
   pesoGr: number | null;
   costoFab: number;
+  costoInsumos: number;
   precioVenta: number;
   precioCreditoPorc: number;
   precioMayorista: number | null;
@@ -77,6 +80,7 @@ const emptyForm = {
   serie: "",
   pesoGr: "",
   costoFab: "",
+  costoInsumos: "",
   precioVenta: "",
   precioCreditoPorc: "10",
   precioMayorista: "",
@@ -351,6 +355,7 @@ export default function ModelosPage() {
           serie: target.serie || "",
           pesoGr: target.pesoGr?.toString() || "",
           costoFab: target.costoFab.toString(),
+          costoInsumos: (target.costoInsumos ?? 0).toString(),
           precioVenta: target.precioVenta.toString(),
           precioCreditoPorc: target.precioCreditoPorc.toString(),
           precioMayorista: target.precioMayorista?.toString() || "",
@@ -417,7 +422,8 @@ export default function ModelosPage() {
         case "za": return b.nombre.localeCompare(a.nombre, "es");
         case "precioAsc": return a.precioVenta - b.precioVenta;
         case "precioDesc": return b.precioVenta - a.precioVenta;
-        case "margen": return (b.precioVenta - b.costoFab) - (a.precioVenta - a.costoFab);
+        case "margen":
+          return (b.precioVenta - costoModelo(b)) - (a.precioVenta - costoModelo(a));
         case "antiguo": return new Date(a.creadoEn).getTime() - new Date(b.creadoEn).getTime();
         default: return new Date(b.creadoEn).getTime() - new Date(a.creadoEn).getTime();
       }
@@ -439,6 +445,7 @@ export default function ModelosPage() {
       serie: m.serie || "",
       pesoGr: m.pesoGr?.toString() || "",
       costoFab: m.costoFab.toString(),
+      costoInsumos: (m.costoInsumos ?? 0).toString(),
       precioVenta: m.precioVenta.toString(),
       precioCreditoPorc: m.precioCreditoPorc.toString(),
       precioMayorista: m.precioMayorista?.toString() || "",
@@ -477,6 +484,7 @@ export default function ModelosPage() {
         // parsePrice y no parseFloat: "7.500" es siete mil quinientos, no 7,5
         pesoGr: form.pesoGr ? parsePrice(form.pesoGr) : null,
         costoFab: parsePrice(form.costoFab),
+        costoInsumos: parsePrice(form.costoInsumos),
         precioVenta: parsePrice(form.precioVenta),
         precioCreditoPorc: parseFloat(form.precioCreditoPorc) || 10, // porcentaje, no lleva miles
         precioMayorista: form.precioMayorista ? parsePrice(form.precioMayorista) : null,
@@ -882,7 +890,14 @@ export default function ModelosPage() {
                     <TableCell>
                       <CategoriaBadges categorias={m.categorias} />
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{formatPrice(m.costoFab)}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatPrice(costoModelo(m))}
+                      {m.costoInsumos > 0 && (
+                        <div className="text-[10px] text-muted-foreground">
+                          {formatPrice(m.costoFab)} + {formatPrice(m.costoInsumos)} insumos
+                        </div>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums font-medium">{formatPrice(m.precioVenta)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatPrice(precioCredito)}</TableCell>
                     <TableCell>
@@ -1055,8 +1070,8 @@ export default function ModelosPage() {
               </div>
             </div>
 
-            {/* Costo Fab + Precio Venta */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Costo (imprimir + insumos) + Precio Venta */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="costoFab">Costo Fabricación *</Label>
                 <Input
@@ -1067,6 +1082,18 @@ export default function ModelosPage() {
                   value={form.costoFab}
                   onChange={(e) => updateField("costoFab", e.target.value)}
                   required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="costoInsumos">Costo Insumos</Label>
+                <Input
+                  id="costoInsumos"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="5.349"
+                  title="Lo que se le agrega después de imprimir: cuerda, imanes, pintura, la caja"
+                  value={form.costoInsumos}
+                  onChange={(e) => updateField("costoInsumos", e.target.value)}
                 />
               </div>
               <div className="space-y-2">
@@ -1142,7 +1169,7 @@ export default function ModelosPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => updateField("variantes", [...(form.variantes || []), { nombre: "", precioAdicional: 0, costoFabAdicional: 0, notas: "" }])}
+                  onClick={() => updateField("variantes", [...(form.variantes || []), { nombre: "", precioAdicional: 0, costoFabAdicional: 0, costoInsumosAdicional: 0, notas: "" }])}
                 >
                   <Plus className="mr-1 h-3 w-3" /> Agregar
                 </Button>
@@ -1177,7 +1204,7 @@ export default function ModelosPage() {
                         </Button>
                       </div>
                       {/* Precio + costo */}
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-3 gap-2">
                         <div className="space-y-1">
                           <Label className="text-xs text-muted-foreground">+$ venta</Label>
                           <Input
@@ -1208,7 +1235,23 @@ export default function ModelosPage() {
                             }}
                           />
                         </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">+$ insumos</Label>
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="0"
+                            title="Insumos adicionales (la funda, por ejemplo)"
+                            value={v.costoInsumosAdicional || ""}
+                            onChange={(e) => {
+                              const updated = [...form.variantes];
+                              updated[idx] = { ...updated[idx], costoInsumosAdicional: parsePrice(e.target.value) };
+                              updateField("variantes", updated);
+                            }}
+                          />
+                        </div>
                       </div>
+
                     </div>
                   ))}
                 </div>

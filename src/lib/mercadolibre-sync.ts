@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { costoModelo, costoVariante } from "@/lib/costos";
 import { aplicarEstadoPedido, reasignarReservas } from "@/lib/reservas";
 import { normalizeForMatch } from "@/lib/webhook-security";
 
@@ -376,7 +377,7 @@ export async function processMlOrderGroup(
     ) => {
       if (idsAplicados.has(v.id)) return; // no cobrar dos veces la misma variante
       idsAplicados.add(v.id);
-      costoExtraVariantes += v.costoFabAdicional;
+      costoExtraVariantes += costoVariante(v);
       variantesMatched.push({
         nombre: v.nombre,
         matched: true,
@@ -411,7 +412,7 @@ export async function processMlOrderGroup(
       modeloId: modelo.id,
       cantidad: oi.quantity,
       precioUnitario: oi.unit_price,
-      costoUnitario: modelo.costoFab + costoExtraVariantes,
+      costoUnitario: costoModelo(modelo) + costoExtraVariantes,
       ajusteManual: 0,
       variantesInfo: variantesMatched as unknown as Prisma.InputJsonValue,
       mlaOrigen: mla,

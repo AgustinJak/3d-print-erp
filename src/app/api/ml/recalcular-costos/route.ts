@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+import { costoModelo, costoVariante } from "@/lib/costos";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
@@ -14,7 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
  * el costo de un modelo, la historia queda desalineada.
  *
  * Fórmula (la misma que aplica el sync):
- *   costo = modelo.costoFab
+ *   costo = modelo.costoFab + modelo.costoInsumos
  *         + variantes que mandó ML (las guardadas en variantesInfo)
  *         + variantes implícitas de la publicación
  *
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
     const items = await prisma.itemPedido.findMany({
       where: { mlaOrigen: { not: null }, pedido: { tenantId } },
       include: {
-        modelo: { select: { nombre: true, costoFab: true, variantes: true } },
+        modelo: { select: { nombre: true, costoFab: true, costoInsumos: true, variantes: true } },
         pedido: { select: { estado: true, fechaPedido: true, idMercadolibre: true } },
       },
     });
@@ -68,15 +69,15 @@ export async function POST(request: NextRequest) {
       for (const v of vi) {
         if (!v?.matched || typeof v.varianteId !== "string") continue;
         const vv = it.modelo.variantes.find((x) => x.id === v.varianteId);
-        if (vv) aplicadas.set(vv.id, { nombre: vv.nombre, costo: vv.costoFabAdicional });
+        if (vv) aplicadas.set(vv.id, { nombre: vv.nombre, costo: costoVariante(vv) });
       }
       for (const id of implicitasPorMla.get(it.mlaOrigen as string) ?? []) {
         const vv = it.modelo.variantes.find((x) => x.id === id);
-        if (vv) aplicadas.set(vv.id, { nombre: vv.nombre, costo: vv.costoFabAdicional });
+        if (vv) aplicadas.set(vv.id, { nombre: vv.nombre, costo: costoVariante(vv) });
       }
 
       const costoDespues =
-        it.modelo.costoFab + [...aplicadas.values()].reduce((a, v) => a + v.costo, 0);
+        costoModelo(it.modelo) + [...aplicadas.values()].reduce((a, v) => a + v.costo, 0);
       const delta = (costoDespues - it.costoUnitario) * it.cantidad;
       if (delta === 0) continue;
 

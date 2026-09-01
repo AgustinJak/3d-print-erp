@@ -3,6 +3,7 @@ export const maxDuration = 60;
 
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
+import { costoModelo, costoVariante } from "@/lib/costos";
 import { coberturaDePedidos, ESTADOS_QUE_RESERVAN, reasignarReservas } from "@/lib/reservas";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -36,6 +37,7 @@ export async function GET() {
               nombre: true,
               sku: true,
               costoFab: true,
+              costoInsumos: true,
               variantes: true,
               categorias: { include: { categoria: { select: { nombre: true, color: true } } } },
               publicacionesMl: { where: { ignorar: false }, select: { mla: true } },
@@ -92,8 +94,10 @@ export async function GET() {
         demanda = suma > 0 ? demTotal * (registrada[idx] / suma) : demTotal / hermanas.length;
       }
 
-      const extra = f.variantes.reduce(
-        (a, id) => a + (f.modelo.variantes.find((v) => v.id === id)?.costoFabAdicional ?? 0), 0);
+      const extra = f.variantes.reduce((a, id) => {
+        const v = f.modelo.variantes.find((x) => x.id === id);
+        return a + (v ? costoVariante(v) : 0);
+      }, 0);
 
       const res = reservado.get(f.id) ?? 0;
       const disponible = f.cantidad - res;
@@ -112,8 +116,8 @@ export async function GET() {
         disponible,
         minimo: f.minimo,
         falta,
-        costoUnitario: f.modelo.costoFab + extra,
-        costoFaltante: (f.modelo.costoFab + extra) * falta,
+        costoUnitario: costoModelo(f.modelo) + extra,
+        costoFaltante: (costoModelo(f.modelo) + extra) * falta,
         demandaMensual: Number((demanda / MESES_DEMANDA).toFixed(1)),
         // meses que aguanta el stock actual al ritmo de venta
         cobertura: demanda > 0 ? Number((disponible / (demanda / MESES_DEMANDA)).toFixed(1)) : null,

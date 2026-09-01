@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
+import { costoModelo, costoVariante } from "@/lib/costos";
 import { reasignarReservas } from "@/lib/reservas";
 import { verifyWebhookSignature, normalizeForMatch } from "@/lib/webhook-security";
 import { NextRequest, NextResponse } from "next/server";
@@ -265,7 +266,7 @@ export async function POST(request: NextRequest) {
               varianteId: match.id,
               costoFabAdicional: match.costoFabAdicional,
             });
-            costoExtraVariantes += match.costoFabAdicional;
+            costoExtraVariantes += costoVariante(match);
           } else {
             variantesMatched.push({
               nombre: opcion.nombre,
@@ -285,7 +286,7 @@ export async function POST(request: NextRequest) {
           modeloId: modelo.id,
           cantidad: item.cantidad,
           precioUnitario: item.precio_unitario,
-          costoUnitario: modelo.costoFab + costoExtraVariantes,
+          costoUnitario: costoModelo(modelo) + costoExtraVariantes,
           ajusteManual: 0,
           variantesInfo: variantesMatched as unknown as Prisma.InputJsonValue,
         });

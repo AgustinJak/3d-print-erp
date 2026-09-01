@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
         serie: body.serie || null,
         pesoGr: body.pesoGr ? parsePrice(body.pesoGr) : null,
         costoFab: body.costoFab ? parsePrice(body.costoFab) : 0,
+        costoInsumos: body.costoInsumos ? parsePrice(body.costoInsumos) : 0,
         precioVenta: body.precioVenta ? parsePrice(body.precioVenta) : 0,
         precioCreditoPorc: body.precioCreditoPorc != null ? parseFloat(body.precioCreditoPorc) : 10,
         precioMayorista: body.precioMayorista ? parsePrice(body.precioMayorista) : null,
@@ -71,10 +72,11 @@ export async function POST(request: NextRequest) {
           ? { create: categoriaIds.map((catId: string) => ({ categoriaId: catId })) }
           : undefined,
         variantes: body.variantes?.length > 0
-          ? { create: body.variantes.map((v: { nombre: string; precioAdicional?: number; costoFabAdicional?: number; notas?: string }) => ({
+          ? { create: body.variantes.map((v: { nombre: string; precioAdicional?: number; costoFabAdicional?: number; costoInsumosAdicional?: number; notas?: string }) => ({
               nombre: v.nombre,
               precioAdicional: parsePrice(v.precioAdicional),
               costoFabAdicional: parsePrice(v.costoFabAdicional),
+              costoInsumosAdicional: parsePrice(v.costoInsumosAdicional),
               notas: v.notas || null,
             })) }
           : undefined,
