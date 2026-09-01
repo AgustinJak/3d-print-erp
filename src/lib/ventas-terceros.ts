@@ -3,11 +3,24 @@ import { getMlAccount, searchOrders, type MlOrder } from "@/lib/mercadolibre";
 import type { Prisma } from "@/generated/prisma";
 
 /**
- * Ventas de Shay Juguetes en la cuenta de Mercado Libre compartida.
+ * Reparto de la cuenta de Mercado Libre compartida con Shay Juguetes.
  *
- * Las publicaciones marcadas `ignorar` son de ese negocio: el ERP no les crea
- * pedido, pero la plata entra a la misma cuenta y hay que pasársela. Esto
- * reconstruye el mes desde la API de ML y guarda el cierre.
+ * Las publicaciones marcadas `ignorar` son de Shay: el ERP no les crea pedido,
+ * pero la plata entra a la misma cuenta y hay que pasársela. Esto reconstruye
+ * el mes desde la API de ML — los dos lados en la misma pasada — y guarda el
+ * cierre.
+ *
+ * Cómo se reparte cada cosa:
+ *
+ *   comisión de ML   directo, por venta: ML ya la cobra sobre cada item
+ *   publicidad       directo, por campaña: se sabe de quién es cada una
+ *   percepciones     prorrateado por neto
+ *   convenio         prorrateado por neto
+ *   monotributo      prorrateado por neto
+ *
+ * Lo prorrateado se carga una sola vez con el total del mes
+ * (`GastoCompartido`) y cada tienda se hace cargo de lo que le toca según
+ * cuánto vendió. Nadie carga dos veces el mismo número.
  *
  * Se guarda calculado porque son ~5 llamadas a ML por mes: demasiado lento para
  * rehacerlo en cada carga de Finanzas.
@@ -30,31 +43,43 @@ export interface PedidoTercero {
   comprador: string | null;
 }
 
-/** Lo que se le descuenta a Shay de su parte. Se carga a mano cada mes. */
-export interface DescuentosTercero {
-  publicidad: number;   // campañas de ML del mes
-  percepciones: number; // percepciones de IVA / IIBB retenidas
-  iibb: number;         // convenio multilateral, su parte
-  monotributo: number;  // su parte del monotributo
+/** Los gastos del mes que no son de una tienda sola. Total, sin repartir. */
+export interface GastosCompartidos {
+  percepciones: number;
+  iibb: number;         // convenio multilateral
+  monotributo: number;
   notas: string | null;
 }
 
-export interface CierreTercero extends DescuentosTercero {
+export const CAMPOS_COMPARTIDOS = ["percepciones", "iibb", "monotributo"] as const;
+export type CampoCompartido = (typeof CAMPOS_COMPARTIDOS)[number];
+
+export interface CierreTercero {
   socio: string;
   anio: number;
   mes: number;
+
+  // el socio
   unidades: number;
   bruto: number;
   comision: number;
-  neto: number;         // bruto - comisión de ML
-  aPasar: number;       // neto - los descuentos: la plata que realmente va
+  neto: number;         // bruto − comisión de ML
+
+  // el otro lado de la cuenta, para poder repartir
+  unidadesPropias: number;
+  brutoPropio: number;
+  netoPropio: number;
+
+  proporcion: number;   // neto del socio sobre el neto total (0 a 1)
+
+  publicidad: number;   // sus campañas, imputación directa
+  compartidos: GastosCompartidos;   // totales del mes, sin repartir
+  parteCompartidos: number;         // lo que le toca de esos totales
+  aPasar: number;       // neto − publicidad − parteCompartidos
+
+  notas: string | null;
   pedidos: PedidoTercero[];
   calculadoEn: string;
-}
-
-/** neto de ML menos lo que se le descuenta: lo que hay que transferirle. */
-export function calcularAPasar(c: { neto: number } & DescuentosTercero): number {
-  return c.neto - c.publicidad - c.percepciones - c.iibb - c.monotributo;
 }
 
 /** Primer y último instante del mes, en hora argentina. */
@@ -71,8 +96,11 @@ function rangoDelMes(anio: number, mes: number): { desde: string; hasta: string 
 /**
  * Recalcula el mes desde Mercado Libre y lo guarda.
  *
- * Las canceladas quedan afuera: no son plata que haya que pasar. Todo lo demás
- * se toma tal cual lo informa ML, sin estimar nada.
+ * Recorre las órdenes una sola vez y separa lo de Shay de lo de Sendero, porque
+ * la proporción entre los dos es lo que después reparte los gastos.
+ *
+ * Las canceladas quedan afuera: no son plata que haya que pasar. No pisa la
+ * publicidad ya cargada.
  */
 export async function calcularCierreTercero(
   tenantId: string,
@@ -109,12 +137,22 @@ export async function calcularCierreTercero(
   }
 
   const pedidos: PedidoTercero[] = [];
+  const propio = { unidadesPropias: 0, brutoPropio: 0, comisionPropia: 0, netoPropio: 0 };
+
   for (const o of ordenes) {
     if (o.status === "cancelled") continue;
     for (const it of o.order_items) {
-      if (!esDelSocio.has(it.item.id)) continue;
       const bruto = it.unit_price * it.quantity;
       const comision = (it.sale_fee ?? 0) * it.quantity;
+
+      if (!esDelSocio.has(it.item.id)) {
+        propio.unidadesPropias += it.quantity;
+        propio.brutoPropio += bruto;
+        propio.comisionPropia += comision;
+        propio.netoPropio += bruto - comision;
+        continue;
+      }
+
       pedidos.push({
         idMl: String(o.id),
         packId: o.pack_id != null ? String(o.pack_id) : null,
@@ -152,12 +190,13 @@ export async function calcularCierreTercero(
       anio,
       mes,
       ...totales,
+      ...propio,
       pedidos: pedidos as unknown as Prisma.InputJsonValue,
     },
-    update: { ...totales, pedidos: pedidos as unknown as Prisma.InputJsonValue },
+    update: { ...totales, ...propio, pedidos: pedidos as unknown as Prisma.InputJsonValue },
   });
 
-  return armarCierre(fila, pedidos);
+  return armarCierre(fila, pedidos, await leerCompartidos(tenantId, anio, mes));
 }
 
 interface FilaCierre {
@@ -168,16 +207,33 @@ interface FilaCierre {
   bruto: number;
   comision: number;
   neto: number;
+  unidadesPropias: number;
+  brutoPropio: number;
+  netoPropio: number;
   publicidad: number;
-  percepciones: number;
-  iibb: number;
-  monotributo: number;
   notas: string | null;
   calculadoEn: Date;
 }
 
-function armarCierre(fila: FilaCierre, pedidos: PedidoTercero[]): CierreTercero {
-  const base = {
+/**
+ * Arma el cierre con el reparto ya hecho.
+ *
+ * La proporción se calcula sobre el neto (después de la comisión de ML), que es
+ * la plata que realmente entró por cada lado. Si en el mes no vendió nadie, no
+ * hay proporción posible y no se reparte nada: mejor cero que un número
+ * inventado.
+ */
+function armarCierre(
+  fila: FilaCierre,
+  pedidos: PedidoTercero[],
+  compartidos: GastosCompartidos
+): CierreTercero {
+  const netoTotal = fila.neto + fila.netoPropio;
+  const proporcion = netoTotal > 0 ? fila.neto / netoTotal : 0;
+  const totalCompartido = compartidos.percepciones + compartidos.iibb + compartidos.monotributo;
+  const parteCompartidos = totalCompartido * proporcion;
+
+  return {
     socio: fila.socio,
     anio: fila.anio,
     mes: fila.mes,
@@ -185,76 +241,88 @@ function armarCierre(fila: FilaCierre, pedidos: PedidoTercero[]): CierreTercero 
     bruto: fila.bruto,
     comision: fila.comision,
     neto: fila.neto,
+    unidadesPropias: fila.unidadesPropias,
+    brutoPropio: fila.brutoPropio,
+    netoPropio: fila.netoPropio,
+    proporcion,
     publicidad: fila.publicidad,
-    percepciones: fila.percepciones,
-    iibb: fila.iibb,
-    monotributo: fila.monotributo,
+    compartidos,
+    parteCompartidos,
+    aPasar: fila.neto - fila.publicidad - parteCompartidos,
     notas: fila.notas,
-  };
-  return {
-    ...base,
-    aPasar: calcularAPasar(base),
     pedidos,
     calculadoEn: fila.calculadoEn.toISOString(),
   };
 }
 
-/**
- * Guarda los descuentos del mes. No toca las ventas: recalcular el mes contra
- * ML los deja intactos.
- */
-export async function guardarDescuentos(
+const SIN_GASTOS: GastosCompartidos = {
+  percepciones: 0,
+  iibb: 0,
+  monotributo: 0,
+  notas: null,
+};
+
+/** Los gastos compartidos del mes. Ceros si todavía no se cargaron. */
+export async function leerCompartidos(
+  tenantId: string,
+  anio: number,
+  mes: number
+): Promise<GastosCompartidos> {
+  const g = await prisma.gastoCompartido.findUnique({
+    where: { tenantId_anio_mes: { tenantId, anio, mes } },
+  });
+  if (!g) return { ...SIN_GASTOS };
+  return {
+    percepciones: g.percepciones,
+    iibb: g.iibb,
+    monotributo: g.monotributo,
+    notas: g.notas,
+  };
+}
+
+/** Guarda el total del mes de un gasto compartido. El reparto se recalcula solo. */
+export async function guardarCompartidos(
   tenantId: string,
   anio: number,
   mes: number,
-  campos: Partial<DescuentosTercero>,
-  socio = SOCIO_SHAY
-): Promise<CierreTercero | null> {
-  const data: Partial<DescuentosTercero> = {};
-  for (const k of ["publicidad", "percepciones", "iibb", "monotributo"] as const) {
+  campos: Partial<GastosCompartidos>
+): Promise<GastosCompartidos> {
+  const data: Partial<GastosCompartidos> = {};
+  for (const k of CAMPOS_COMPARTIDOS) {
     if (typeof campos[k] === "number" && Number.isFinite(campos[k])) data[k] = campos[k];
   }
   if ("notas" in campos) data.notas = campos.notas ?? null;
 
-  const fila = await prisma.ventaTercero.update({
-    where: { tenantId_socio_anio_mes: { tenantId, socio, anio, mes } },
-    data,
+  const g = await prisma.gastoCompartido.upsert({
+    where: { tenantId_anio_mes: { tenantId, anio, mes } },
+    create: { tenantId, anio, mes, ...data },
+    update: data,
   });
-  return armarCierre(fila, (fila.pedidos ?? []) as unknown as PedidoTercero[]);
+  return {
+    percepciones: g.percepciones,
+    iibb: g.iibb,
+    monotributo: g.monotributo,
+    notas: g.notas,
+  };
 }
 
-/**
- * Los descuentos del mes anterior que tenga algo cargado. Sirven de propuesta:
- * el monotributo y el convenio se repiten mes a mes casi iguales.
- */
-export async function descuentosPrevios(
+/** Guarda la publicidad del socio (imputación directa, no se prorratea). */
+export async function guardarPublicidad(
   tenantId: string,
   anio: number,
   mes: number,
+  publicidad: number,
   socio = SOCIO_SHAY
-): Promise<(DescuentosTercero & { anio: number; mes: number }) | null> {
-  const previos = await prisma.ventaTercero.findMany({
-    where: {
-      tenantId,
-      socio,
-      OR: [{ anio: { lt: anio } }, { anio, mes: { lt: mes } }],
-    },
-    orderBy: [{ anio: "desc" }, { mes: "desc" }],
-    take: 6,
+): Promise<CierreTercero | null> {
+  const fila = await prisma.ventaTercero.update({
+    where: { tenantId_socio_anio_mes: { tenantId, socio, anio, mes } },
+    data: { publicidad },
   });
-  const conDatos = previos.find(
-    (p) => p.publicidad || p.percepciones || p.iibb || p.monotributo
+  return armarCierre(
+    fila,
+    (fila.pedidos ?? []) as unknown as PedidoTercero[],
+    await leerCompartidos(tenantId, anio, mes)
   );
-  if (!conDatos) return null;
-  return {
-    anio: conDatos.anio,
-    mes: conDatos.mes,
-    publicidad: conDatos.publicidad,
-    percepciones: conDatos.percepciones,
-    iibb: conDatos.iibb,
-    monotributo: conDatos.monotributo,
-    notas: conDatos.notas,
-  };
 }
 
 /** El cierre ya guardado, si existe. No llama a ML. */
@@ -268,5 +336,35 @@ export async function leerCierreTercero(
     where: { tenantId_socio_anio_mes: { tenantId, socio, anio, mes } },
   });
   if (!fila) return null;
-  return armarCierre(fila, (fila.pedidos ?? []) as unknown as PedidoTercero[]);
+  return armarCierre(
+    fila,
+    (fila.pedidos ?? []) as unknown as PedidoTercero[],
+    await leerCompartidos(tenantId, anio, mes)
+  );
+}
+
+/**
+ * Los gastos compartidos del último mes que tenga algo cargado. Sirven de
+ * propuesta: el monotributo y el convenio se repiten mes a mes casi iguales.
+ */
+export async function compartidosPrevios(
+  tenantId: string,
+  anio: number,
+  mes: number
+): Promise<(GastosCompartidos & { anio: number; mes: number }) | null> {
+  const previos = await prisma.gastoCompartido.findMany({
+    where: { tenantId, OR: [{ anio: { lt: anio } }, { anio, mes: { lt: mes } }] },
+    orderBy: [{ anio: "desc" }, { mes: "desc" }],
+    take: 6,
+  });
+  const conDatos = previos.find((p) => p.percepciones || p.iibb || p.monotributo);
+  if (!conDatos) return null;
+  return {
+    anio: conDatos.anio,
+    mes: conDatos.mes,
+    percepciones: conDatos.percepciones,
+    iibb: conDatos.iibb,
+    monotributo: conDatos.monotributo,
+    notas: conDatos.notas,
+  };
 }

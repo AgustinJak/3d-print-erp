@@ -539,16 +539,43 @@ model VentaTercero {
   neto     Float  @default(0) // bruto - comisión
   pedidos  Json // detalle: una fila por item vendido
 
-  // Lo que se le descuenta a Shay de su parte. Se carga a mano cada mes; si un
-  // mes está vacío, la UI propone lo del mes anterior.
-  publicidad   Float   @default(0) // campañas de ML del mes
-  percepciones Float   @default(0) // percepciones de IVA / IIBB retenidas
-  iibb         Float   @default(0) // convenio multilateral, su parte
-  monotributo  Float   @default(0) // su parte del monotributo
-  notas        String?
+  // El otro lado de la misma cuenta: lo que vendió Sendero ese mes. Sale de la
+  // misma pasada, y es lo que define en qué proporción se reparten los gastos
+  // compartidos.
+  unidadesPropias Int   @default(0) @map("unidades_propias")
+  brutoPropio     Float @default(0) @map("bruto_propio")
+  comisionPropia  Float @default(0) @map("comision_propia")
+  netoPropio      Float @default(0) @map("neto_propio")
+
+  // La publicidad se imputa directo, no se prorratea: se sabe de quién es cada
+  // campaña. Ver `lib/ml-publicidad`.
+  publicidad Float   @default(0)
+  notas      String?
 
   calculadoEn DateTime @default(now()) @updatedAt @map("calculado_en")
 
   @@unique([tenantId, socio, anio, mes])
   @@map("ventas_terceros")
+}
+
+/// Gastos de la cuenta de Mercado Libre que no son de una tienda sola:
+/// percepciones, convenio multilateral y monotributo.
+///
+/// Se cargan una vez por mes con el total, y cada tienda se hace cargo de la
+/// parte que le toca según cuánto vendió (neto sobre neto). La publicidad NO
+/// entra acá: esa se sabe de quién es, campaña por campaña.
+model GastoCompartido {
+  id           String   @id @default(cuid())
+  tenantId     String   @default("sendero3d") @map("tenant_id")
+  anio         Int
+  mes          Int
+  percepciones Float    @default(0)
+  iibb         Float    @default(0) // convenio multilateral
+  monotributo  Float    @default(0)
+  notas        String?
+  creadoEn     DateTime @default(now()) @map("creado_en")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, anio, mes])
+  @@map("gastos_compartidos")
 }

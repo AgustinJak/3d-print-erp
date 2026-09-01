@@ -4,21 +4,22 @@ export const maxDuration = 60;
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import {
   calcularCierreTercero,
-  descuentosPrevios,
-  guardarDescuentos,
+  compartidosPrevios,
+  guardarCompartidos,
   leerCierreTercero,
 } from "@/lib/ventas-terceros";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Ventas de Shay Juguetes en la cuenta de ML compartida.
+ * Reparto de la cuenta de Mercado Libre compartida con Shay Juguetes.
  *
  * GET   → el cierre guardado del mes (rápido, no llama a ML). `null` si nunca
- *         se calculó: la UI ofrece el botón para hacerlo. Trae también los
- *         descuentos del último mes cargado, como propuesta.
+ *         se calculó: la UI ofrece el botón. Trae también los gastos del último
+ *         mes cargado, como propuesta.
  * POST  → recalcula las ventas desde ML y las guarda. Tarda unos segundos.
- * PATCH → guarda los descuentos (publicidad, percepciones, convenio,
- *         monotributo). No toca las ventas.
+ * PATCH → guarda los gastos compartidos del mes (percepciones, convenio,
+ *         monotributo) con su TOTAL. El reparto entre las dos tiendas se
+ *         recalcula solo, según cuánto vendió cada una.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest) {
 
     const [cierre, previo] = await Promise.all([
       leerCierreTercero(tenantId, anio, mes),
-      descuentosPrevios(tenantId, anio, mes),
+      compartidosPrevios(tenantId, anio, mes),
     ]);
     return NextResponse.json({ cierre, previo });
   } catch (e) {
@@ -65,14 +66,14 @@ export async function PATCH(request: NextRequest) {
     const { anio, mes } = body;
     if (!anio || !mes) return NextResponse.json({ error: "anio y mes requeridos" }, { status: 400 });
 
-    const cierre = await guardarDescuentos(tenantId, Number(anio), Number(mes), {
-      publicidad: body.publicidad,
+    await guardarCompartidos(tenantId, Number(anio), Number(mes), {
       percepciones: body.percepciones,
       iibb: body.iibb,
       monotributo: body.monotributo,
       ...("notas" in body ? { notas: body.notas } : {}),
     });
-    return NextResponse.json({ cierre });
+
+    return NextResponse.json({ cierre: await leerCierreTercero(tenantId, Number(anio), Number(mes)) });
   } catch (e) {
     if (e instanceof NextResponse) return e;
     const msg = e instanceof Error ? e.message : "error";
