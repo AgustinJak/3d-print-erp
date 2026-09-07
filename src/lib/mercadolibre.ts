@@ -285,6 +285,16 @@ export interface MlOrder {
   shipping?: { id?: number | null };
   tags?: string[];
   pack_id?: number | null;
+  /** Lo que ML terminó pagándole al vendedor. En una cancelación queda en 0. */
+  paid_amount?: number;
+  /** Sólo viene si la orden está cancelada: quién la canceló y por qué. */
+  cancel_detail?: {
+    group?: string;
+    code?: string;
+    description?: string;
+    requested_by?: string;
+    date?: string;
+  } | null;
 }
 
 export interface MlPayment {

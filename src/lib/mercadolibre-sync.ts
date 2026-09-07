@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { costoModelo, costoVariante } from "@/lib/costos";
-import { aplicarEstadoPedido, reasignarReservas } from "@/lib/reservas";
+import { aplicarEstadoPedido, cancelarPedidoExterno, reasignarReservas } from "@/lib/reservas";
 import { normalizeForMatch } from "@/lib/webhook-security";
 
 /**
@@ -251,6 +251,51 @@ export async function actualizarLiquidacionYEstado(
  * Procesa un grupo de órdenes del mismo pack (o una sola) como UN pedido.
  * Idempotente por pack_id (o order.id si no hay pack).
  */
+/**
+ * Deja el pedido como cancelado, con las palabras de ML sobre por qué.
+ *
+ * Cuando el stock quedó sin resolver le pone `revision_manual`, que es la
+ * etiqueta que ya levanta la lista de revisión de Integraciones: así el caso
+ * aparece solo en vez de quedar enterrado en el historial.
+ */
+async function marcarCanceladoEnMl(pedidoId: string, orden: MlOrder, revisarStock: boolean): Promise<void> {
+  const p = await prisma.pedido.findUnique({
+    where: { id: pedidoId },
+    select: { etiquetas: true, origenExterno: true, notas: true },
+  });
+  if (!p) return;
+
+  const d = orden.cancel_detail ?? null;
+  const oe = (p.origenExterno ?? {}) as Record<string, unknown>;
+  const nota =
+    `[${new Date().toLocaleDateString("es-AR")}] Mercado Libre canceló esta venta` +
+    (d?.group ? ` (${d.group}${d.requested_by ? `, a pedido de ${d.requested_by}` : ""})` : "") +
+    `. Cobrado: $${orden.paid_amount ?? 0}.` +
+    (revisarStock ? " El envío ya había salido: revisar si la pieza volvió antes de sumarla al stock." : "");
+
+  await prisma.pedido.update({
+    where: { id: pedidoId },
+    data: {
+      estado: "CANCELADO",
+      etiquetas: [...new Set([...p.etiquetas, "cancelado_ml", ...(revisarStock ? ["revision_manual"] : [])])],
+      origenExterno: {
+        ...oe,
+        status_ml: orden.status,
+        cancelado_ml: {
+          motivo: d?.group ?? null,
+          codigo: d?.code ?? null,
+          pedido_por: d?.requested_by ?? null,
+          fecha: d?.date ?? null,
+          cobrado: orden.paid_amount ?? 0,
+          stock_a_revisar: revisarStock,
+          detectado_en: new Date().toISOString(),
+        },
+      } as Prisma.InputJsonValue,
+      notas: [p.notas, nota].filter(Boolean).join("\n"),
+    },
+  });
+}
+
 export async function processMlOrderGroup(
   tenantId: string,
   orders: MlOrder[],
@@ -267,6 +312,32 @@ export async function processMlOrderGroup(
     // Pedido cargado a mano: respetamos lo que el usuario puso, no lo tocamos.
     if (!existente.esIntegracion) {
       return { action: "skipped_existing", pedidoId: existente.id, estado: existente.estado, warnings, reason: "pedido_manual" };
+    }
+
+    // ML cancela ventas mucho después de cobrarlas: una mediación le devuelve
+    // la plata al comprador, o el comprador usa la cancelación express. El
+    // chequeo de más abajo sólo alcanza a las órdenes que todavía no existen en
+    // el ERP, así que sin esto un pedido cancelado *después* de entrar se queda
+    // vendido para siempre: reteniendo stock si estaba abierto, y sumando a la
+    // facturación si ya se había despachado.
+    //
+    // Va antes del corte por `necesita`: un pedido ya completo no necesita
+    // ningún dato nuevo, pero sí necesita enterarse de que se canceló.
+    if (existente.estado !== "CANCELADO" && orders.every((o) => o.status === "cancelled")) {
+      const { devueltas, revisarStock } = await cancelarPedidoExterno(tenantId, existente.id);
+      await marcarCanceladoEnMl(existente.id, principal, revisarStock);
+      warnings.push(
+        revisarStock
+          ? "ML canceló el pedido después del despacho: el stock no volvió solo, hay que revisar si la pieza está"
+          : "ML canceló el pedido"
+      );
+      return {
+        action: "updated",
+        pedidoId: existente.id,
+        estado: "CANCELADO",
+        warnings,
+        reason: devueltas > 0 ? `cancelado_en_ml_devueltas_${devueltas}` : "cancelado_en_ml",
+      };
     }
 
     // Pedido de la integración: lo completamos/actualizamos si le falta el neto,

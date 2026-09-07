@@ -279,6 +279,13 @@ export async function reasignarReservas(tenantId: string): Promise<ResultadoReas
       // Dos webhooks simultáneos no pueden repartir la misma pila.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`reservas:${tenantId}`}))`;
 
+      // Marca de agua: hasta qué momento del stock mira este reparto. Se anota
+      // al final y `reasignarSiElStockCambio` la compara para saber si quedó
+      // algo sin repartir.
+      const [marca] = await tx.$queryRaw<Array<{ hasta: Date | null }>>`
+        SELECT max(updated_at) AS hasta FROM public.stock WHERE tenant_id = ${tenantId}
+      `;
+
       const ctx = await cargarContexto(tx, tenantId);
 
       // Un pedido que ya consumió no vuelve a reservar (la pieza ya salió).
@@ -358,6 +365,8 @@ export async function reasignarReservas(tenantId: string): Promise<ResultadoReas
 
       if (nuevas.length > 0) await tx.reservaStock.createMany({ data: nuevas });
 
+      await marcarReparto(tx, tenantId, marca?.hasta ?? null);
+
       return {
         pedidos: pedidos.length,
         reservas: nuevas.length,
@@ -367,6 +376,50 @@ export async function reasignarReservas(tenantId: string): Promise<ResultadoReas
     },
     { timeout: 20_000 }
   );
+}
+
+/**
+ * Deja anotado hasta qué momento del stock llegó el último reparto.
+ *
+ * Se guarda la marca leída al abrir la transacción, no `now()`: si algo movió
+ * la pila mientras se repartía, esa unidad todavía no se miró y tiene que
+ * quedar pendiente para la próxima pasada.
+ */
+async function marcarReparto(tx: Tx, tenantId: string, hasta: Date | null): Promise<void> {
+  const iso = (hasta ?? new Date()).toISOString();
+  await tx.$executeRaw`
+    INSERT INTO public.config_tenant (id, tenant_id, data)
+    VALUES (gen_random_uuid()::text, ${tenantId}, jsonb_build_object('ultimoReparto', ${iso}))
+    ON CONFLICT (tenant_id) DO UPDATE
+      SET data = config_tenant.data || jsonb_build_object('ultimoReparto', ${iso})
+  `;
+}
+
+/**
+ * Reparte de nuevo, pero sólo si el stock se movió desde el último reparto.
+ *
+ * Existe por Bodega: cuando marca una pieza como producida no pasa por la API
+ * del ERP, le habla derecho a Postgres (`bodega_mover_stock`). La cantidad sube
+ * y nadie vuelve a repartirla, así que un pedido que estaba esperando esa pieza
+ * seguía figurando en falta con la pieza ya en el galpón.
+ *
+ * El cron de ML también reparte, pero GitHub Actions estrangula los schedules:
+ * en la práctica corre cada dos horas, no cada quince minutos. Demasiado tarde
+ * para una pantalla que se mira justo después de cargar la producción.
+ *
+ * Son dos fechas: barato como para llamarla desde cualquier lectura que muestre
+ * cobertura. Si no cambió nada, no toca la base.
+ */
+export async function reasignarSiElStockCambio(tenantId: string): Promise<ResultadoReasignacion | null> {
+  const [estado] = await prisma.$queryRaw<Array<{ stock: Date | null; marca: string | null }>>`
+    SELECT (SELECT max(updated_at) FROM public.stock WHERE tenant_id = ${tenantId}) AS stock,
+           (SELECT data->>'ultimoReparto' FROM public.config_tenant WHERE tenant_id = ${tenantId}) AS marca
+  `;
+
+  const movido = estado?.stock;
+  if (!movido) return null;
+  if (estado.marca && new Date(estado.marca) >= movido) return null;
+  return reasignarReservas(tenantId);
 }
 
 /* ───────────────────────── consumo y devolución ───────────────────────── */
@@ -414,6 +467,44 @@ export async function devolverPedido(tenantId: string, pedidoId: string, motivo 
     await tx.reservaStock.deleteMany({ where: { tenantId, pedidoId } });
     return reservas.reduce((a, r) => a + r.cantidad, 0);
   });
+}
+
+/**
+ * Cancelación que llega de afuera: Mercado Libre dio de baja la venta.
+ *
+ * Decide sola si el stock vuelve, porque las dos cancelaciones no son la misma
+ * cosa:
+ *
+ *  - **Todavía no salió**: la pieza sigue en el galpón. Se sueltan las reservas
+ *    y lo que se hubiera descontado vuelve, con su movimiento.
+ *  - **Ya salió**: el caso típico de ML —entregado, y semanas después una
+ *    mediación le devuelve la plata al comprador—. Esa unidad la tiene él, no
+ *    vuelve sola al galpón. Se deja el consumo como historia y el pedido queda
+ *    marcado para que una persona mire si la caja volvió.
+ *
+ * Devolver el stock a ciegas acá inventaría unidades que no existen, y un
+ * inventario inflado es peor que uno viejo: se termina vendiendo lo que no hay.
+ */
+export async function cancelarPedidoExterno(
+  tenantId: string,
+  pedidoId: string,
+  motivo = "cancelacion_ml"
+): Promise<{ devueltas: number; revisarStock: boolean }> {
+  const yaSalio = await prisma.reservaStock.count({
+    where: { tenantId, pedidoId, estado: "CONSUMIDA" },
+  });
+
+  if (yaSalio === 0) {
+    const devueltas = await devolverPedido(tenantId, pedidoId, motivo);
+    await reasignarReservas(tenantId);
+    return { devueltas, revisarStock: false };
+  }
+
+  // Ya despachado: se sueltan las reservas que quedaran sueltas, pero el
+  // consumo no se toca — la pieza no volvió sola.
+  await prisma.reservaStock.deleteMany({ where: { tenantId, pedidoId, estado: "RESERVADA" } });
+  await reasignarReservas(tenantId);
+  return { devueltas: 0, revisarStock: true };
 }
 
 /**

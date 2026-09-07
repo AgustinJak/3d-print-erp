@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
 import { costoModelo } from "@/lib/costos";
-import { coberturaDePedidos, reasignarReservas } from "@/lib/reservas";
+import { coberturaDePedidos, reasignarReservas, reasignarSiElStockCambio } from "@/lib/reservas";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -21,6 +21,14 @@ const itemsInclude = {
 export async function GET(request: NextRequest) {
   try {
     const { tenantId } = await getAuthenticatedTenant();
+
+    // Igual que en /api/stock: lo que Bodega produjo entra sin pasar por acá,
+    // y la cobertura de cada pedido se lee de las reservas.
+    try {
+      await reasignarSiElStockCambio(tenantId);
+    } catch (err) {
+      console.error("[api/pedidos] no se pudo repartir antes de leer:", err);
+    }
     const { searchParams } = new URL(request.url);
     const estado = searchParams.get("estado");
     const incluirTodos = searchParams.get("todos") === "true";

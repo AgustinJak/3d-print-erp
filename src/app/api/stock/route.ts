@@ -4,7 +4,12 @@ export const maxDuration = 60;
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { costoModelo, costoVariante } from "@/lib/costos";
-import { coberturaDePedidos, ESTADOS_QUE_RESERVAN, reasignarReservas } from "@/lib/reservas";
+import {
+  coberturaDePedidos,
+  ESTADOS_QUE_RESERVAN,
+  reasignarReservas,
+  reasignarSiElStockCambio,
+} from "@/lib/reservas";
 import { NextRequest, NextResponse } from "next/server";
 
 const MESES_DEMANDA = 6;
@@ -23,6 +28,16 @@ const MESES_DEMANDA = 6;
 export async function GET() {
   try {
     const { tenantId } = await getAuthenticatedTenantNonDemo();
+
+    // Bodega suma lo que produce hablándole directo a Postgres, sin pasar por
+    // esta API. Si eso movió la pila hay que repartirla antes de contar quién
+    // espera, o un pedido figura en falta con la pieza ya hecha.
+    try {
+      await reasignarSiElStockCambio(tenantId);
+    } catch (err) {
+      // Leer no puede fallar por esto: se muestra el reparto viejo y listo.
+      console.error("[api/stock] no se pudo repartir antes de leer:", err);
+    }
 
     const desde = new Date();
     desde.setMonth(desde.getMonth() - MESES_DEMANDA);
@@ -145,13 +160,27 @@ export async function GET() {
     const cobertura = await coberturaDePedidos(tenantId, abiertos);
 
     const esperanPorStock = new Map<string, { unidades: number; pedidos: Set<string> }>();
-    const avisos: Array<{ tipo: string; etiqueta: string; pedido: string; unidades: number }> = [];
+    const avisos: Array<{
+      tipo: string;
+      etiqueta: string;
+      pedido: string;
+      unidades: number;
+      itemId: string;
+      pedidoId: string;
+      // Las filas del modelo, para poder elegir cuál se lleva el item sin
+      // salir de la pantalla.
+      opciones: Array<{ stockId: string; etiqueta: string; disponible: number }>;
+    }> = [];
+
+    const modeloDeItem = new Map<string, string>();
+    for (const p of abiertos) for (const it of p.items) modeloDeItem.set(it.id, it.modeloId);
+    const dispPorFila = new Map(salida.map((s) => [s.id, s.disponible]));
 
     for (const p of abiertos) {
       const cob = cobertura.get(p.id);
       if (!cob) continue;
       const quien = p.cliente?.nombre ?? "sin cliente";
-      for (const comps of Object.values(cob.componentes)) {
+      for (const [itemId, comps] of Object.entries(cob.componentes)) {
         for (const c of comps) {
           if (c.falta === 0) continue;
           if (c.stockId) {
@@ -161,7 +190,28 @@ export async function GET() {
             esperanPorStock.set(c.stockId, e);
           } else if (c.motivo !== "a_pedido") {
             // No hay a qué descontarle: falta la fila de stock o la receta.
-            avisos.push({ tipo: c.motivo ?? "sin_fila", etiqueta: c.etiqueta, pedido: quien, unidades: c.falta });
+            //
+            // Cuando es una combinación sin fila se mandan las filas del
+            // modelo: ML vende varios productos sin preguntar el color, así
+            // que la venta entra sin decir cuál sale y hay que elegirlo.
+            const modeloId = modeloDeItem.get(itemId);
+            const opciones =
+              c.motivo === "combinacion_sin_fila" && modeloId
+                ? (porModelo.get(modeloId) ?? []).map((f) => ({
+                    stockId: f.id,
+                    etiqueta: f.etiqueta || f.modelo.nombre,
+                    disponible: dispPorFila.get(f.id) ?? 0,
+                  }))
+                : [];
+            avisos.push({
+              tipo: c.motivo ?? "sin_fila",
+              etiqueta: c.etiqueta,
+              pedido: quien,
+              unidades: c.falta,
+              itemId,
+              pedidoId: p.id,
+              opciones,
+            });
           }
         }
       }

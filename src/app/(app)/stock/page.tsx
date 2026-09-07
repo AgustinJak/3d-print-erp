@@ -37,6 +37,9 @@ interface Aviso {
   etiqueta: string;
   pedido: string;
   unidades: number;
+  itemId: string;
+  pedidoId: string;
+  opciones: Array<{ stockId: string; etiqueta: string; disponible: number }>;
 }
 
 interface Resumen {
@@ -67,6 +70,7 @@ export default function StockPage() {
   const [busqueda, setBusqueda] = useState("");
   const [soloFaltantes, setSoloFaltantes] = useState(false);
   const [editando, setEditando] = useState<Record<string, string>>({});
+  const [asignando, setAsignando] = useState<string | null>(null);
 
   const fetchStock = useCallback(async () => {
     const res = await fetch("/api/stock");
@@ -78,6 +82,24 @@ export default function StockPage() {
     }
     setLoading(false);
   }, []);
+
+  // ML vende la Bola de JOJOS, el Sauce y el NUBE sin preguntar el color, así
+  // que la venta entra sin decir de qué fila sale. Acá se elige.
+  const asignarStock = async (itemId: string, stockId: string, etiqueta: string) => {
+    setAsignando(itemId + stockId);
+    const res = await fetch("/api/pedidos/asignar-stock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ itemId, stockId }),
+    });
+    setAsignando(null);
+    if (!res.ok) {
+      toast.error("No se pudo asignar");
+      return;
+    }
+    toast.success(`Sale de ${etiqueta}`);
+    fetchStock();
+  };
 
   useEffect(() => { fetchStock(); }, [fetchStock]);
   // Se actualiza sola cuando entra un pedido o cambia el stock desde otro lado.
@@ -171,6 +193,24 @@ export default function StockPage() {
                 <span className="font-medium text-foreground">{a.etiqueta}</span>
                 {" — "}{TEXTO_AVISO[a.tipo] ?? a.tipo}
                 <span className="opacity-70"> · pedido de {a.pedido}</span>
+                {a.opciones?.length > 0 && (
+                  <span className="mt-1 flex flex-wrap items-center gap-1">
+                    <span className="opacity-70">¿de cuál sale?</span>
+                    {a.opciones.map((o) => (
+                      <Button
+                        key={o.stockId}
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-[11px]"
+                        disabled={asignando !== null}
+                        onClick={() => asignarStock(a.itemId, o.stockId, o.etiqueta)}
+                      >
+                        {o.etiqueta}
+                        <span className="ml-1 opacity-60">{o.disponible}</span>
+                      </Button>
+                    ))}
+                  </span>
+                )}
               </li>
             ))}
             {avisos.length > 6 && <li className="opacity-70">…y {avisos.length - 6} más</li>}
