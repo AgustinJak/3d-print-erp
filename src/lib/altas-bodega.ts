@@ -24,6 +24,17 @@ import { fabricacionDeReceta, leerParametros, leerRecetas } from "@/lib/costos-b
 
 const CLAVE = "bodegaSinTraer";
 
+/**
+ * Bodega es de un solo negocio.
+ *
+ * Su base no tiene columna de tenant: las funciones que la exponen fijan
+ * `sendero3d` a mano (ver `bodega_unidades_stock` en bodega-stock.sql). Sin este
+ * candado, alguien entrando con la cuenta demo dispararía el alta automática y
+ * se llevaría los 118 modelos de Bodega a un inventario que no es el suyo.
+ */
+const TENANT_DE_BODEGA = "sendero3d";
+const esDeBodega = (tenantId: string) => tenantId === TENANT_DE_BODEGA;
+
 export interface CandidatoBodega {
   bodegaModelId: string;
   nombre: string;
@@ -67,6 +78,8 @@ async function guardarSinTraer(tenantId: string, ids: string[]): Promise<void> {
 export async function candidatosDeBodega(
   tenantId: string
 ): Promise<{ nuevos: CandidatoBodega[]; sinTraer: CandidatoBodega[]; inicializado: boolean }> {
+  if (!esDeBodega(tenantId)) return { nuevos: [], sinTraer: [], inicializado: true };
+
   const [bodega, recetas, parametros, filas, modelos, ignorados] = await Promise.all([
     prisma.$queryRaw<Array<{ id: string; name: string; category: string | null }>>`
       SELECT id, name, category FROM bodega.models ORDER BY name
@@ -112,7 +125,7 @@ export async function candidatosDeBodega(
 /** Da de alta en el inventario los modelos de Bodega que se le indiquen. */
 export async function crearDesdeBodega(tenantId: string, ids: string[]): Promise<ResultadoAltas> {
   const out: ResultadoAltas = { creados: [], mapeados: [], omitidos: [] };
-  if (ids.length === 0) return out;
+  if (ids.length === 0 || !esDeBodega(tenantId)) return out;
 
   const { nuevos, sinTraer } = await candidatosDeBodega(tenantId);
   const porId = new Map([...nuevos, ...sinTraer].map((c) => [c.bodegaModelId, c]));
@@ -190,12 +203,50 @@ export async function marcarSinTraer(tenantId: string, ids: string[]): Promise<v
 }
 
 /**
+ * ¿Hay algo para dar de alta? Una sola consulta, para poder preguntarlo seguido.
+ *
+ * `candidatosDeBodega` trae modelos, stock, recetas y parámetros: está bien para
+ * pintar una pantalla, pero no para llamarlo cada quince segundos. Esto cuenta
+ * los modelos de Bodega que no están mapeados ni descartados, y nada más.
+ */
+async function hayPendientes(tenantId: string): Promise<{ faltan: number; inicializado: boolean }> {
+  const filas = await prisma.$queryRaw<Array<{ faltan: number; inicializado: boolean }>>`
+    SELECT
+      (SELECT count(*)::int FROM bodega.models b
+        WHERE NOT EXISTS (
+          SELECT 1 FROM public.stock s
+           WHERE s.tenant_id = ${tenantId} AND s.bodega_model_id = b.id
+        )
+          AND NOT (
+            COALESCE(
+              (SELECT data->'bodegaSinTraer' FROM public.config_tenant WHERE tenant_id = ${tenantId}),
+              '[]'::jsonb
+            ) ? b.id
+          )
+      ) AS faltan,
+      EXISTS (
+        SELECT 1 FROM public.config_tenant
+         WHERE tenant_id = ${tenantId} AND data ? 'bodegaSinTraer'
+      ) AS inicializado
+  `;
+  return filas[0] ?? { faltan: 0, inicializado: false };
+}
+
+/**
  * Trae solo lo que nació en Bodega después de que esto se encendió.
  *
  * La primera vez no crea nada: anota lo que ya existía como "no traer", que es
  * lo que evita que años de pruebas entren de golpe al inventario.
  */
 export async function altasAutomaticas(tenantId: string): Promise<ResultadoAltas & { inicializo: boolean }> {
+  if (!esDeBodega(tenantId)) return { creados: [], mapeados: [], omitidos: [], inicializo: false };
+
+  // Atajo barato: si no hay nada pendiente, no se toca nada más.
+  const previo = await hayPendientes(tenantId);
+  if (previo.inicializado && previo.faltan === 0) {
+    return { creados: [], mapeados: [], omitidos: [], inicializo: false };
+  }
+
   const { nuevos, sinTraer, inicializado } = await candidatosDeBodega(tenantId);
 
   if (!inicializado) {

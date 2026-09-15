@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+import { altasAutomaticas } from "@/lib/altas-bodega";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextResponse } from "next/server";
@@ -16,6 +17,19 @@ import { NextResponse } from "next/server";
 export async function GET() {
   try {
     const { tenantId } = await getAuthenticatedTenant();
+
+    // Una pieza nueva en Bodega tiene que aparecer sola, sin depender de que
+    // alguien abra justo la pantalla de Stock. Acá es donde se nota: esto se
+    // consulta cada pocos segundos, y si creó algo la huella cambia y la
+    // pantalla se recarga sin que nadie apriete nada.
+    //
+    // `altasAutomaticas` arranca con un conteo de una sola consulta y se va
+    // enseguida cuando no hay nada pendiente, que es casi siempre.
+    try {
+      await altasAutomaticas(tenantId);
+    } catch (err) {
+      console.error("[api/cambios] no se pudieron dar de alta modelos de Bodega:", err);
+    }
 
     const [pedidos, stock, reservas] = await Promise.all([
       prisma.pedido.aggregate({ where: { tenantId }, _count: true, _max: { updatedAt: true } }),
