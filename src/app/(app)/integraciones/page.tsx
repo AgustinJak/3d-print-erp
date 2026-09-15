@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   Plug, ShoppingBag, RefreshCw, Copy, Check, AlertTriangle,
   CheckCircle2, XCircle, Eye, ExternalLink, Wand2, FileWarning,
-  Tags, Pencil, Plus, Box, Store, Unplug, Download, Loader2,
+  Tags, Pencil, Plus, Box, Store, Unplug, Download, Loader2, Coins, ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -143,7 +143,51 @@ interface RecalculoPreview {
   bajan: RecalculoCambio[];
 }
 
-type Tab = "estado" | "mercadolibre" | "logs" | "revision" | "skus";
+interface CostosBodega {
+  parametros: {
+    precioKg: number; precioKwh: number; consumoW: number;
+    desgasteHoras: number; precioRepuestos: number; margenError: number;
+  };
+  cobertura: { filas: number; conReceta: number; sinInsumosDeclarados: number };
+  plan: {
+    cambios: Array<{
+      modeloId: string;
+      modelo: string;
+      totalAntes: number;
+      totalDespues: number;
+      variantes: Array<{
+        varianteId: string;
+        nombre: string;
+        antes: { fab: number; insumos: number };
+        despues: { fab: number; insumos: number };
+        origen: string;
+      }>;
+    }>;
+    saltados: Array<{ modeloId: string; modelo: string; motivo: string }>;
+    sinCambio: number;
+  };
+}
+
+interface CandidatoBodega {
+  bodegaModelId: string;
+  nombre: string;
+  categoria: string | null;
+  tieneReceta: boolean;
+  costoFab: number;
+  costoInsumos: number;
+  modeloExistenteId: string | null;
+  modeloExistenteNombre: string | null;
+}
+
+interface AltasBodega {
+  nuevos: CandidatoBodega[];
+  sinTraer: CandidatoBodega[];
+  inicializado: boolean;
+}
+
+const plata = (n: number) => "$" + Math.round(n).toLocaleString("es-AR");
+
+type Tab = "estado" | "mercadolibre" | "logs" | "revision" | "skus" | "costos";
 
 /* ─── Page ───────────────────────────────────────────── */
 
@@ -164,6 +208,71 @@ function IntegracionesContent() {
   const [logDetail, setLogDetail] = useState<WebhookLog | null>(null);
   const [generatedSecret, setGeneratedSecret] = useState<string | null>(null);
   const [secretCopied, setSecretCopied] = useState(false);
+  const [costos, setCostos] = useState<CostosBodega | null>(null);
+  const [costosBusy, setCostosBusy] = useState(false);
+  const [excluidos, setExcluidos] = useState<Set<string>>(new Set());
+  const [verSaltados, setVerSaltados] = useState(false);
+  const [altas, setAltas] = useState<AltasBodega | null>(null);
+  const [altasSel, setAltasSel] = useState<Set<string>>(new Set());
+
+  // El plan mira todos los modelos, el stock y las recetas: se pide sólo
+  // cuando se abre la pestaña, no en cada carga de Integraciones.
+  const fetchCostos = useCallback(async () => {
+    setCostosBusy(true);
+    const [resCostos, resAltas] = await Promise.all([
+      fetch("/api/costos/bodega"),
+      fetch("/api/bodega/altas"),
+    ]);
+    if (resCostos.ok) setCostos(await resCostos.json());
+    else toast.error("No se pudieron leer los costos de Bodega");
+    if (resAltas.ok) setAltas(await resAltas.json());
+    setCostosBusy(false);
+  }, []);
+
+  const accionAltas = async (accion: "crear" | "ignorar") => {
+    if (altasSel.size === 0) return;
+    setCostosBusy(true);
+    const res = await fetch("/api/bodega/altas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accion, ids: [...altasSel] }),
+    });
+    setCostosBusy(false);
+    if (!res.ok) {
+      toast.error("No se pudo completar");
+      return;
+    }
+    const d = await res.json();
+    toast.success(
+      accion === "ignorar"
+        ? `${d.ignorados} descartados`
+        : `${d.creados?.length ?? 0} dados de alta` +
+          (d.mapeados?.length ? ` · ${d.mapeados.length} enlazados a un modelo que ya existía` : "")
+    );
+    setAltasSel(new Set());
+    setCostos(null); // dispara la recarga de las dos listas
+  };
+
+  const aplicarCostos = async () => {
+    setCostosBusy(true);
+    const res = await fetch("/api/costos/bodega", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ excluir: [...excluidos] }),
+    });
+    setCostosBusy(false);
+    if (!res.ok) {
+      toast.error("No se pudo aplicar");
+      return;
+    }
+    const d = await res.json();
+    toast.success(
+      `${d.modelos} ${d.modelos === 1 ? "modelo actualizado" : "modelos actualizados"}` +
+        (d.excluidos ? ` · ${d.excluidos} sin tocar` : "")
+    );
+    setExcluidos(new Set());
+    setCostos(null); // que se recargue con el estado nuevo
+  };
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -186,6 +295,11 @@ function IntegracionesContent() {
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // El plan recorre modelos, stock y recetas: se pide recién al abrir la pestaña.
+  useEffect(() => {
+    if (tab === "costos" && !costos && !costosBusy) fetchCostos();
+  }, [tab, costos, costosBusy, fetchCostos]);
 
   // Resultado del callback de OAuth (?ml=ok|error&tab=mercadolibre)
   useEffect(() => {
@@ -451,6 +565,17 @@ function IntegracionesContent() {
               {pedidosRevision.length}
             </Badge>
           )}
+        </TabBtn>
+        <TabBtn active={tab === "costos"} onClick={() => setTab("costos")}>
+          <Box className="h-4 w-4 mr-1.5" /> Bodega
+          {(() => {
+            const n = (costos?.plan.cambios.length ?? 0) + (altas?.sinTraer.length ?? 0);
+            return n > 0 ? (
+              <Badge className="ml-1.5 h-5 px-1.5 bg-amber-500/20 text-amber-500 border-amber-500/30 hover:bg-amber-500/20">
+                {n}
+              </Badge>
+            ) : null;
+          })()}
         </TabBtn>
         <TabBtn active={tab === "skus"} onClick={() => setTab("skus")}>
           <Tags className="h-4 w-4 mr-1.5" /> Mapeo SKUs
@@ -1162,6 +1287,265 @@ function IntegracionesContent() {
               </div>
             )}
           </Card>
+        </div>
+      )}
+
+      {/* Tab: Costos desde Bodega */}
+      {tab === "costos" && (
+        <div className="space-y-4">
+          {altas && altas.sinTraer.length > 0 && (
+            <Card className="overflow-hidden border-sky-500/30">
+              <div className="p-4 border-b">
+                <p className="font-medium flex items-center gap-2">
+                  <Box className="h-4 w-4" /> {altas.sinTraer.length} modelos de Bodega que no están en el inventario
+                </p>
+                <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
+                  Lo que crees en Bodega de ahora en adelante entra solo, con su fila de stock ya
+                  mapeada. Estos son los que ya estaban antes: traé los que sean productos de verdad y
+                  descartá las pruebas. Lo descartado no vuelve a aparecer.
+                </p>
+              </div>
+
+              <ul className="divide-y">
+                {altas.sinTraer.map((c) => {
+                  const sel = altasSel.has(c.bodegaModelId);
+                  return (
+                    <li key={c.bodegaModelId} className="px-4 py-2.5">
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={sel}
+                          onChange={() =>
+                            setAltasSel((prev) => {
+                              const s = new Set(prev);
+                              if (s.has(c.bodegaModelId)) s.delete(c.bodegaModelId);
+                              else s.add(c.bodegaModelId);
+                              return s;
+                            })
+                          }
+                          className="h-4 w-4 accent-sky-500 shrink-0"
+                        />
+                        <div className="min-w-0 flex-1 flex items-baseline gap-2 flex-wrap">
+                          <span className="font-medium">{c.nombre}</span>
+                          {c.categoria && (
+                            <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">
+                              {c.categoria}
+                            </Badge>
+                          )}
+                          <span className="text-sm text-muted-foreground tabular-nums">
+                            {c.tieneReceta ? plata(c.costoFab + c.costoInsumos) : "sin costear en Bodega"}
+                          </span>
+                          {c.modeloExistenteNombre && (
+                            <span className="text-xs text-sky-500">
+                              se enlaza a “{c.modeloExistenteNombre}”, que ya existe
+                            </span>
+                          )}
+                        </div>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <div className="p-3 border-t flex gap-2 flex-wrap items-center">
+                <Button
+                  size="sm"
+                  onClick={() => accionAltas("crear")}
+                  disabled={costosBusy || altasSel.size === 0}
+                >
+                  <Plus className="mr-1.5 h-4 w-4" /> Traer al inventario ({altasSel.size})
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => accionAltas("ignorar")}
+                  disabled={costosBusy || altasSel.size === 0}
+                >
+                  <XCircle className="mr-1.5 h-4 w-4" /> Descartar ({altasSel.size})
+                </Button>
+                <button
+                  className="text-xs text-muted-foreground underline underline-offset-2 ml-1"
+                  onClick={() =>
+                    setAltasSel((prev) =>
+                      prev.size === altas.sinTraer.length
+                        ? new Set()
+                        : new Set(altas.sinTraer.map((c) => c.bodegaModelId))
+                    )
+                  }
+                >
+                  {altasSel.size === altas.sinTraer.length ? "no elegir ninguno" : "elegir todos"}
+                </button>
+              </div>
+            </Card>
+          )}
+
+          <Card className="p-5 space-y-3">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <p className="font-medium flex items-center gap-2">
+                  <Coins className="h-4 w-4" /> Costos desde Bodega
+                </p>
+                <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+                  El costo de cada pieza se arma con su receta —gramos de filamento y tiempo de
+                  impresión— y los parámetros del taller. Subís el precio del filamento en Bodega y
+                  desde acá se mueven todos los costos.
+                </p>
+              </div>
+              <Button variant="outline" onClick={fetchCostos} disabled={costosBusy}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${costosBusy ? "animate-spin" : ""}`} />
+                Recalcular
+              </Button>
+            </div>
+
+            {costos && (
+              <>
+                <div className="flex gap-x-5 gap-y-1 flex-wrap text-sm">
+                  <span>
+                    Filamento <b>{plata(costos.parametros.precioKg)}</b>/kg
+                  </span>
+                  <span>
+                    Luz <b>{plata(costos.parametros.precioKwh)}</b>/kWh · {costos.parametros.consumoW} W
+                  </span>
+                  <span>
+                    Repuestos <b>{plata(costos.parametros.precioRepuestos)}</b> cada{" "}
+                    {costos.parametros.desgasteHoras} h
+                  </span>
+                  <span>
+                    Margen de error <b>{costos.parametros.margenError}%</b>
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {costos.cobertura.conReceta} de {costos.cobertura.filas} unidades de stock tienen
+                  receta en Bodega.
+                  {costos.cobertura.sinInsumosDeclarados > 0 &&
+                    ` ${costos.cobertura.sinInsumosDeclarados} sin insumos declarados: pueden quedar cortas.`}
+                </p>
+              </>
+            )}
+          </Card>
+
+          {costosBusy && !costos && (
+            <Card className="p-8 flex items-center justify-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Calculando…
+            </Card>
+          )}
+
+          {costos && costos.plan.cambios.length === 0 && (
+            <EmptyState
+              icon={CheckCircle2}
+              title="Los costos están al día"
+              description={`${costos.plan.sinCambio} modelos ya coinciden con lo que dice Bodega.`}
+            />
+          )}
+
+          {costos && costos.plan.cambios.length > 0 && (
+            <Card className="overflow-hidden">
+              <div className="p-4 border-b flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <p className="font-medium">
+                    {costos.plan.cambios.length} {costos.plan.cambios.length === 1 ? "modelo cambia" : "modelos cambian"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Destildá el que tenga el dato viejo en Bodega: es mejor arreglarlo allá que bajarlo así.
+                  </p>
+                </div>
+                <Button
+                  onClick={aplicarCostos}
+                  disabled={costosBusy || excluidos.size === costos.plan.cambios.length}
+                >
+                  {costosBusy ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Check className="mr-2 h-4 w-4" />
+                  )}
+                  Aplicar {costos.plan.cambios.length - excluidos.size}
+                </Button>
+              </div>
+
+              <ul className="divide-y">
+                {costos.plan.cambios.map((c) => {
+                  const fuera = excluidos.has(c.modeloId);
+                  const dif = c.totalDespues - c.totalAntes;
+                  return (
+                    <li key={c.modeloId} className={`p-4 ${fuera ? "opacity-45" : ""}`}>
+                      <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!fuera}
+                          onChange={() =>
+                            setExcluidos((prev) => {
+                              const s = new Set(prev);
+                              if (s.has(c.modeloId)) s.delete(c.modeloId);
+                              else s.add(c.modeloId);
+                              return s;
+                            })
+                          }
+                          className="mt-1 h-4 w-4 accent-emerald-500 shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline gap-2 flex-wrap">
+                            <span className="font-medium">{c.modelo}</span>
+                            <span className="text-sm text-muted-foreground tabular-nums">
+                              {plata(c.totalAntes)} → {plata(c.totalDespues)}
+                            </span>
+                            <span
+                              className={`text-sm font-medium tabular-nums ${
+                                dif > 0 ? "text-amber-500" : dif < 0 ? "text-sky-500" : ""
+                              }`}
+                            >
+                              {dif > 0 ? "+" : ""}
+                              {plata(dif)}
+                            </span>
+                          </div>
+                          {c.variantes
+                            .filter(
+                              (v) =>
+                                v.antes.fab + v.antes.insumos !== v.despues.fab + v.despues.insumos
+                            )
+                            .map((v) => (
+                              <p
+                                key={v.varianteId}
+                                className="text-xs text-muted-foreground mt-1 tabular-nums"
+                              >
+                                “{v.nombre}” +{plata(v.antes.fab + v.antes.insumos)} → +
+                                {plata(v.despues.fab + v.despues.insumos)}
+                                <span className="opacity-70"> · {v.origen}</span>
+                              </p>
+                            ))}
+                        </div>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          )}
+
+          {costos && costos.plan.saltados.length > 0 && (
+            <Card className="overflow-hidden">
+              <button
+                className="w-full p-4 flex items-center gap-2 text-left hover:bg-muted/40"
+                onClick={() => setVerSaltados((v) => !v)}
+              >
+                <ChevronRight
+                  className={`h-4 w-4 transition-transform ${verSaltados ? "rotate-90" : ""}`}
+                />
+                <span className="text-sm">
+                  <b>{costos.plan.saltados.length}</b> modelos sin costo de Bodega
+                </span>
+              </button>
+              {verSaltados && (
+                <ul className="divide-y border-t text-sm">
+                  {costos.plan.saltados.map((s) => (
+                    <li key={s.modeloId} className="px-4 py-2 flex gap-3 justify-between">
+                      <span>{s.modelo}</span>
+                      <span className="text-muted-foreground text-xs text-right">{s.motivo}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          )}
         </div>
       )}
 

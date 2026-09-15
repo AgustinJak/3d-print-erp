@@ -3,6 +3,7 @@ export const maxDuration = 60;
 
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
+import { altasAutomaticas } from "@/lib/altas-bodega";
 import { costoModelo, costoVariante } from "@/lib/costos";
 import {
   coberturaDePedidos,
@@ -37,6 +38,16 @@ export async function GET() {
     } catch (err) {
       // Leer no puede fallar por esto: se muestra el reparto viejo y listo.
       console.error("[api/stock] no se pudo repartir antes de leer:", err);
+    }
+
+    // Una pieza nueva en Bodega aparece acá sola, con su fila de stock ya
+    // mapeada, así lo que se produzca cuenta desde el primer día. Sólo trae lo
+    // que nació después de encender esto: el backlog viejo de Bodega se revisa
+    // aparte, en Integraciones.
+    try {
+      await altasAutomaticas(tenantId);
+    } catch (err) {
+      console.error("[api/stock] no se pudieron dar de alta modelos de Bodega:", err);
     }
 
     const desde = new Date();

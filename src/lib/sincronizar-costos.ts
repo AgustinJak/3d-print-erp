@@ -154,7 +154,12 @@ export async function planDeCostos(tenantId: string): Promise<PlanDeCostos> {
           origen = "sin fila de stock";
         } else {
           despues = { fab: fila.c!.fab - base.fab, insumos: fila.c!.insumos - base.insumos };
-          origen = `${fila.c!.receta.nombre} − ${base.receta.nombre}`;
+          // Cuando la fila ES la base, restar contra sí misma da cero y el
+          // origen quedaba como "X − X", que no explica nada.
+          origen =
+            fila.c!.stockId === base.stockId
+              ? "es la pieza base"
+              : `${fila.c!.receta.nombre} − ${base.receta.nombre}`;
         }
       } else {
         const suyas = (reglasPorModelo.get(m.id) ?? []).filter((r) => r.requiere.includes(v.id));
