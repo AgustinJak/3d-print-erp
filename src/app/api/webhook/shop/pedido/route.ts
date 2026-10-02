@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
 import { costoModelo, costoVariante } from "@/lib/costos";
-import { reasignarReservas } from "@/lib/reservas";
+import { aplicarEstadoPedido, reasignarReservas } from "@/lib/reservas";
 import { verifyWebhookSignature, normalizeForMatch } from "@/lib/webhook-security";
 
 /**
@@ -124,6 +124,122 @@ type ShopPayload = z.infer<typeof payloadSchema>;
 
 /* ───────────────────────── POST handler ───────────────────────── */
 
+/* ─────────────── Cambio de estado de un pedido que ya existe ───────────────
+ *
+ * El webhook original sólo sabe crear. Su idempotencia es por `numero_pedido`:
+ * si el pedido ya está, devuelve el existente y no mira nada más. Por eso
+ * reenviarlo con otro estado no hace nada, y los cambios necesitan un evento
+ * aparte.
+ *
+ * El evento es genérico —"cambió a tal estado"— y no "pedido.entregado", para
+ * que avisar una cancelación mañana no obligue a negociar otro contrato.
+ * Hoy el único estado de la Shop que mueve algo acá es `entregado`.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+const EVENTO_CAMBIO_ESTADO = "pedido.estado_cambiado";
+
+const cambioEstadoSchema = z.object({
+  evento: z.literal(EVENTO_CAMBIO_ESTADO),
+  numero_pedido: z.string(),
+  estado_shop: z.string(),
+  /** Cuándo pasó, no cuándo se mandó el webhook: si se reintenta, no se pierde. */
+  fecha: z.string().optional().nullable(),
+});
+
+/**
+ * Qué estado del inventario corresponde a cada estado de la Shop.
+ *
+ * Corto a propósito: lo que no esté acá se registra y se ignora con 200, así la
+ * Shop no queda reintentando algo que nunca vamos a procesar.
+ */
+const ESTADO_SHOP_A_INVENTARIO: Record<string, "COMPLETADO"> = {
+  entregado: "COMPLETADO",
+};
+
+/** Un pedido que ya terminó no vuelve atrás por un webhook que llegó tarde. */
+const ESTADOS_FINALES = new Set(["COMPLETADO", "CANCELADO"]);
+
+async function manejarCambioDeEstado(
+  rawBody: string,
+  tenantId: string,
+  ipAddress: string | null
+): Promise<NextResponse> {
+  const log = (estado: string, errorMsg: string | null, externoId?: string, pedidoId?: string) =>
+    prisma.webhookLog
+      .create({
+        data: {
+          tenantId,
+          origen: "shop",
+          evento: EVENTO_CAMBIO_ESTADO,
+          externoId: externoId ?? null,
+          estado,
+          errorMsg,
+          pedidoId: pedidoId ?? null,
+          payload: tryParseJson(rawBody) as Prisma.InputJsonValue,
+          ipAddress,
+        },
+      })
+      .catch(() => {});
+
+  let payload: z.infer<typeof cambioEstadoSchema>;
+  try {
+    payload = cambioEstadoSchema.parse(JSON.parse(rawBody));
+  } catch (e) {
+    await log("error", `invalid_schema: ${e instanceof Error ? e.message : "?"}`.slice(0, 500));
+    return NextResponse.json({ error: "invalid_schema" }, { status: 400 });
+  }
+
+  const pedido = await prisma.pedido.findFirst({
+    where: { tenantId, externoId: payload.numero_pedido },
+    select: { id: true, estado: true, origenExterno: true },
+  });
+
+  if (!pedido) {
+    // 404 y no 500: el pedido nunca llegó acá. Que la Shop lo registre en vez
+    // de reintentar para siempre contra algo que no existe.
+    await log("error", "pedido_inexistente", payload.numero_pedido);
+    return NextResponse.json({ error: "pedido_inexistente" }, { status: 404 });
+  }
+
+  const destino = ESTADO_SHOP_A_INVENTARIO[payload.estado_shop];
+  if (!destino) {
+    await log("ignorado", `estado_sin_mapeo: ${payload.estado_shop}`, payload.numero_pedido, pedido.id);
+    return NextResponse.json({ ok: true, ignorado: `estado_sin_mapeo:${payload.estado_shop}` });
+  }
+
+  // Reenviar el mismo estado no descuenta dos veces.
+  if (pedido.estado === destino) {
+    await log("ok", "ya_estaba", payload.numero_pedido, pedido.id);
+    return NextResponse.json({ ok: true, pedidoId: pedido.id, estado: pedido.estado, sinCambio: true });
+  }
+
+  if (ESTADOS_FINALES.has(pedido.estado)) {
+    await log("ignorado", `estado_final: ${pedido.estado}`, payload.numero_pedido, pedido.id);
+    return NextResponse.json({ ok: true, ignorado: `ya_cerrado:${pedido.estado}`, estado: pedido.estado });
+  }
+
+  const oe = (pedido.origenExterno ?? {}) as Record<string, unknown>;
+  await prisma.pedido.update({
+    where: { id: pedido.id },
+    data: {
+      estado: destino,
+      origenExterno: {
+        ...oe,
+        estado_shop: payload.estado_shop,
+        entregado_en: payload.fecha ?? null,
+        estado_actualizado_en: new Date().toISOString(),
+      } as Prisma.InputJsonValue,
+    },
+  });
+
+  // Acá deja de ser un cambio de etiqueta: COMPLETADO consume las reservas y
+  // descuenta el stock de verdad.
+  await aplicarEstadoPedido(tenantId, pedido.id, destino);
+
+  await log("ok", null, payload.numero_pedido, pedido.id);
+  return NextResponse.json({ ok: true, pedidoId: pedido.id, estado: destino, desde: pedido.estado });
+}
+
 export async function POST(request: NextRequest) {
   // 1. Leer raw body PRIMERO (sirve para verificar firma HMAC)
   const rawBody = await request.text();
@@ -165,6 +281,13 @@ export async function POST(request: NextRequest) {
       })
       .catch(() => {});
     return NextResponse.json({ error: verification.reason }, { status: 401 });
+  }
+
+  // 3b. Un cambio de estado va por otro camino: el pedido ya existe y lo único
+  //     que llega es su estado nuevo. Se bifurca antes de `payloadSchema`, que
+  //     exige el pedido entero.
+  if ((tryParseJson(rawBody) as { evento?: unknown } | null)?.evento === EVENTO_CAMBIO_ESTADO) {
+    return manejarCambioDeEstado(rawBody, tenantId, ipAddress);
   }
 
   // 4. Parsear y validar payload
