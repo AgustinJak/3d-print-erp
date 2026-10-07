@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 import { prisma } from "@/lib/prisma";
+import { altasAutomaticas } from "@/lib/altas-bodega";
 import { actualizarLiquidaciones, sincronizarOrdenes } from "@/lib/ml-lote";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -52,7 +53,24 @@ export async function GET(request: NextRequest) {
         evento: "cron_liquidaciones",
         presupuestoMs: restante(0),
       });
-      resultados.push({ tenantId, ordenes: ordenes.stats, liquidaciones: liquidaciones.stats });
+      // Un modelo nuevo de Bodega también entra por acá. Las otras dos puertas
+      // —los GET de /api/stock y /api/cambios— dependen de que alguien tenga el
+      // ERP abierto: una pieza creada a la noche se quedaba esperando hasta que
+      // alguien mirara. Acá entra sola aunque no haya nadie.
+      //
+      // `altasAutomaticas` arranca con un conteo de una sola consulta y se va
+      // enseguida cuando no hay nada pendiente, que es casi siempre.
+      const altas = await altasAutomaticas(tenantId).catch((e) => {
+        console.error("[cron/ml] altas de Bodega:", e);
+        return null;
+      });
+
+      resultados.push({
+        tenantId,
+        ordenes: ordenes.stats,
+        liquidaciones: liquidaciones.stats,
+        altasBodega: altas ? altas.creados.length + altas.mapeados.length : null,
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "error";
       resultados.push({ tenantId, error: msg });
