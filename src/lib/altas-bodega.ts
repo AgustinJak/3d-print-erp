@@ -42,9 +42,18 @@ export interface CandidatoBodega {
   tieneReceta: boolean;
   costoFab: number;
   costoInsumos: number;
-  /** Si ya hay un modelo del ERP con ese nombre, se mapea en vez de duplicar. */
+  /**
+   * Qué se haría con este modelo. Decidirlo acá y no al escribir es lo que
+   * permite mostrarlo en pantalla antes de tocar nada.
+   */
+  accion: "crear" | "enlazar" | "conflicto";
+  /** Si ya hay un modelo del ERP con ese nombre, se enlaza en vez de duplicar. */
   modeloExistenteId: string | null;
   modeloExistenteNombre: string | null;
+  /** La fila de stock suelta a la que se engancharía, si la hay. */
+  filaLibreId: string | null;
+  /** Sólo con `conflicto`: por qué no se resuelve solo. */
+  motivo: string | null;
 }
 
 export interface ResultadoAltas {
@@ -81,34 +90,77 @@ export async function candidatosDeBodega(
   if (!esDeBodega(tenantId)) return { nuevos: [], sinTraer: [], inicializado: true };
 
   const [bodega, recetas, parametros, filas, modelos, ignorados] = await Promise.all([
+    // El orden importa cuando dos piezas de Bodega se llaman igual: como una de
+    // las dos suele ser un fantasma —Bodega sube pero nunca borra—, va primero
+    // la sincronizada más recientemente, que es la que está viva en el taller.
     prisma.$queryRaw<Array<{ id: string; name: string; category: string | null }>>`
-      SELECT id, name, category FROM bodega.models ORDER BY name
+      SELECT id, name, category FROM bodega.models ORDER BY name, updated_at DESC
     `,
     leerRecetas(),
     leerParametros(),
-    prisma.stock.findMany({ where: { tenantId }, select: { bodegaModelId: true, modeloId: true } }),
+    prisma.stock.findMany({ where: { tenantId }, select: { id: true, bodegaModelId: true, modeloId: true } }),
     prisma.modelo.findMany({ where: { tenantId }, select: { id: true, nombre: true } }),
     leerSinTraer(tenantId),
   ]);
 
   const mapeados = new Set(filas.map((f) => f.bodegaModelId).filter(Boolean) as string[]);
-  const conFila = new Set(filas.map((f) => f.modeloId));
   const porNombre = new Map(modelos.map((m) => [m.nombre.trim().toLowerCase(), m]));
+  const filasPorModelo = new Map<string, typeof filas>();
+  for (const f of filas) {
+    const a = filasPorModelo.get(f.modeloId) ?? [];
+    a.push(f);
+    filasPorModelo.set(f.modeloId, a);
+  }
 
+  /**
+   * Qué hacer con un modelo de Bodega que no está mapeado.
+   *
+   * La regla dura: **si ya hay un modelo del ERP con ese nombre, no se crea
+   * otro**. Antes se creaba uno nuevo cuando el existente ya tenía fila de
+   * stock, bajo la idea de que sería otro producto que casualmente se llama
+   * igual. En la práctica pasó lo contrario: Bodega sube pero nunca borra, así
+   * que un modelo borrado allá queda arriba para siempre y vuelve a aparecer
+   * como si fuera nuevo. Eso duplicó el Collar K4os tres veces, y el bueno
+   * —con SKU, 50 unidades y 147 ventas— quedó perdido entre dos vacíos.
+   *
+   * Un duplicado silencioso es el peor resultado posible: parte el stock en
+   * dos filas y nadie se entera hasta que falta mercadería. Mejor no hacer
+   * nada y decirlo.
+   */
   const armar = (b: { id: string; name: string; category: string | null }): CandidatoBodega => {
     const r = recetas.get(b.id);
-    const existente = porNombre.get(b.name.trim().toLowerCase());
-    return {
+    const base = {
       bodegaModelId: b.id,
       nombre: b.name,
       categoria: b.category,
       tieneReceta: !!r,
       costoFab: r ? Math.round(fabricacionDeReceta(parametros, r.gramos, r.segundos)) : 0,
       costoInsumos: r?.insumos ?? 0,
-      // Sólo cuenta como "ya existe" si además no tiene fila de stock: si la
-      // tiene, es otro producto que casualmente se llama igual.
-      modeloExistenteId: existente && !conFila.has(existente.id) ? existente.id : null,
-      modeloExistenteNombre: existente && !conFila.has(existente.id) ? existente.nombre : null,
+    };
+
+    const existente = porNombre.get(b.name.trim().toLowerCase());
+    if (!existente) {
+      return { ...base, accion: "crear", modeloExistenteId: null, modeloExistenteNombre: null,
+               filaLibreId: null, motivo: null };
+    }
+
+    const suyas = filasPorModelo.get(existente.id) ?? [];
+    const libre = suyas.find((f) => !f.bodegaModelId);
+
+    // Sin filas, o con una suelta: se engancha ahí. El caso de la fila suelta
+    // es justo el del Collar, que había perdido su mapeo.
+    if (suyas.length === 0 || libre) {
+      return { ...base, accion: "enlazar", modeloExistenteId: existente.id,
+               modeloExistenteNombre: existente.nombre, filaLibreId: libre?.id ?? null, motivo: null };
+    }
+
+    return {
+      ...base,
+      accion: "conflicto",
+      modeloExistenteId: existente.id,
+      modeloExistenteNombre: existente.nombre,
+      filaLibreId: null,
+      motivo: `ya existe "${existente.nombre}" y todas sus filas de stock están enlazadas a otra pieza de Bodega`,
     };
   };
 
@@ -130,10 +182,36 @@ export async function crearDesdeBodega(tenantId: string, ids: string[]): Promise
   const { nuevos, sinTraer } = await candidatosDeBodega(tenantId);
   const porId = new Map([...nuevos, ...sinTraer].map((c) => [c.bodegaModelId, c]));
 
+  // Un nombre, un modelo del ERP: eso es lo que hay que sostener, y el plan se
+  // calculó una sola vez al principio. Si vienen dos piezas de Bodega llamadas
+  // igual, la segunda trabaja sobre una foto vieja y hace daño de tres formas
+  // distintas: le pisa el enlace a la fila que la primera acaba de tomar, le
+  // pisa la fila que la primera acaba de crear, o —si ninguna existía en el
+  // ERP— crea el duplicado que justamente estamos tratando de evitar.
+  //
+  // Se la queda la primera, que viene ordenada por sincronización más reciente
+  // y por lo tanto es la que está viva en el taller. El resto se reporta.
+  const nombresTomados = new Set<string>();
+
   for (const id of ids) {
     const c = porId.get(id);
     if (!c) {
       out.omitidos.push({ nombre: id, motivo: "ya está mapeado o no existe en Bodega" });
+      continue;
+    }
+    // Un conflicto tampoco se fuerza a mano. Acá el daño sería peor que un
+    // duplicado: el `upsert` de abajo encontraría la fila del homónimo por su
+    // clave y le pisaría el `bodegaModelId`, robándole el mapeo a la otra pieza.
+    if (c.accion === "conflicto") {
+      out.omitidos.push({ nombre: c.nombre, motivo: c.motivo ?? "conflicto de nombres" });
+      continue;
+    }
+    const nombre = c.nombre.trim().toLowerCase();
+    if (nombresTomados.has(nombre)) {
+      out.omitidos.push({
+        nombre: c.nombre,
+        motivo: "otra pieza de Bodega con el mismo nombre se quedó con ese modelo del inventario",
+      });
       continue;
     }
 
@@ -157,6 +235,17 @@ export async function crearDesdeBodega(tenantId: string, ids: string[]): Promise
           })
         ).id;
 
+      // Si hay una fila suelta de ese mismo modelo, se le engancha a ESA. Hacer
+      // upsert por clave crearía una fila nueva al lado cuando la existente
+      // tiene variantes, y el stock quedaría partido.
+      if (c.filaLibreId) {
+        const f = await tx.stock.update({
+          where: { id: c.filaLibreId },
+          data: { bodegaModelId: c.bodegaModelId },
+        });
+        return { modeloId, stockId: f.id, reusado: true };
+      }
+
       const fila = await tx.stock.upsert({
         where: { tenantId_clave: { tenantId, clave: `${modeloId}|` } },
         create: {
@@ -174,6 +263,8 @@ export async function crearDesdeBodega(tenantId: string, ids: string[]): Promise
 
       return { modeloId, stockId: fila.id, reusado: c.modeloExistenteId != null };
     });
+
+    nombresTomados.add(nombre);
 
     if (hecho.reusado) {
       out.mapeados.push({ nombre: c.nombre, modeloId: hecho.modeloId, stockId: hecho.stockId });
@@ -255,6 +346,28 @@ export async function altasAutomaticas(tenantId: string): Promise<ResultadoAltas
   }
   if (nuevos.length === 0) return { creados: [], mapeados: [], omitidos: [], inicializo: false };
 
-  const r = await crearDesdeBodega(tenantId, nuevos.map((c) => c.bodegaModelId));
-  return { ...r, inicializo: false };
+  // Los conflictos no se resuelven solos: los decide una persona. Se los marca
+  // como "no traer" para que dejen de contar como pendientes —si no, el atajo
+  // barato daría pendiente para siempre y el cálculo completo correría en cada
+  // consulta— y aparecen en la lista de revisión de Integraciones.
+  const conflictos = nuevos.filter((c) => c.accion === "conflicto");
+  if (conflictos.length > 0) {
+    await marcarSinTraer(tenantId, conflictos.map((c) => c.bodegaModelId));
+  }
+
+  const automaticos = nuevos.filter((c) => c.accion !== "conflicto");
+  if (automaticos.length === 0) {
+    return {
+      creados: [], mapeados: [],
+      omitidos: conflictos.map((c) => ({ nombre: c.nombre, motivo: c.motivo ?? "conflicto" })),
+      inicializo: false,
+    };
+  }
+
+  const r = await crearDesdeBodega(tenantId, automaticos.map((c) => c.bodegaModelId));
+  return {
+    ...r,
+    omitidos: [...r.omitidos, ...conflictos.map((c) => ({ nombre: c.nombre, motivo: c.motivo ?? "conflicto" }))],
+    inicializo: false,
+  };
 }

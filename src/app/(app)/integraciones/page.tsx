@@ -175,8 +175,11 @@ interface CandidatoBodega {
   tieneReceta: boolean;
   costoFab: number;
   costoInsumos: number;
+  accion: "crear" | "enlazar" | "conflicto";
   modeloExistenteId: string | null;
   modeloExistenteNombre: string | null;
+  filaLibreId: string | null;
+  motivo: string | null;
 }
 
 interface AltasBodega {
@@ -1309,12 +1312,20 @@ function IntegracionesContent() {
               <ul className="divide-y">
                 {altas.sinTraer.map((c) => {
                   const sel = altasSel.has(c.bodegaModelId);
+                  const trabado = c.accion === "conflicto";
                   return (
                     <li key={c.bodegaModelId} className="px-4 py-2.5">
-                      <label className="flex items-center gap-3 cursor-pointer">
+                      <label
+                        className={
+                          trabado
+                            ? "flex items-center gap-3 opacity-60"
+                            : "flex items-center gap-3 cursor-pointer"
+                        }
+                      >
                         <input
                           type="checkbox"
                           checked={sel}
+                          disabled={trabado}
                           onChange={() =>
                             setAltasSel((prev) => {
                               const s = new Set(prev);
@@ -1335,10 +1346,13 @@ function IntegracionesContent() {
                           <span className="text-sm text-muted-foreground tabular-nums">
                             {c.tieneReceta ? plata(c.costoFab + c.costoInsumos) : "sin costear en Bodega"}
                           </span>
-                          {c.modeloExistenteNombre && (
+                          {c.accion === "enlazar" && c.modeloExistenteNombre && (
                             <span className="text-xs text-sky-500">
                               se enlaza a “{c.modeloExistenteNombre}”, que ya existe
                             </span>
+                          )}
+                          {trabado && (
+                            <span className="text-xs text-amber-500">{c.motivo}</span>
                           )}
                         </div>
                       </label>
@@ -1367,9 +1381,13 @@ function IntegracionesContent() {
                   className="text-xs text-muted-foreground underline underline-offset-2 ml-1"
                   onClick={() =>
                     setAltasSel((prev) =>
-                      prev.size === altas.sinTraer.length
+                      prev.size === altas.sinTraer.filter((c) => c.accion !== "conflicto").length
                         ? new Set()
-                        : new Set(altas.sinTraer.map((c) => c.bodegaModelId))
+                        : new Set(
+                            altas.sinTraer
+                              .filter((c) => c.accion !== "conflicto")
+                              .map((c) => c.bodegaModelId)
+                          )
                     )
                   }
                 >
