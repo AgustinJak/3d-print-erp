@@ -57,6 +57,25 @@ begin
   insert into public.movimientos_stock (id, stock_id, delta, motivo, nota)
   values (v_id, p_stock_id, p_delta, p_motivo, p_nota);
 
+  -- Si esta pieza era de las que un pedido estaba esperando, ya falta menos.
+  --
+  -- Esto NO recalcula nada: el reparto de reservas es TypeScript y decide qué
+  -- pedido se lleva cada unidad. Acá sólo se resta la consecuencia aritmética
+  -- de haber producido, para que la app del celular no siga mostrando "falta 1"
+  -- justo después de que la marcaste hecha. El reparto de verdad reescribe la
+  -- foto entera en la próxima pasada del ERP.
+  --
+  -- Sólo con deltas positivos: cuánto vuelve a faltar al restar stock depende
+  -- de qué estaba reservado, y eso no se puede decidir desde acá.
+  if p_delta > 0 then
+    update public.produccion_pendiente p
+       set unidades = p.unidades - least(p_delta, p.unidades)
+     where p.stock_id = p_stock_id;
+
+    delete from public.produccion_pendiente p
+     where p.stock_id = p_stock_id and p.unidades <= 0;
+  end if;
+
   return v_cant;
 end;
 $$;
@@ -127,6 +146,66 @@ begin
 end;
 $;
 
+-- La tabla va a mano igual que las funciones: la base real quedó drifteada del
+-- schema de Prisma (timestamptz donde Prisma quiere timestamp(3), nombres de FK),
+-- así que un `db push` arrastraría ese drift entero en vez de agregar una tabla.
+create table if not exists public.produccion_pendiente (
+  stock_id       text primary key references public.stock(id) on delete cascade,
+  tenant_id      text not null default 'sendero3d',
+  unidades       integer not null,
+  pedidos        integer not null,
+  actualizado_en timestamptz not null default now()
+);
+create index if not exists produccion_pendiente_tenant_id_idx
+  on public.produccion_pendiente (tenant_id);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Qué hay que imprimir porque hay pedidos esperándolo
+--
+-- La cuenta no se hace acá: la hace el ERP en TypeScript, resolviendo qué fila
+-- de stock consume cada item según sus variantes y sumándole las recetas de
+-- funda. Esta función sólo lee la foto que deja `reasignarReservas()` en
+-- `produccion_pendiente`. Replicar esa lógica en SQL sería tener dos versiones
+-- de lo más delicado del ERP, y el día que divergen el taller imprime lo que no
+-- va.
+--
+-- Devuelve jsonb y no una tabla a propósito: hace falta poder decir CUÁNDO se
+-- calculó incluso cuando no falta nada, y una tabla vacía no puede. Sin eso,
+-- "no falta nada" y "esto nunca corrió" se ven igual en el celular.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+create or replace function public.bodega_pendiente_produccion()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select jsonb_build_object(
+    'calculado_en', (
+      select c.data->>'repartoEn' from public.config_tenant c
+       where c.tenant_id = 'sendero3d'
+    ),
+    'filas', coalesce((
+      select jsonb_agg(f order by f->>'etiqueta')
+      from (
+        select jsonb_build_object(
+                 'stock_id',        s.id,
+                 'bodega_model_id', s.bodega_model_id,
+                 'etiqueta',        coalesce(s.etiqueta, m.nombre),
+                 'unidades',        p.unidades,
+                 'pedidos',         p.pedidos,
+                 'cantidad',        s.cantidad
+               ) as f
+          from public.produccion_pendiente p
+          join public.stock  s on s.id = p.stock_id
+          join public.modelos m on m.id = s.modelo_id
+         where p.tenant_id = 'sendero3d'
+      ) q
+    ), '[]'::jsonb)
+  );
+$$;
+
 -- Permisos: sólo quien inició sesión puede llamarlas.
 revoke all on function public.bodega_mover_stock(text,int,text,text,text) from public, anon;
 grant execute on function public.bodega_mover_stock(text,int,text,text,text) to authenticated;
@@ -135,11 +214,14 @@ revoke all on function public.bodega_unidades_stock() from public, anon;
 grant execute on function public.bodega_unidades_stock() to authenticated;
 revoke all on function public.bodega_mapear_modelo(text,text) from public, anon;
 grant execute on function public.bodega_mapear_modelo(text,text) to authenticated;
+revoke all on function public.bodega_pendiente_produccion() from public, anon;
+grant execute on function public.bodega_pendiente_produccion() to authenticated;
 
 -- RLS: mismo criterio que las otras 18 tablas del ERP — activado y sin policies.
 -- Prisma se conecta como postgres y lo bypasea, así que la app no se entera.
-alter table public.stock              enable row level security;
-alter table public.movimientos_stock  enable row level security;
+alter table public.stock                 enable row level security;
+alter table public.produccion_pendiente  enable row level security;
+alter table public.movimientos_stock     enable row level security;
 alter table public.transferencias     enable row level security;
 alter table public.webhook_logs       enable row level security;
 alter table public._prisma_migrations enable row level security;

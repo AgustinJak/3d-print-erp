@@ -322,6 +322,11 @@ export async function reasignarReservas(tenantId: string): Promise<ResultadoReas
       const nuevas: Prisma.ReservaStockCreateManyInput[] = [];
       const faltantes: Faltante[] = [];
 
+      // Lo que falta, agrupado por fila de stock: la foto que lee el celular.
+      // Se arma acá y no en otra pasada porque acá es donde ya se sabe, y una
+      // segunda pasada podría contestar distinto.
+      const pendiente = new Map<string, { unidades: number; pedidos: Set<string> }>();
+
       for (const p of pedidos) {
         for (const item of p.items) {
           for (const c of componentesDeItem(item, ctx)) {
@@ -358,12 +363,30 @@ export async function reasignarReservas(tenantId: string): Promise<ResultadoReas
                 etiqueta: c.etiqueta,
                 falta: c.necesita - toma,
               });
+              const acum = pendiente.get(c.stockId) ?? { unidades: 0, pedidos: new Set<string>() };
+              acum.unidades += c.necesita - toma;
+              acum.pedidos.add(p.id);
+              pendiente.set(c.stockId, acum);
             }
           }
         }
       }
 
       if (nuevas.length > 0) await tx.reservaStock.createMany({ data: nuevas });
+
+      // Se borra y se reescribe entera: es una foto, no un registro. Si quedara
+      // una fila vieja de algo que ya se imprimió, el taller imprimiría de más.
+      await tx.produccionPendiente.deleteMany({ where: { tenantId } });
+      if (pendiente.size > 0) {
+        await tx.produccionPendiente.createMany({
+          data: [...pendiente].map(([stockId, v]) => ({
+            stockId,
+            tenantId,
+            unidades: v.unidades,
+            pedidos: v.pedidos.size,
+          })),
+        });
+      }
 
       await marcarReparto(tx, tenantId, marca?.hasta ?? null);
 
@@ -387,11 +410,19 @@ export async function reasignarReservas(tenantId: string): Promise<ResultadoReas
  */
 async function marcarReparto(tx: Tx, tenantId: string, hasta: Date | null): Promise<void> {
   const iso = (hasta ?? new Date()).toISOString();
+  // `repartoEn` es otra cosa: cuándo corrió, no hasta dónde miró. Hace falta
+  // para que el celular pueda distinguir "no falta nada" de "esto nunca se
+  // calculó", que sin fecha se ven igual: una lista vacía.
+  const ahora = new Date().toISOString();
   await tx.$executeRaw`
     INSERT INTO public.config_tenant (id, tenant_id, data)
-    VALUES (gen_random_uuid()::text, ${tenantId}, jsonb_build_object('ultimoReparto', ${iso}))
+    VALUES (
+      gen_random_uuid()::text, ${tenantId},
+      jsonb_build_object('ultimoReparto', ${iso}, 'repartoEn', ${ahora})
+    )
     ON CONFLICT (tenant_id) DO UPDATE
-      SET data = config_tenant.data || jsonb_build_object('ultimoReparto', ${iso})
+      SET data = config_tenant.data
+               || jsonb_build_object('ultimoReparto', ${iso}, 'repartoEn', ${ahora})
   `;
 }
 

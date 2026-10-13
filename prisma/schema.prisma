@@ -441,10 +441,11 @@ model Stock {
   creadoEn      DateTime @default(now()) @map("creado_en")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  modelo       Modelo            @relation(fields: [modeloId], references: [id], onDelete: Cascade)
+  modelo       Modelo               @relation(fields: [modeloId], references: [id], onDelete: Cascade)
   movimientos  MovimientoStock[]
   reservas     ReservaStock[]
   reglasInsumo ReglaInsumo[]
+  pendiente    ProduccionPendiente?
 
   @@unique([tenantId, clave])
   @@index([tenantId, modeloId])
@@ -498,6 +499,31 @@ model ReservaStock {
   @@index([pedidoId])
   @@index([stockId, estado])
   @@map("reservas_stock")
+}
+
+/// Lo que hay que imprimir porque hay pedidos esperándolo, por unidad de stock.
+///
+/// Es una **foto** que deja el reparto de reservas, no una fuente de verdad: se
+/// borra y se reescribe entera en cada `reasignarReservas()`. Existe para que
+/// la app del celular pueda verlo: `pedidos`, `reservas_stock` y `stock` tienen
+/// RLS con cero policies, y la cuenta de quién espera se hace en TypeScript
+/// resolviendo variantes y recetas de funda. Replicar eso en SQL sería tener
+/// dos versiones de la lógica más delicada del ERP.
+///
+/// No son columnas de `Stock` a propósito: `@updatedAt` movería la marca de
+/// agua que mira `reasignarSiElStockCambio` y el reparto se dispararía a sí
+/// mismo para siempre.
+model ProduccionPendiente {
+  stockId       String   @id @map("stock_id")
+  tenantId      String   @default("sendero3d") @map("tenant_id")
+  unidades      Int // piezas que faltan para cubrir lo comprometido
+  pedidos       Int // cuántos pedidos las están esperando
+  actualizadoEn DateTime @default(now()) @map("actualizado_en")
+
+  stock Stock @relation(fields: [stockId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("produccion_pendiente")
 }
 
 /// Receta: qué insumo se consume cuando un item lleva ciertas variantes.
