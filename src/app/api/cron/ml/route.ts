@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 import { prisma } from "@/lib/prisma";
+import { esBaseCaida, MENSAJE_BASE_CAIDA } from "@/lib/base-caida";
 import { altasAutomaticas } from "@/lib/altas-bodega";
 import { actualizarLiquidaciones, sincronizarOrdenes } from "@/lib/ml-lote";
 import { NextRequest, NextResponse } from "next/server";
@@ -37,7 +38,21 @@ export async function GET(request: NextRequest) {
   const restante = (reserva: number) => Math.max(3_000, 50_000 - (Date.now() - arranque) - reserva);
 
   // Una pasada por cada cuenta conectada (hoy: sendero3d).
-  const cuentas = await prisma.cuentaMercadolibre.findMany({ select: { tenantId: true } });
+  //
+  // Si la base no responde, esta es la primera consulta en enterarse. Antes la excepción se
+  // escapaba y Next contestaba 500 sin cuerpo: el aviso de GitHub decía "HTTP 500" y nada más.
+  let cuentas: Array<{ tenantId: string }>;
+  try {
+    cuentas = await prisma.cuentaMercadolibre.findMany({ select: { tenantId: true } });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (esBaseCaida(e)) {
+      // Prisma mete un fragmento de código en el mensaje: alcanza con la última línea.
+      const detalle = msg.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? "";
+      return NextResponse.json({ error: MENSAJE_BASE_CAIDA, detalle: detalle.slice(0, 300) }, { status: 503 });
+    }
+    return NextResponse.json({ error: msg.slice(0, 500) }, { status: 500 });
+  }
   const resultados: Array<Record<string, unknown>> = [];
 
   for (const { tenantId } of cuentas) {

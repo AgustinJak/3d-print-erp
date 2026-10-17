@@ -3,6 +3,12 @@
 import { useEffect, useRef } from "react";
 
 const INTERVALO_MS = 15_000;
+/**
+ * Tope de la espera cuando falla. Con la base caída cada pestaña abierta seguía preguntando
+ * cada 15 s; ahora espera el doble cada vez (15 → 30 → 60 → 120 s) y vuelve a 15 s con la
+ * primera respuesta buena.
+ */
+const ESPERA_MAXIMA_MS = 120_000;
 
 /**
  * Mantiene la pantalla al día sin F5.
@@ -28,30 +34,37 @@ export function useDatosEnVivo(recargar: () => void | Promise<void>) {
     let ultima: string | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
-    const revisar = async (forzarPrimera = false) => {
-      if (!vivo || document.visibilityState !== "visible") return;
+    let espera = INTERVALO_MS;
+
+    /** `true` si respondió, `false` si falló, `null` si no preguntó (pestaña oculta). */
+    const revisar = async (forzarPrimera = false): Promise<boolean | null> => {
+      if (!vivo || document.visibilityState !== "visible") return null;
       try {
         const res = await fetch("/api/cambios", { cache: "no-store" });
-        if (!res.ok) return;
+        if (!res.ok) return false;
         const { v } = await res.json();
         if (ultima === null) {
           // Primera lectura: sólo se guarda como referencia.
           ultima = v;
           if (forzarPrimera) await recargarRef.current();
-          return;
+          return true;
         }
         if (v !== ultima) {
           ultima = v;
           await recargarRef.current();
         }
+        return true;
       } catch {
-        // Sin internet o servidor caído: se reintenta en el próximo tick.
+        // Sin internet o servidor caído.
+        return false;
       }
     };
 
     const ciclo = async () => {
-      await revisar();
-      if (vivo) timer = setTimeout(ciclo, INTERVALO_MS);
+      const bien = await revisar();
+      if (bien === true) espera = INTERVALO_MS;
+      else if (bien === false) espera = Math.min(espera * 2, ESPERA_MAXIMA_MS);
+      if (vivo) timer = setTimeout(ciclo, espera);
     };
 
     // Al volver a la pestaña se revisa enseguida, sin esperar el intervalo.
