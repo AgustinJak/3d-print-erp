@@ -1,0 +1,64 @@
+{
+  "$schema": "../_plantillas/tasks.schema.json",
+  "featureId": "NNN-nombre-de-la-feature",
+  "epic": "E00-nombre",
+  "version": "1.0.0",
+  "status": "draft",
+  "branch": "feat/NNN-nombre-de-la-feature",
+  "baseBranch": "master",
+  "pullRequest": null,
+  "validation": {
+    "approved": false,
+    "approvedBy": null,
+    "approvedAt": null,
+    "notes": null
+  },
+  "updatedAt": "AAAA-MM-DD",
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Verbo + objeto, en una línea",
+      "description": "Qué hay que hacer y cómo se sabe que está bien. Suficiente para que alguien sin contexto la tome.",
+      "component": "database",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": ["001-tema"],
+      "acceptanceCriteria": ["CA-1 de la spec 001-tema"],
+      "files": ["src/lib/archivo.ts"],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-002",
+      "title": "Ejemplo de tarea bloqueada por un problema encontrado al hacerla",
+      "description": "Al empezar apareció un problema que hay que resolver antes: se creó TASK-002-1 y se agregó a dependencies.",
+      "component": "api",
+      "status": "blocked",
+      "origin": "plan",
+      "dependencies": ["TASK-001", "TASK-002-1"],
+      "specs": ["001-tema"],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": "Espera a TASK-002-1",
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-002-1",
+      "title": "Resolver el problema que bloquea TASK-002",
+      "description": "Qué se encontró, dónde (ruta:línea) y qué hay que hacer. El detalle de cómo se descubrió va en la bitácora.",
+      "component": "database",
+      "status": "pending",
+      "origin": "blocker",
+      "dependencies": [],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": "Creada el AAAA-MM-DD durante TASK-002. Ver bitácora."
+    }
+  ]
+}

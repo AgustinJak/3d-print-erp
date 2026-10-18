@@ -1,0 +1,544 @@
+{
+  "$schema": "../_plantillas/tasks.schema.json",
+  "featureId": "001-mapeo-de-productos",
+  "epic": null,
+  "version": "1.0.0",
+  "status": "validated",
+  "branch": "feat/001-mapeo-de-productos",
+  "baseBranch": "master",
+  "pullRequest": null,
+  "validation": {
+    "approved": true,
+    "approvedBy": "Agustín",
+    "approvedAt": "2026-10-18",
+    "notes": "Validado en el chat (\"dale go\"), con las respuestas de la spec 004 (RN-8) y la spec 006 incluidas."
+  },
+  "updatedAt": "2026-10-18",
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Crear la carpeta de SDD del inventario",
+      "description": "docs/sdd/ con README, índice y plantillas copiadas de Bodega y adaptadas al ERP (Next.js + Prisma, SQL en prisma/sql/).",
+      "component": "docs",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "docs/sdd/README.md",
+        "docs/sdd/_plantillas/"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-18",
+      "notes": null
+    },
+    {
+      "id": "TASK-002",
+      "title": "Crear combinaciones, mapeos_canal y las columnas nuevas de items_pedido",
+      "description": "prisma/sql/combinaciones.sql tal como está en el SDD técnico (aditivo, con RLS activada sin políticas) y los modelos Combinacion y MapeoCanal en schema.prisma, más combinacionId y claveCanal en ItemPedido. Se aplica en producción antes de desplegar: el código de hoy no lee nada de esto.",
+      "component": "database",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [
+        "001-combinacion-vendible",
+        "003-linea-con-combinacion",
+        "004-mapeo-por-canal"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "prisma/sql/combinaciones.sql",
+        "prisma/schema.prisma"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-003",
+      "title": "Lógica de combinaciones: clave, nombre, sufijos y SKU",
+      "description": "src/lib/combinaciones.ts: funciones puras claveDe, nombreDe, sufijosDe (CF/SF, abreviar y colisiones) y skuDe; y asegurarCombinacion(tx, tenantId, modeloId, variantes), que devuelve la existente si ya está. Pruebas con los casos reales (Bola de JOJOS, integrantes de BTS, katanas).",
+      "component": "api",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002"
+      ],
+      "specs": [
+        "001-combinacion-vendible"
+      ],
+      "acceptanceCriteria": [
+        "CA-2 de 001-combinacion-vendible",
+        "CA-5 de 001-combinacion-vendible"
+      ],
+      "files": [
+        "src/lib/combinaciones.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-004",
+      "title": "Sembrar las combinaciones del catálogo",
+      "description": "POST /api/combinaciones/sembrar: una combinación por variante activa de cada modelo activo, o una sola si no tiene variantes. Idempotente. Devuelve creadas y la lista de 'faltan datos' (modelos sin SKU).",
+      "component": "api",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-003"
+      ],
+      "specs": [
+        "001-combinacion-vendible"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 001-combinacion-vendible",
+        "CA-3 de 001-combinacion-vendible",
+        "CA-4 de 001-combinacion-vendible"
+      ],
+      "files": [
+        "src/app/api/combinaciones/sembrar/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-005",
+      "title": "Ver y crear combinaciones desde el modelo",
+      "description": "GET/POST /api/combinaciones y PATCH /api/combinaciones/[id]; sección Combinaciones en /modelos/[id] (SKU, estado, alta con sufijo editable) y contador de combinaciones sin SKU en /modelos.",
+      "component": "ui",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-004"
+      ],
+      "specs": [
+        "001-combinacion-vendible"
+      ],
+      "acceptanceCriteria": [
+        "CA-5 de 001-combinacion-vendible"
+      ],
+      "files": [
+        "src/app/api/combinaciones/route.ts",
+        "src/app/api/combinaciones/[id]/route.ts",
+        "src/app/(app)/modelos/[id]/page.tsx",
+        "src/app/(app)/modelos/page.tsx"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-006",
+      "title": "Comparar el reparto en sombra",
+      "description": "verificarReparto(tenantId) en reservas.ts y GET /api/combinaciones/verificar: para cada línea de pedido abierto, componentes por JSON contra componentes por combinación; lista cada diferencia. Sólo lee.",
+      "component": "api",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-004"
+      ],
+      "specs": [
+        "002-reparto-por-combinacion"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 002-reparto-por-combinacion",
+        "CA-2 de 002-reparto-por-combinacion"
+      ],
+      "files": [
+        "src/lib/reservas.ts",
+        "src/app/api/combinaciones/verificar/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-007",
+      "title": "Completar la combinación en las líneas existentes",
+      "description": "POST /api/combinaciones/backfill (con ?simular=1): combinacion_id por (modelo, variantes con id), y por nombre en las líneas viejas del diálogo; crea combinaciones desactivadas para modelos o variantes que ya no están. Informa con, sin y por qué. No toca modeloId, precios ni costos.",
+      "component": "database",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-004"
+      ],
+      "specs": [
+        "003-linea-con-combinacion"
+      ],
+      "acceptanceCriteria": [
+        "CA-4 de 003-linea-con-combinacion",
+        "CA-5 de 003-linea-con-combinacion"
+      ],
+      "files": [
+        "src/app/api/combinaciones/backfill/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-008",
+      "title": "El reparto lee la combinación",
+      "description": "componentesDeItem toma las variantes de la combinación cuando la línea la tiene, y cae al JSON si no. Se despliega sólo con la comparación de TASK-006 en cero.",
+      "component": "api",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-006",
+        "TASK-007"
+      ],
+      "specs": [
+        "002-reparto-por-combinacion"
+      ],
+      "acceptanceCriteria": [
+        "CA-3 de 002-reparto-por-combinacion",
+        "CA-4 de 002-reparto-por-combinacion"
+      ],
+      "files": [
+        "src/lib/reservas.ts",
+        "src/app/api/stock/route.ts",
+        "src/app/api/pedidos/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-009",
+      "title": "Elegir la combinación al cargar o editar un pedido",
+      "description": "Componente combinacion-select (busca por nombre o SKU) en el diálogo de pedido; POST /api/pedidos y PUT /api/pedidos/[id] aceptan combinacionId por línea y sacan modeloId de ella. Las líneas a medida siguen como están.",
+      "component": "ui",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-008"
+      ],
+      "specs": [
+        "003-linea-con-combinacion"
+      ],
+      "acceptanceCriteria": [
+        "CA-2 de 003-linea-con-combinacion",
+        "CA-3 de 003-linea-con-combinacion"
+      ],
+      "files": [
+        "src/components/combinacion-select.tsx",
+        "src/app/(app)/pedidos/pedido-dialog.tsx",
+        "src/app/api/pedidos/route.ts",
+        "src/app/api/pedidos/[id]/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-010",
+      "title": "Lógica del mapeo por canal",
+      "description": "src/lib/mapeo-canal.ts: claveMl, claveShop (por ids y transitoria), aplicarUnidades y resolverLinea (mapeo, resolución automática estricta, cola). Pruebas con fixtures.",
+      "component": "integration",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-003"
+      ],
+      "specs": [
+        "004-mapeo-por-canal"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/mapeo-canal.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-011",
+      "title": "Sembrar los mapeos de Mercado Libre",
+      "description": "POST /api/integraciones/mapeos/sembrar-ml: para cada publicación mapeada en publicaciones_ml, lee GET /items/{MLA} y crea una clave por variación (o una sin variación), resuelta con las variantes implícitas y los atributos. Lo que no resuelve, a la cola. Sólo lee ML.",
+      "component": "integration",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-010"
+      ],
+      "specs": [
+        "004-mapeo-por-canal"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 004-mapeo-por-canal"
+      ],
+      "files": [
+        "src/app/api/integraciones/mapeos/sembrar-ml/route.ts",
+        "src/lib/mercadolibre.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-012",
+      "title": "El sync de ML resuelve por el mapeo",
+      "description": "processMlOrderGroup arma MLA|variation_id, resuelve con resolverLinea y guarda combinacion_id y clave_canal; publicaciones_ml queda como respaldo mientras exista.",
+      "component": "integration",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-010",
+        "TASK-011",
+        "TASK-008"
+      ],
+      "specs": [
+        "004-mapeo-por-canal",
+        "003-linea-con-combinacion"
+      ],
+      "acceptanceCriteria": [
+        "CA-2 de 004-mapeo-por-canal",
+        "CA-1 de 003-linea-con-combinacion"
+      ],
+      "files": [
+        "src/lib/mercadolibre-sync.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-013",
+      "title": "Sembrar los mapeos del Shop desde su catálogo",
+      "description": "scripts/sembrar-mapeos-shop.mjs: recibe el catálogo del Shop exportado a JSON (productos activos, grupos y opciones con ids) y crea una clave por cada combinación de opciones de cada producto, resuelta con la lógica de hoy; lo dudoso, a la cola. Se corre una vez.",
+      "component": "integration",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-010",
+        "TASK-022"
+      ],
+      "specs": [
+        "004-mapeo-por-canal"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 004-mapeo-por-canal"
+      ],
+      "files": [
+        "scripts/sembrar-mapeos-shop.mjs"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": "Grupos especiales del Shop definidos en la spec 004, RN-8 (vaso y llavero BT21 comparten fila; jabonera, una por diseño; exhibidor, insumo; pack, unidades)."
+    },
+    {
+      "id": "TASK-014",
+      "title": "El webhook del Shop resuelve por el mapeo",
+      "description": "Acepta producto_id, grupo_id y opcion_id opcionales; arma la clave por ids o la transitoria; resuelve con resolverLinea, aplica unidades y guarda combinacion_id y clave_canal. Las líneas personalizado no se mapean.",
+      "component": "integration",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-010",
+        "TASK-013",
+        "TASK-008"
+      ],
+      "specs": [
+        "004-mapeo-por-canal",
+        "003-linea-con-combinacion"
+      ],
+      "acceptanceCriteria": [
+        "CA-3 de 004-mapeo-por-canal",
+        "CA-4 de 004-mapeo-por-canal",
+        "CA-5 de 004-mapeo-por-canal"
+      ],
+      "files": [
+        "src/app/api/webhook/shop/pedido/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-015",
+      "title": "Pantalla de Mapeo en Integraciones",
+      "description": "GET /api/integraciones/mapeos y PATCH /api/integraciones/mapeos/[id]; pestaña Mapeo con la cola y el listado por canal. Al mapear, completa las líneas abiertas con esa clave_canal, recalcula su costo y reparte.",
+      "component": "ui",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-010",
+        "TASK-009"
+      ],
+      "specs": [
+        "004-mapeo-por-canal"
+      ],
+      "acceptanceCriteria": [
+        "CA-5 de 004-mapeo-por-canal",
+        "CA-6 de 004-mapeo-por-canal"
+      ],
+      "files": [
+        "src/app/api/integraciones/mapeos/route.ts",
+        "src/app/api/integraciones/mapeos/[id]/route.ts",
+        "src/app/(app)/integraciones/page.tsx"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-016",
+      "title": "Pasarle la spec 005 a la sesión del Shop",
+      "description": "El Shop suma producto_id, grupo_id y opcion_id al payload (spec 005). Lo implementa su sesión; acá sólo se entrega y se verifica el primer pedido que llegue con ids.",
+      "component": "docs",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [
+        "005-cambios-en-el-shop"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 005-cambios-en-el-shop"
+      ],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-017",
+      "title": "Prueba de punta a punta en un tenant aislado",
+      "description": "Webhooks firmados contra el inventario local: venta mapeada, sin mapear, pack, katana por tamaño, y mapear la cola completa la línea abierta. Se borra todo después.",
+      "component": "test",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-012",
+        "TASK-014",
+        "TASK-015"
+      ],
+      "specs": [
+        "004-mapeo-por-canal"
+      ],
+      "acceptanceCriteria": [
+        "CA-2 de 004-mapeo-por-canal",
+        "CA-3 de 004-mapeo-por-canal",
+        "CA-4 de 004-mapeo-por-canal",
+        "CA-5 de 004-mapeo-por-canal",
+        "CA-6 de 004-mapeo-por-canal"
+      ],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-020",
+      "title": "Recetas por combinación: endpoints",
+      "description": "GET/PUT /api/combinaciones/[id]/receta, GET /api/insumos y POST /api/modelos/[id]/accesorios. La receta se guarda en reglas_insumo con requiere = variantes de la combinación; guardar reparte el stock.",
+      "component": "api",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-004"
+      ],
+      "specs": [
+        "006-recetas-desde-el-erp"
+      ],
+      "acceptanceCriteria": [
+        "CA-2 de 006-recetas-desde-el-erp"
+      ],
+      "files": [
+        "src/app/api/combinaciones/[id]/receta/route.ts",
+        "src/app/api/insumos/route.ts",
+        "src/app/api/modelos/[id]/accesorios/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-021",
+      "title": "Recetas por combinación: pantalla",
+      "description": "En /modelos/[id], cada combinación muestra pieza + insumos con su cantidad, permite elegir o cambiar el insumo, y \"Agregar accesorio\". Las combinaciones \"Con <accesorio>\" sin insumo se ven pendientes, también como contador en /modelos.",
+      "component": "ui",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-020",
+        "TASK-005"
+      ],
+      "specs": [
+        "006-recetas-desde-el-erp"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 006-recetas-desde-el-erp",
+        "CA-3 de 006-recetas-desde-el-erp",
+        "CA-4 de 006-recetas-desde-el-erp"
+      ],
+      "files": [
+        "src/app/(app)/modelos/[id]/page.tsx",
+        "src/app/(app)/modelos/page.tsx"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-022",
+      "title": "Completar el catálogo del ERP con lo que vende el Shop",
+      "description": "Trabajo de datos con Agustín, usando las pantallas nuevas: los 21 productos del Shop sin par en el ERP (auditoría de SKUs), los 15 diseños de la jabonera como variantes que afectan stock (con su fila y su pieza de Bodega), el exhibidor de la Kitetsu como insumo, y los integrantes y personajes que comparten fila.",
+      "component": "database",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-021"
+      ],
+      "specs": [
+        "004-mapeo-por-canal",
+        "006-recetas-desde-el-erp"
+      ],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": "Va antes de sembrar el mapeo del Shop (TASK-013) para que la cola arranque casi vacía."
+    },
+    {
+      "id": "TASK-018",
+      "title": "Actualizar el cerebro",
+      "description": "INV - Flujos, Flujos del ecosistema (contratos 1 y 2), INV - Integración Mercado Libre, INV - Integración Sendero Shop, INV - Modelos, INV - Changelog, INV - Decisiones, Mapeo de productos y Convención de SKU. Validar los mermaid.",
+      "component": "docs",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-017"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-019",
+      "title": "Retirar el parche de tamaño del webhook del Shop",
+      "description": "Cuando todas las claves del Shop de katanas estén mapeadas, resolverModeloPorTamano deja de hacer falta (spec 004, RN-7). Se saca en un commit aparte.",
+      "component": "integration",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-014"
+      ],
+      "specs": [
+        "004-mapeo-por-canal"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/app/api/webhook/shop/pedido/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    }
+  ]
+}

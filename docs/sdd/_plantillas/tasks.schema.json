@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "tasks.json de una feature del Inventario",
+  "type": "object",
+  "required": ["featureId", "version", "status", "branch", "baseBranch", "validation", "updatedAt", "tasks"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "featureId": { "type": "string", "pattern": "^[0-9]{3}-[a-z0-9-]+$" },
+    "epic": { "type": ["string", "null"] },
+    "version": { "type": "string", "description": "Semver. Minor al agregar tareas, major si cambia el alcance validado (requiere nueva validación)." },
+    "status": { "enum": ["draft", "validated", "in-progress", "blocked", "in-review", "done", "discarded"] },
+    "branch": { "type": "string" },
+    "baseBranch": { "type": "string" },
+    "pullRequest": { "type": ["string", "null"], "description": "URL del PR cuando exista." },
+    "validation": {
+      "type": "object",
+      "required": ["approved", "approvedBy", "approvedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "approved": { "type": "boolean" },
+        "approvedBy": { "type": ["string", "null"] },
+        "approvedAt": { "type": ["string", "null"] },
+        "notes": { "type": ["string", "null"] }
+      }
+    },
+    "updatedAt": { "type": "string" },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "description", "component", "status", "origin", "dependencies"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^TASK-[0-9]{3}(-[0-9]+)*$", "description": "TASK-001; un bloqueante de TASK-001 es TASK-001-1, uno de ese es TASK-001-1-1." },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "component": { "enum": ["database", "api", "ui", "auth", "permissions", "integration", "cron", "test", "docs", "infra"] },
+          "status": { "enum": ["pending", "in-progress", "blocked", "completed", "discarded"] },
+          "origin": { "enum": ["plan", "blocker", "tech-debt", "review"], "description": "plan = salió del SDD; blocker = apareció al hacer otra; tech-debt = viene de una DT; review = la pidió el review del PR." },
+          "dependencies": { "type": "array", "items": { "type": "string" } },
+          "specs": { "type": "array", "items": { "type": "string" } },
+          "acceptanceCriteria": { "type": "array", "items": { "type": "string" } },
+          "files": { "type": "array", "items": { "type": "string" } },
+          "techDebt": { "type": ["string", "null"], "description": "ID de la DT si origin = tech-debt (ej. DT-003)." },
+          "blockedReason": { "type": ["string", "null"] },
+          "completedAt": { "type": ["string", "null"] },
+          "notes": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}
