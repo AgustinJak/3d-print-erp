@@ -43,12 +43,26 @@ interface Categoria {
   nombre: string;
 }
 
+/** Lo que se vende (docs/sdd/001): cada línea elige una de estas. */
+interface CombinacionOpcion {
+  id: string;
+  modeloId: string;
+  variantes: string[];
+  sku: string | null;
+  nombre: string;
+  activo: boolean;
+}
+
 interface Cliente {
   id: string;
   nombre: string;
 }
 
 interface ItemForm {
+  /** La combinación elegida. Define el modelo y las variantes de la línea. */
+  combinacionId: string;
+  /** Texto para filtrar la lista de combinaciones por nombre o SKU. */
+  buscar: string;
   modeloId: string;
   cantidad: string;
   precioUnitario: string;
@@ -91,10 +105,14 @@ interface PedidoData {
     costoUnitario: number;
     ajusteManual: number;
     variantesInfo?: unknown;
+    combinacionId?: string | null;
+    combinacion?: { modeloId: string; variantes: string[]; sku: string | null; nombre: string } | null;
   }[];
 }
 
 const emptyItem: ItemForm = {
+  combinacionId: "",
+  buscar: "",
   modeloId: "",
   cantidad: "1",
   precioUnitario: "",
@@ -113,6 +131,7 @@ interface Props {
 
 export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
   const [modelos, setModelos] = useState<Modelo[]>([]);
+  const [combinaciones, setCombinaciones] = useState<CombinacionOpcion[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(false);
@@ -135,12 +154,14 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
   const [items, setItems] = useState<ItemForm[]>([{ ...emptyItem }]);
 
   const fetchData = useCallback(async () => {
-    const [modRes, catRes, cliRes] = await Promise.all([
+    const [modRes, combRes, catRes, cliRes] = await Promise.all([
       fetch("/api/modelos"),
+      fetch("/api/combinaciones"),
       fetch("/api/categorias"),
       fetch("/api/clientes"),
     ]);
     setModelos(await modRes.json());
+    setCombinaciones(combRes.ok ? await combRes.json() : []);
     setCategorias(await catRes.json());
     setClientes(await cliRes.json());
   }, []);
@@ -168,6 +189,8 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
       setIdMercadolibre(pedido.idMercadolibre || "");
       setItems(
         pedido.items.map((i) => ({
+          combinacionId: i.combinacionId ?? "",
+          buscar: "",
           modeloId: i.modeloId ?? "",
           cantidad: i.cantidad.toString(),
           precioUnitario: i.precioUnitario.toString(),
@@ -207,12 +230,13 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
     setItems((prev) =>
       prev.map((item, idx) => {
         const pedidoItem = pedido.items[idx];
-        if (!pedidoItem?.variantesInfo) return item;
         if (item.variantesSeleccionadas.length > 0) return item;
         const modelo = modelos.find(m => m.id === item.modeloId);
         if (!modelo) return item;
-        // Por id, y por nombre sólo en las líneas viejas que no lo guardaron.
-        const seleccionadas = variantesElegidas(pedidoItem.variantesInfo, modelo.variantes);
+        // Las de su combinación; si no tiene, por id, y por nombre sólo en las
+        // líneas viejas que no lo guardaron.
+        const seleccionadas =
+          pedidoItem?.combinacion?.variantes ?? variantesElegidas(pedidoItem?.variantesInfo, modelo.variantes);
         return seleccionadas.length > 0 ? { ...item, variantesSeleccionadas: seleccionadas } : item;
       })
     );
@@ -241,6 +265,7 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
         const modelo = modelos.find((m) => m.id === currentModeloId);
         const belongsToCategory = modelo?.categorias.some((c) => c.categoria.id === value);
         if (!belongsToCategory) {
+          updated[idx].combinacionId = "";
           updated[idx].modeloId = "";
           updated[idx].precioUnitario = "";
           updated[idx].costoUnitario = "";
@@ -321,6 +346,7 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
             ? original
             : [];
         return {
+          combinacionId: i.combinacionId || null,
           modeloId: i.modeloId,
           cantidad: parseInt(i.cantidad) || 1,
           precioUnitario: parsePrice(i.precioUnitario),
@@ -343,37 +369,53 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
     onSaved();
   };
 
-  const modelosFiltrados = (categoriaId: string) => {
-    const activos = modelos.filter((m) => m.activo);
-    if (!categoriaId) return activos;
-    return activos.filter((m) =>
-      m.categorias.some((c) => c.categoria.id === categoriaId)
-    );
+  /**
+   * Las combinaciones que se pueden elegir en una línea: las activas, más la que
+   * ya tenía la línea aunque esté desactivada (una venta vieja tiene que poder
+   * abrirse y guardarse sin cambiar de producto).
+   */
+  const combinacionesDeLinea = (idx: number) => {
+    const actual = pedido?.items[idx];
+    const lista = [...combinaciones];
+    if (actual?.combinacionId && actual.combinacion && !lista.some((c) => c.id === actual.combinacionId)) {
+      lista.push({ id: actual.combinacionId, ...actual.combinacion, activo: false });
+    }
+    const item = items[idx];
+    const q = item.buscar.trim().toLowerCase();
+    return lista.filter((c) => {
+      if (c.id === item.combinacionId) return true;
+      if (item.categoriaFiltro) {
+        const modelo = modelos.find((m) => m.id === c.modeloId);
+        if (!modelo?.categorias.some((x) => x.categoria.id === item.categoriaFiltro)) return false;
+      }
+      return !q || c.nombre.toLowerCase().includes(q) || (c.sku ?? "").toLowerCase().includes(q);
+    });
   };
 
-  const toggleVariante = (itemIdx: number, varianteId: string) => {
+  /**
+   * Elegir el producto de la línea. El precio y el costo se calculan como
+   * siempre: el del modelo más los adicionales de sus variantes.
+   */
+  const elegirCombinacion = (idx: number, combinacionId: string) => {
     const updated = [...items];
-    const current = updated[itemIdx].variantesSeleccionadas;
-    if (current.includes(varianteId)) {
-      updated[itemIdx] = { ...updated[itemIdx], variantesSeleccionadas: current.filter(id => id !== varianteId) };
-    } else {
-      updated[itemIdx] = { ...updated[itemIdx], variantesSeleccionadas: [...current, varianteId] };
+    const comb = combinacionesDeLinea(idx).find((c) => c.id === combinacionId);
+    const modelo = comb ? modelos.find((m) => m.id === comb.modeloId) : undefined;
+    if (!comb || !modelo) {
+      updated[idx] = { ...updated[idx], combinacionId: "", modeloId: "", variantesSeleccionadas: [] };
+      setItems(updated);
+      return;
     }
-    // Recalculate price and cost with variants
-    const modelo = modelos.find(m => m.id === updated[itemIdx].modeloId);
-    if (modelo) {
-      const selectedVariants = updated[itemIdx].variantesSeleccionadas;
-      const variantPriceExtra = selectedVariants.reduce((sum, vid) => {
-        const v = modelo.variantes?.find(v => v.id === vid);
-        return sum + (v?.precioAdicional || 0);
-      }, 0);
-      const variantCostExtra = selectedVariants.reduce((sum, vid) => {
-        const v = modelo.variantes?.find(v => v.id === vid);
-        return sum + (v?.costoFabAdicional || 0);
-      }, 0);
-      updated[itemIdx].precioUnitario = (modelo.precioVenta + variantPriceExtra).toString();
-      updated[itemIdx].costoUnitario = (modelo.costoFab + variantCostExtra).toString();
-    }
+    const variantes = comb.variantes
+      .map((vid) => modelo.variantes.find((v) => v.id === vid))
+      .filter((v): v is Variante => Boolean(v));
+    updated[idx] = {
+      ...updated[idx],
+      combinacionId: comb.id,
+      modeloId: comb.modeloId,
+      variantesSeleccionadas: comb.variantes,
+      precioUnitario: (modelo.precioVenta + variantes.reduce((s, v) => s + (v.precioAdicional || 0), 0)).toString(),
+      costoUnitario: (modelo.costoFab + variantes.reduce((s, v) => s + (v.costoFabAdicional || 0), 0)).toString(),
+    };
     setItems(updated);
   };
 
@@ -618,69 +660,41 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
                     </Select>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-sm">Modelo <span className="text-destructive">*</span></Label>
-                    <Select
-                      value={item.modeloId || "placeholder"}
-                      onValueChange={(v) => updateItem(idx, "modeloId", v === "placeholder" ? "" : (v ?? ""))}
+                    <Label className="text-sm">Buscar</Label>
+                    <Input
+                      value={item.buscar}
+                      placeholder="Nombre o SKU"
+                      onChange={(e) => {
+                        const updated = [...items];
+                        updated[idx] = { ...item, buscar: e.target.value };
+                        setItems(updated);
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1 col-span-2">
+                    <Label className="text-sm">Producto <span className="text-destructive">*</span></Label>
+                    {/* Una combinación: el modelo con su funda, color o integrante (docs/sdd/001). */}
+                    <select
+                      value={item.combinacionId}
+                      onChange={(e) => elegirCombinacion(idx, e.target.value)}
+                      className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     >
-                      <SelectTrigger>
-                        <span className="truncate">
-                          {item.modeloId
-                            ? modelos.find((m) => m.id === item.modeloId)?.nombre ?? "..."
-                            : "Seleccionar"}
-                        </span>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="placeholder" disabled>Seleccionar</SelectItem>
-                        {modelosFiltrados(item.categoriaFiltro).map((m) => (
-                          <SelectItem key={m.id} value={m.id}>{m.nombre}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      <option value="">
+                        {item.modeloId && !item.combinacionId
+                          ? `${modelos.find((m) => m.id === item.modeloId)?.nombre ?? "…"} (elegí la combinación)`
+                          : "Seleccionar"}
+                      </option>
+                      {combinacionesDeLinea(idx).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nombre}
+                          {c.sku ? ` · ${c.sku}` : ""}
+                          {c.activo ? "" : " (desactivada)"}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 )}
-                {/* Variantes */}
-                {item.modeloId && (() => {
-                  const modelo = modelos.find(m => m.id === item.modeloId);
-                  if (!modelo?.variantes?.length) return null;
-                  return (
-                    <div className="space-y-1.5">
-                      <Label className="text-sm">Variantes</Label>
-                      <div className="flex flex-wrap gap-2">
-                        {modelo.variantes.map((v) => {
-                          const selected = item.variantesSeleccionadas.includes(v.id);
-                          return (
-                            <button
-                              key={v.id}
-                              type="button"
-                              onClick={() => toggleVariante(idx, v.id)}
-                              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition-colors ${
-                                selected
-                                  ? "border-primary bg-primary/10 text-primary font-medium"
-                                  : "border-border bg-background hover:bg-muted"
-                              }`}
-                            >
-                              <span className={`h-3.5 w-3.5 rounded border flex items-center justify-center text-xs ${
-                                selected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/30"
-                              }`}>
-                                {selected && "\u2713"}
-                              </span>
-                              {v.nombre}
-                              {(v.precioAdicional > 0 || v.costoFabAdicional > 0) && (
-                                <span className="text-muted-foreground text-xs">
-                                  {v.precioAdicional > 0 && `+$${v.precioAdicional.toLocaleString("es-AR")}`}
-                                  {v.precioAdicional > 0 && v.costoFabAdicional > 0 && " · "}
-                                  {v.costoFabAdicional > 0 && `costo +$${v.costoFabAdicional.toLocaleString("es-AR")}`}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="space-y-1">
                     <Label className="text-sm">Cantidad</Label>

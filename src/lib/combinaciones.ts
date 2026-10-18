@@ -331,3 +331,19 @@ export async function completarCombinacionesDeLineas(
   }
   return out;
 }
+
+/**
+ * Las combinaciones de estos ids que son del tenant, para validar lo que manda el
+ * diálogo de pedido (spec 003). Un id ajeno o inventado no está en el mapa: la
+ * línea se guarda sin combinación, como antes.
+ */
+export async function combinacionesPorId(
+  db: Db,
+  tenantId: string,
+  ids: Array<string | null | undefined>
+): Promise<Map<string, { modeloId: string }>> {
+  const validos = [...new Set(ids.filter((x): x is string => typeof x === "string" && x.length > 0))];
+  if (validos.length === 0) return new Map();
+  const cs = await db.combinacion.findMany({ where: { tenantId, id: { in: validos } }, select: { id: true, modeloId: true } });
+  return new Map(cs.map((c) => [c.id, { modeloId: c.modeloId }]));
+}

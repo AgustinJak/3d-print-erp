@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
 import { costoModelo } from "@/lib/costos";
+import { combinacionesPorId } from "@/lib/combinaciones";
 import { coberturaDePedidos, reasignarReservas, reasignarSiElStockCambio } from "@/lib/reservas";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
@@ -67,9 +68,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     // Resolve pricing from Modelo when not explicitly provided
+    // La línea es una combinación vendible (docs/sdd/001): si viene, el modelo sale de ella.
+    const combinaciones = await combinacionesPorId(
+      prisma,
+      tenantId,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (body.items || []).map((i: any) => i.combinacionId)
+    );
+
     const itemsData = await Promise.all(
       (body.items || []).map(async (item: {
         modeloId: string | null;
+        combinacionId?: string | null;
         descripcion?: string | null;
         cantidad?: number;
         precioUnitario?: number;
@@ -94,7 +104,9 @@ export async function POST(request: NextRequest) {
 
         return {
           // Sin modelo = pieza a medida: se guarda con su descripción.
-          modeloId: item.modeloId || null,
+          combinacionId: item.combinacionId && combinaciones.has(item.combinacionId) ? item.combinacionId : null,
+          modeloId:
+            (item.combinacionId && combinaciones.get(item.combinacionId)?.modeloId) || item.modeloId || null,
           descripcion: item.modeloId ? null : item.descripcion?.trim() || "Pieza a medida",
           cantidad: item.cantidad || 1,
           precioUnitario: parseFloat(String(precioUnitario ?? 0)),
