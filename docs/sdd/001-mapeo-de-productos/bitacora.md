@@ -63,3 +63,39 @@ Si un problema puede volver a pasar en **otra** feature, además de anotarlo ac�
 
 **Problemas y cómo se resolvieron**
 - *La spec 006 decía "7 fundas".* Son 10 según la base; el número venía de una nota de agosto.
+
+## 2026-10-18 · Claude (sesión del inventario) — primera mitad: combinaciones, recetas, reparto y diálogo
+
+**Tareas:** TASK-002 a TASK-009, TASK-020 y TASK-021 (pending → completed). Rama
+`feat/001-mapeo-de-productos`, commits `3df17f7`, `c9d6b57`, `a74802f`. Sin desplegar.
+
+**Qué se hizo**
+- Tablas `combinaciones` y `mapeos_canal`, y `items_pedido.combinacion_id` / `clave_canal`,
+  aplicadas en producción (aditivo).
+- Siembra: 137 combinaciones, 118 con SKU. Backfill: 1.007 de 1.008 líneas con combinación, 87
+  combinaciones históricas. Ningún número cambió.
+- Modo sombra en cero (32 de 32 líneas abiertas) y el reparto pasó a leer la combinación (`auto`).
+  Comparado contra el reparto real: mismas 31 reservas y mismo "Faltan".
+- Recetas desde el modelo: "Agregar accesorio" y el selector de insumo. Probado con escritura en
+  un tenant aislado.
+- El diálogo de pedido elige una combinación; la API la valida contra el tenant.
+
+**Problemas y cómo se resolvieron**
+- *Una katana de ML vendida sin decir si llevaba funda* (Sanemi 95, pedido abierto) no tenía
+  combinación: la siembra crea una por variante, no "el modelo solo" cuando hay variantes. El
+  backfill la crea como registro, **desactivada**: de acá en adelante cada venta tiene que decir
+  con o sin. Esa publicación es justo lo que va a mostrar la cola de mapeo.
+- *La siembra y el backfill desde la PC tardan minutos*: cada combinación son varias consultas en
+  serie contra us-east-2. Desde Vercel (mismo datacenter) es otra cosa. Para una vez, no vale
+  optimizarlo.
+- *esbuild no sirve para correr `reservas.ts`*: empaqueta el cliente de Prisma y se rompe la
+  búsqueda del motor. Los scripts del SDD van con `npx tsx --env-file=.env`, que respeta los alias.
+- *El bloque de variantes del diálogo no se pudo reemplazar con Edit*: el original tiene `"✓"`
+  escrito así en el código. Se reemplazó por rango de líneas con un script.
+- *Las 10 fundas tienen stock 0 y 8 no tienen costo de Bodega*. No es un bug: falta el conteo
+  físico y la receta de Bodega de esas piezas. Sin costo, guardar la receta no toca el adicional.
+
+**Para el que sigue**
+- Las pantallas (modelo y diálogo) no se vieron en el navegador: piden sesión. Verificar con
+  Agustín.
+- Falta la mitad de los canales: TASK-010 a TASK-019 y TASK-022.

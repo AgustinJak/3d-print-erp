@@ -3,7 +3,7 @@
   "featureId": "001-mapeo-de-productos",
   "epic": null,
   "version": "1.0.0",
-  "status": "validated",
+  "status": "in-progress",
   "branch": "feat/001-mapeo-de-productos",
   "baseBranch": "master",
   "pullRequest": null,
@@ -38,7 +38,7 @@
       "title": "Crear combinaciones, mapeos_canal y las columnas nuevas de items_pedido",
       "description": "prisma/sql/combinaciones.sql tal como está en el SDD técnico (aditivo, con RLS activada sin políticas) y los modelos Combinacion y MapeoCanal en schema.prisma, más combinacionId y claveCanal en ItemPedido. Se aplica en producción antes de desplegar: el código de hoy no lee nada de esto.",
       "component": "database",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [],
       "specs": [
@@ -52,15 +52,15 @@
         "prisma/schema.prisma"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-18",
+      "notes": "Aplicado en producción el 2026-10-18 (apply_migration combinaciones_y_mapeos_canal)."
     },
     {
       "id": "TASK-003",
       "title": "Lógica de combinaciones: clave, nombre, sufijos y SKU",
       "description": "src/lib/combinaciones.ts: funciones puras claveDe, nombreDe, sufijosDe (CF/SF, abreviar y colisiones) y skuDe; y asegurarCombinacion(tx, tenantId, modeloId, variantes), que devuelve la existente si ya está. Pruebas con los casos reales (Bola de JOJOS, integrantes de BTS, katanas).",
       "component": "api",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-002"
@@ -76,15 +76,15 @@
         "src/lib/combinaciones.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-18",
+      "notes": "Pruebas puras con los casos reales: JOJOS VER/VERD, NUBE, BTS, Con/Sin Exhibidor → CE/SE."
     },
     {
       "id": "TASK-004",
       "title": "Sembrar las combinaciones del catálogo",
       "description": "POST /api/combinaciones/sembrar: una combinación por variante activa de cada modelo activo, o una sola si no tiene variantes. Idempotente. Devuelve creadas y la lista de 'faltan datos' (modelos sin SKU).",
       "component": "api",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-003"
@@ -101,15 +101,15 @@
         "src/app/api/combinaciones/sembrar/route.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-18",
+      "notes": "Siembra real: 137 combinaciones (118 con SKU; 11 modelos sin SKU). Segunda vuelta: 0 creadas."
     },
     {
       "id": "TASK-005",
       "title": "Ver y crear combinaciones desde el modelo",
       "description": "GET/POST /api/combinaciones y PATCH /api/combinaciones/[id]; sección Combinaciones en /modelos/[id] (SKU, estado, alta con sufijo editable) y contador de combinaciones sin SKU en /modelos.",
       "component": "ui",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-004"
@@ -127,7 +127,7 @@
         "src/app/(app)/modelos/page.tsx"
       ],
       "blockedReason": null,
-      "completedAt": null,
+      "completedAt": "2026-10-18",
       "notes": null
     },
     {
@@ -135,7 +135,7 @@
       "title": "Comparar el reparto en sombra",
       "description": "verificarReparto(tenantId) en reservas.ts y GET /api/combinaciones/verificar: para cada línea de pedido abierto, componentes por JSON contra componentes por combinación; lista cada diferencia. Sólo lee.",
       "component": "api",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-004"
@@ -152,15 +152,15 @@
         "src/app/api/combinaciones/verificar/route.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-18",
+      "notes": "31 de 31 líneas abiertas iguales antes del backfill; 32 de 32 después. Script: scripts/sdd-001-verificar.ts."
     },
     {
       "id": "TASK-007",
       "title": "Completar la combinación en las líneas existentes",
       "description": "POST /api/combinaciones/backfill (con ?simular=1): combinacion_id por (modelo, variantes con id), y por nombre en las líneas viejas del diálogo; crea combinaciones desactivadas para modelos o variantes que ya no están. Informa con, sin y por qué. No toca modeloId, precios ni costos.",
       "component": "database",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-004"
@@ -176,15 +176,15 @@
         "src/app/api/combinaciones/backfill/route.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-18",
+      "notes": "1.007 de 1.008 líneas con combinación; 87 combinaciones históricas creadas. Huella de modelo/cantidad/precio/costo/JSON idéntica antes y después."
     },
     {
       "id": "TASK-008",
       "title": "El reparto lee la combinación",
       "description": "componentesDeItem toma las variantes de la combinación cuando la línea la tiene, y cae al JSON si no. Se despliega sólo con la comparación de TASK-006 en cero.",
       "component": "api",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-006",
@@ -203,15 +203,15 @@
         "src/app/api/pedidos/route.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-18",
+      "notes": "Comparado contra el reparto real: mismas 31 reservas y mismo Faltan (scripts/sdd-001-comparar-reparto.ts)."
     },
     {
       "id": "TASK-009",
       "title": "Elegir la combinación al cargar o editar un pedido",
       "description": "Componente combinacion-select (busca por nombre o SKU) en el diálogo de pedido; POST /api/pedidos y PUT /api/pedidos/[id] aceptan combinacionId por línea y sacan modeloId de ella. Las líneas a medida siguen como están.",
       "component": "ui",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-008"
@@ -230,8 +230,8 @@
         "src/app/api/pedidos/[id]/route.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-18",
+      "notes": "Sin verificar en el navegador: la pantalla pide sesión. Verificado con tsc y lint."
     },
     {
       "id": "TASK-010",
@@ -435,7 +435,7 @@
       "title": "Recetas por combinación: endpoints",
       "description": "GET/PUT /api/combinaciones/[id]/receta, GET /api/insumos y POST /api/modelos/[id]/accesorios. La receta se guarda en reglas_insumo con requiere = variantes de la combinación; guardar reparte el stock.",
       "component": "api",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-004"
@@ -452,7 +452,7 @@
         "src/app/api/modelos/[id]/accesorios/route.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
+      "completedAt": "2026-10-18",
       "notes": null
     },
     {
@@ -460,7 +460,7 @@
       "title": "Recetas por combinación: pantalla",
       "description": "En /modelos/[id], cada combinación muestra pieza + insumos con su cantidad, permite elegir o cambiar el insumo, y \"Agregar accesorio\". Las combinaciones \"Con <accesorio>\" sin insumo se ven pendientes, también como contador en /modelos.",
       "component": "ui",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-020",
@@ -479,8 +479,8 @@
         "src/app/(app)/modelos/page.tsx"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-18",
+      "notes": "Probado de punta a punta en un tenant aislado (scripts/sdd-001-probar-recetas.ts). La pantalla, sin verificar en el navegador: pide sesión."
     },
     {
       "id": "TASK-022",
