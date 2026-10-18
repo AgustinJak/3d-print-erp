@@ -99,3 +99,23 @@ Si un problema puede volver a pasar en **otra** feature, además de anotarlo ac�
 - Las pantallas (modelo y diálogo) no se vieron en el navegador: piden sesión. Verificar con
   Agustín.
 - Falta la mitad de los canales: TASK-010 a TASK-019 y TASK-022.
+
+## 2026-10-18 · Claude (sesión del inventario) — deploy de la primera mitad y un hueco que dejó
+
+**Qué pasó**
+- Desplegado a producción (`60980f6`), con aprobación de Agustín.
+- Mirando el formulario de edición de un modelo, apareció un hueco: **un modelo creado después del
+  deploy no recibía combinación** (ni desde el formulario ni desde el alta automática de Bodega),
+  así que no se podía elegir en el diálogo de pedido, que ahora sólo lista combinaciones. Y borrar
+  o renombrar una variante dejaba combinaciones y recetas apuntando a un id que ya no existe.
+
+**Cómo se resolvió**
+- `sembrarCombinacionesDeModelo` en el alta (`POST /api/modelos`, `altas-bodega.ts`) y en la
+  edición (`PUT /api/modelos/[id]`); `soltarVariantesBorradas` desactiva las combinaciones de una
+  variante borrada y borra sus recetas. Sin variantes, "el modelo solo" se reactiva.
+- Probado en un tenant aislado (`scripts/sdd-001-probar-modelos.ts`, 9 de 9). En producción no
+  llegó a crearse ningún modelo sin combinación entre el deploy y el arreglo.
+
+**Para el que sigue**
+- El formulario de edición sigue dejando cargar a mano el "+$ costo" de "Con Funda". Si la funda
+  tiene costo de Bodega, guardar la receta lo pisa con el costo real (spec 006, RN-4).

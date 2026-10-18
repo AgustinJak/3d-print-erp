@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
 import { asegurarFilasDeStock } from "@/lib/stock-filas";
+import { sembrarCombinacionesDeModelo, soltarVariantesBorradas } from "@/lib/combinaciones";
 import { parsePrice } from "@/lib/utils";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
@@ -98,6 +99,10 @@ export async function PUT(
         const idsBorrados = actuales.filter((v) => !conservados.has(v.id)).map((v) => v.id);
         if (idsBorrados.length > 0) {
           await tx.varianteModelo.deleteMany({ where: { id: { in: idsBorrados } } });
+          // Las combinaciones y recetas que las usaban (docs/sdd/001). Renombrar una
+          // variante cuenta como borrarla y crear otra: su combinación vieja queda
+          // desactivada y la nueva se crea abajo.
+          await soltarVariantesBorradas(tx, tenantId, id, idsBorrados);
           const pubs = await tx.publicacionMl.findMany({
             where: { tenantId, modeloId: id, variantesImplicitas: { hasSome: idsBorrados } },
             select: { id: true, variantesImplicitas: true },
@@ -142,6 +147,8 @@ export async function PUT(
     // Si se reactivó, o le aparecieron variantes que definen piezas distintas,
     // tiene que tener su fila en /stock. No pisa lo que ya existe.
     await asegurarFilasDeStock(tenantId, id);
+    // Y una combinación por cada variante nueva, o la del modelo solo.
+    await sembrarCombinacionesDeModelo(prisma, tenantId, id);
 
     return NextResponse.json(modelo);
   } catch (e) {

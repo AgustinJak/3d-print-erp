@@ -347,3 +347,43 @@ export async function combinacionesPorId(
   const cs = await db.combinacion.findMany({ where: { tenantId, id: { in: validos } }, select: { id: true, modeloId: true } });
   return new Map(cs.map((c) => [c.id, { modeloId: c.modeloId }]));
 }
+
+/**
+ * Las combinaciones de un solo modelo, con la misma regla que la siembra: una por
+ * variante activa, o una sola si no tiene variantes. Idempotente.
+ *
+ * La llaman el alta de un modelo (formulario y alta automática de Bodega) y su
+ * edición: sin esto, un modelo nuevo no tendría combinación y no se podría elegir
+ * en un pedido.
+ */
+export async function sembrarCombinacionesDeModelo(db: Db, tenantId: string, modeloId: string): Promise<number> {
+  const m = await db.modelo.findFirst({
+    where: { id: modeloId, tenantId, activo: true, consolidadoEnId: null },
+    select: { variantes: { where: { activo: true }, select: { id: true } } },
+  });
+  if (!m) return 0;
+  const grupos = m.variantes.length === 0 ? [[]] : m.variantes.map((v) => [v.id]);
+  let creadas = 0;
+  for (const ids of grupos) {
+    const c = await asegurarCombinacion(db, tenantId, modeloId, ids);
+    if (c.creada) creadas++;
+    // Sin variantes, "el modelo solo" vuelve a ser lo que se vende aunque "Agregar
+    // accesorio" lo haya desactivado antes.
+    else if (ids.length === 0) await db.combinacion.update({ where: { id: c.id }, data: { activo: true } });
+  }
+  return creadas;
+}
+
+/**
+ * Variantes que se borraron de un modelo: las combinaciones que las usaban quedan
+ * desactivadas (son historia de lo que se vendió) y las recetas que las pedían se
+ * borran, porque ya no pueden aplicar a nada.
+ */
+export async function soltarVariantesBorradas(db: Db, tenantId: string, modeloId: string, ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await db.combinacion.updateMany({
+    where: { tenantId, modeloId, variantes: { hasSome: ids } },
+    data: { activo: false },
+  });
+  await db.reglaInsumo.deleteMany({ where: { tenantId, modeloId, requiere: { hasSome: ids } } });
+}

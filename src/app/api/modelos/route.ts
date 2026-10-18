@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
 import { asegurarFilasDeStock } from "@/lib/stock-filas";
+import { sembrarCombinacionesDeModelo } from "@/lib/combinaciones";
 import { parsePrice } from "@/lib/utils";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
@@ -90,6 +91,8 @@ export async function POST(request: NextRequest) {
     // Que aparezca en /stock desde el día uno: si no, queda publicado pero
     // invisible, y no se puede ni contar ni reservar.
     await asegurarFilasDeStock(tenantId, modelo.id);
+    // Y su combinación vendible, para poder elegirlo en un pedido (docs/sdd/001).
+    await sembrarCombinacionesDeModelo(prisma, tenantId, modelo.id);
 
     return NextResponse.json(modelo, { status: 201 });
   } catch (e) {

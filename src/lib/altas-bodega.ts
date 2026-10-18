@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { sembrarCombinacionesDeModelo } from "@/lib/combinaciones";
 import { fabricacionDeReceta, leerParametros, leerRecetas } from "@/lib/costos-bodega";
 
 /**
@@ -265,6 +266,8 @@ export async function crearDesdeBodega(tenantId: string, ids: string[]): Promise
     });
 
     nombresTomados.add(nombre);
+    // Que se pueda elegir en un pedido desde el primer día (docs/sdd/001).
+    await sembrarCombinacionesDeModelo(prisma, tenantId, hecho.modeloId);
 
     if (hecho.reusado) {
       out.mapeados.push({ nombre: c.nombre, modeloId: hecho.modeloId, stockId: hecho.stockId });

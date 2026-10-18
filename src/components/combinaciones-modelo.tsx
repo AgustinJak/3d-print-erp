@@ -211,7 +211,7 @@ export function CombinacionesModelo({ modeloId, onCambio }: { modeloId: string; 
 
         {cargando && <p className="text-sm text-muted-foreground">Cargando…</p>}
         {!cargando && combinaciones.length === 0 && (
-          <p className="text-sm text-muted-foreground">Todavía no tiene combinaciones: se crean solas al sembrar el catálogo.</p>
+          <p className="text-sm text-muted-foreground">Todavía no tiene combinaciones: se crean al guardar el modelo.</p>
         )}
 
         {combinaciones.map((c) => {
