@@ -169,7 +169,9 @@ export async function cargarContexto(db: Tx | typeof prisma, tenantId: string): 
 }
 
 interface ItemResoluble {
-  modeloId: string;
+  /** null = trabajo a medida, fuera del catálogo. */
+  modeloId: string | null;
+  descripcion?: string | null;
   cantidad: number;
   variantesInfo: unknown;
 }
@@ -195,14 +197,30 @@ function llevaInsumoFunda(ids: string[], ctx: Contexto): boolean {
  * la pieza principal, más los insumos que consume (la funda).
  */
 export function componentesDeItem(item: ItemResoluble, ctx: Contexto): Componente[] {
+  // Un trabajo a medida no tiene fila de stock ni recetas: se imprime para ese
+  // cliente. Se lo muestra como "a pedido", igual que un modelo sin stock, para
+  // que la cobertura del pedido diga la verdad sin reservar nada.
+  if (!item.modeloId) {
+    return [
+      {
+        tipo: "producto",
+        etiqueta: item.descripcion?.trim() || "Pieza a medida",
+        stockId: null,
+        necesita: item.cantidad,
+        motivo: "a_pedido",
+      },
+    ];
+  }
+  const modeloId = item.modeloId;
+
   const ids = variantesDelItem(item);
   const out: Componente[] = [];
 
   // 1) la pieza principal: modelo + las variantes que definen una pieza distinta
   const idsStock = ids.filter((id) => ctx.variantes.get(id)?.afectaStock).sort();
-  const clave = `${item.modeloId}|${idsStock.join(",")}`;
+  const clave = `${modeloId}|${idsStock.join(",")}`;
   const fila = ctx.stockPorClave.get(clave);
-  const nombreModelo = ctx.modelos.get(item.modeloId) ?? "modelo desconocido";
+  const nombreModelo = ctx.modelos.get(modeloId) ?? "modelo desconocido";
   const sufijo = idsStock.map((id) => ctx.variantes.get(id)?.nombre).filter(Boolean).join(" · ");
 
   if (fila) {
@@ -215,13 +233,13 @@ export function componentesDeItem(item: ItemResoluble, ctx: Contexto): Component
       necesita: item.cantidad,
       // Si el modelo no tiene ninguna fila, es a pedido y está bien.
       // Si tiene filas pero no ésta, falta una fila y hay que verlo.
-      motivo: ctx.modelosStockeados.has(item.modeloId) ? "combinacion_sin_fila" : "a_pedido",
+      motivo: ctx.modelosStockeados.has(modeloId) ? "combinacion_sin_fila" : "a_pedido",
     });
   }
 
   // 2) insumos por receta
   let insumos = 0;
-  for (const regla of ctx.reglas.get(item.modeloId) ?? []) {
+  for (const regla of ctx.reglas.get(modeloId) ?? []) {
     if (!regla.requiere.every((r) => ids.includes(r))) continue;
     const f = ctx.stockPorId.get(regla.stockId);
     if (!f) continue;
@@ -306,7 +324,7 @@ export async function reasignarReservas(tenantId: string): Promise<ResultadoReas
             canalVenta: true,
             fechaEntrega: true,
             fechaPedido: true,
-            items: { select: { id: true, modeloId: true, cantidad: true, variantesInfo: true } },
+            items: { select: { id: true, modeloId: true, descripcion: true, cantidad: true, variantesInfo: true } },
           },
         })
       ).filter((p) => !yaConsumieron.has(p.id));
@@ -595,7 +613,7 @@ export async function coberturaDePedidos(
     canalVenta: string;
     fechaEntrega: Date | null;
     fechaPedido: Date;
-    items: Array<{ id: string; modeloId: string; cantidad: number; variantesInfo: unknown }>;
+    items: Array<{ id: string; modeloId: string | null; descripcion?: string | null; cantidad: number; variantesInfo: unknown }>;
   }>
 ): Promise<Map<string, CoberturaPedido>> {
   const out = new Map<string, CoberturaPedido>();

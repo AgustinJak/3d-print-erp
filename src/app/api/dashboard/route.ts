@@ -84,6 +84,8 @@ export async function GET() {
     const hace30Dias = new Date(ahora.getTime() - 30 * 24 * 60 * 60 * 1000);
     const itemsRecientes = await prisma.itemPedido.findMany({
       where: {
+        // Los trabajos a medida no son un modelo: no entran en el ranking.
+        modeloId: { not: null },
         pedido: {
           tenantId,
           fechaPedido: { gte: hace30Dias },
@@ -109,13 +111,14 @@ export async function GET() {
         modeloId: string;
         nombre: string;
         imagenUrl: string | null;
-        categorias: typeof itemsRecientes[0]["modelo"]["categorias"];
+        categorias: NonNullable<(typeof itemsRecientes)[0]["modelo"]>["categorias"];
         totalVendido: number;
         ingresos: number;
       }
     > = {};
     itemsRecientes.forEach((item) => {
       const key = item.modeloId;
+      if (!key || !item.modelo) return;
       if (!ventasPorModelo[key]) {
         ventasPorModelo[key] = {
           modeloId: key,

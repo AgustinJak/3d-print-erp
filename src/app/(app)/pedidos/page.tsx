@@ -28,6 +28,7 @@ import { InlineDateEdit } from "@/components/inline-date-edit";
 import { ESTADOS_PEDIDO, PRIORIDADES, CANALES_VENTA } from "@/lib/constants";
 import { useDatosEnVivo } from "@/hooks/use-datos-en-vivo";
 import { PedidoDialog } from "./pedido-dialog";
+import { nombreDeItem } from "@/lib/items";
 
 interface VarianteInfo {
   nombre: string;
@@ -37,7 +38,8 @@ interface VarianteInfo {
 
 interface ItemPedido {
   id: string;
-  modeloId: string;
+  modeloId: string | null;
+  descripcion?: string | null;
   cantidad: number;
   precioUnitario: number;
   costoUnitario: number;
@@ -48,7 +50,7 @@ interface ItemPedido {
     nombre: string;
     imagenUrl: string | null;
     categorias: Array<{ categoria: { id: string; nombre: string; color: string | null } }>;
-  };
+  } | null;
 }
 
 interface ComponenteCobertura {
@@ -463,7 +465,7 @@ export default function PedidosPage() {
                                 {p.items.map((item) => (
                                   <div key={item.id} className="text-sm">
                                     <span className="text-muted-foreground mr-1">{item.cantidad}×</span>
-                                    <span className="font-medium">{item.modelo.nombre}</span>
+                                    <span className="font-medium">{nombreDeItem(item)}</span>
                                     <StockDeItem comps={p.cobertura?.componentes[item.id]} />
                                   </div>
                                 ))}
@@ -626,7 +628,7 @@ export default function PedidosPage() {
                                   {item.cantidad > 1 && (
                                     <span className="text-muted-foreground mr-1">{item.cantidad}×</span>
                                   )}
-                                  {item.modelo.nombre}
+                                  {nombreDeItem(item)}
                                 </span>
                                 {item.variantesInfo && item.variantesInfo.length > 0 && (
                                   <div className="flex flex-wrap gap-1 mt-0.5">
@@ -737,8 +739,8 @@ export default function PedidosPage() {
                                 <div className="space-y-1">
                                   {p.items.map((item) => (
                                     <div key={item.id} className="text-sm border rounded-md p-2 space-y-0.5">
-                                      <p className="font-medium">{item.modelo.nombre}</p>
-                                      {item.modelo.categorias.length > 0 && (
+                                      <p className="font-medium">{nombreDeItem(item)}</p>
+                                      {item.modelo && item.modelo.categorias.length > 0 && (
                                         <div className="flex flex-wrap gap-1">
                                           {item.modelo.categorias.map(({ categoria }) => (
                                             <Badge
@@ -914,7 +916,7 @@ export default function PedidosPage() {
                         {p.items.map((item) => (
                           <div key={item.id}>
                             <span className="text-muted-foreground mr-1">{item.cantidad}×</span>
-                            {item.modelo.nombre}
+                            {nombreDeItem(item)}
                           </div>
                         ))}
                       </div>
@@ -998,7 +1000,7 @@ export default function PedidosPage() {
                                   {item.cantidad > 1 && (
                                     <span className="text-muted-foreground mr-1">{item.cantidad}×</span>
                                   )}
-                                  {item.modelo.nombre}
+                                  {nombreDeItem(item)}
                                 </span>
                               ))}
                             </div>

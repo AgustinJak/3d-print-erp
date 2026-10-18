@@ -190,7 +190,10 @@ model Pedido {
 model ItemPedido {
   id             String  @id @default(cuid())
   pedidoId       String  @map("pedido_id")
-  modeloId       String  @map("modelo_id")
+  /// null = trabajo a medida que no es del catálogo: no reserva ni descuenta stock.
+  modeloId       String? @map("modelo_id")
+  /// Qué es la pieza cuando no hay modelo (lo que pidió el cliente).
+  descripcion    String?
   cantidad       Int     @default(1)
   precioUnitario Float   @map("precio_unitario")
   costoUnitario  Float   @map("costo_unitario")
@@ -199,7 +202,7 @@ model ItemPedido {
   mlaOrigen      String? @map("mla_origen") // publicación de ML que originó el item
 
   pedido   Pedido         @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
-  modelo   Modelo         @relation(fields: [modeloId], references: [id])
+  modelo   Modelo?        @relation(fields: [modeloId], references: [id])
   reservas ReservaStock[]
 
   @@map("items_pedido")

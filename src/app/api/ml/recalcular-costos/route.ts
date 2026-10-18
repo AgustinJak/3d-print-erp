@@ -61,6 +61,9 @@ export async function POST(request: NextRequest) {
     const bajan: Cambio[] = [];
 
     for (const it of items) {
+      // Una línea sin modelo no tiene costo de catálogo que recalcular.
+      const modelo = it.modelo;
+      if (!modelo) continue;
       const vi = Array.isArray(it.variantesInfo) ? (it.variantesInfo as Array<Record<string, unknown>>) : [];
 
       // Se acumulan por id para no sumar dos veces la misma variante cuando ML
@@ -68,16 +71,16 @@ export async function POST(request: NextRequest) {
       const aplicadas = new Map<string, { nombre: string; costo: number }>();
       for (const v of vi) {
         if (!v?.matched || typeof v.varianteId !== "string") continue;
-        const vv = it.modelo.variantes.find((x) => x.id === v.varianteId);
+        const vv = modelo.variantes.find((x) => x.id === v.varianteId);
         if (vv) aplicadas.set(vv.id, { nombre: vv.nombre, costo: costoVariante(vv) });
       }
       for (const id of implicitasPorMla.get(it.mlaOrigen as string) ?? []) {
-        const vv = it.modelo.variantes.find((x) => x.id === id);
+        const vv = modelo.variantes.find((x) => x.id === id);
         if (vv) aplicadas.set(vv.id, { nombre: vv.nombre, costo: costoVariante(vv) });
       }
 
       const costoDespues =
-        costoModelo(it.modelo) + [...aplicadas.values()].reduce((a, v) => a + v.costo, 0);
+        costoModelo(modelo) + [...aplicadas.values()].reduce((a, v) => a + v.costo, 0);
       const delta = (costoDespues - it.costoUnitario) * it.cantidad;
       if (delta === 0) continue;
 
@@ -86,7 +89,7 @@ export async function POST(request: NextRequest) {
         fecha: it.pedido.fechaPedido.toISOString().slice(0, 10),
         venta: it.pedido.idMercadolibre,
         estado: it.pedido.estado,
-        modelo: it.modelo.nombre,
+        modelo: modelo.nombre,
         cantidad: it.cantidad,
         costoAntes: it.costoUnitario,
         costoDespues,

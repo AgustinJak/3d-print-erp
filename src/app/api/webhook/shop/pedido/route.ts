@@ -2,7 +2,12 @@ export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
 import { costoModelo, costoVariante } from "@/lib/costos";
-import { aplicarEstadoPedido, reasignarReservas } from "@/lib/reservas";
+import {
+  aplicarEstadoPedido,
+  cancelarPedidoExterno,
+  ESTADOS_QUE_CONSUMEN,
+  reasignarReservas,
+} from "@/lib/reservas";
 import { verifyWebhookSignature, normalizeForMatch } from "@/lib/webhook-security";
 
 /**
@@ -81,6 +86,8 @@ const itemSchema = z.object({
   precio_unitario: z.number(),
   opciones_seleccionadas: z.array(opcionSchema).optional().default([]),
   subtotal: z.number().optional(),
+  /** Trabajo a medida, fuera del catálogo: viene sin SKU y no tiene modelo. */
+  personalizado: z.boolean().optional().default(false),
 });
 
 const direccionSchema = z.object({
@@ -132,8 +139,8 @@ type ShopPayload = z.infer<typeof payloadSchema>;
  * aparte.
  *
  * El evento es genérico —"cambió a tal estado"— y no "pedido.entregado", para
- * que avisar una cancelación mañana no obligue a negociar otro contrato.
- * Hoy el único estado de la Shop que mueve algo acá es `entregado`.
+ * que avisar una cancelación no obligue a negociar otro contrato.
+ * Hoy mueven algo acá `entregado` y `cancelado`.
  * ───────────────────────────────────────────────────────────────────────── */
 
 const EVENTO_CAMBIO_ESTADO = "pedido.estado_cambiado";
@@ -152,8 +159,9 @@ const cambioEstadoSchema = z.object({
  * Corto a propósito: lo que no esté acá se registra y se ignora con 200, así la
  * Shop no queda reintentando algo que nunca vamos a procesar.
  */
-const ESTADO_SHOP_A_INVENTARIO: Record<string, "COMPLETADO"> = {
+const ESTADO_SHOP_A_INVENTARIO: Record<string, "COMPLETADO" | "CANCELADO"> = {
   entregado: "COMPLETADO",
+  cancelado: "CANCELADO",
 };
 
 /** Un pedido que ya terminó no vuelve atrás por un webhook que llegó tarde. */
@@ -191,7 +199,7 @@ async function manejarCambioDeEstado(
 
   const pedido = await prisma.pedido.findFirst({
     where: { tenantId, externoId: payload.numero_pedido },
-    select: { id: true, estado: true, origenExterno: true },
+    select: { id: true, estado: true, origenExterno: true, etiquetas: true, notas: true },
   });
 
   if (!pedido) {
@@ -211,6 +219,22 @@ async function manejarCambioDeEstado(
   if (pedido.estado === destino) {
     await log("ok", "ya_estaba", payload.numero_pedido, pedido.id);
     return NextResponse.json({ ok: true, pedidoId: pedido.id, estado: pedido.estado, sinCambio: true });
+  }
+
+  // Una cancelación llega también sobre un pedido ya completado: el Shop la
+  // admite hasta 10 días después de la entrega. Por eso va antes del corte de
+  // estados finales.
+  if (destino === "CANCELADO") {
+    const r = await cancelarDesdeShop(tenantId, pedido, payload.fecha ?? null);
+    await log("ok", r.revisarStock ? "cancelado_con_stock_a_revisar" : null, payload.numero_pedido, pedido.id);
+    return NextResponse.json({
+      ok: true,
+      pedidoId: pedido.id,
+      estado: "CANCELADO",
+      desde: pedido.estado,
+      devueltas: r.devueltas,
+      revisarStock: r.revisarStock,
+    });
   }
 
   if (ESTADOS_FINALES.has(pedido.estado)) {
@@ -238,6 +262,67 @@ async function manejarCambioDeEstado(
 
   await log("ok", null, payload.numero_pedido, pedido.id);
   return NextResponse.json({ ok: true, pedidoId: pedido.id, estado: destino, desde: pedido.estado });
+}
+
+/**
+ * El Shop canceló un pedido que ya está acá. Misma regla que Mercado Libre
+ * (`cancelarPedidoExterno`): si la pieza no salió, el stock vuelve; si ya
+ * salió, no vuelve solo y el pedido queda marcado para que alguien mire si la
+ * caja volvió.
+ *
+ * "Ya salió" es lo que diga el stock —reservas consumidas— o el estado: un
+ * pedido completado con piezas impresas a pedido no consumió nada, pero la
+ * pieza la tiene el cliente igual.
+ */
+async function cancelarDesdeShop(
+  tenantId: string,
+  pedido: { id: string; estado: string; origenExterno: unknown; etiquetas: string[]; notas: string | null },
+  fecha: string | null
+): Promise<{ devueltas: number; revisarStock: boolean }> {
+  const oe = (pedido.origenExterno ?? {}) as Record<string, unknown>;
+
+  // El estado va primero: el reparto que corre adentro de la cancelación tiene
+  // que ver el pedido ya cancelado, o le volvería a reservar stock.
+  await prisma.pedido.update({
+    where: { id: pedido.id },
+    data: {
+      estado: "CANCELADO",
+      origenExterno: {
+        ...oe,
+        estado_shop: "cancelado",
+        cancelado_en: fecha,
+        estado_actualizado_en: new Date().toISOString(),
+      } as Prisma.InputJsonValue,
+    },
+  });
+
+  const { devueltas, revisarStock: consumido } = await cancelarPedidoExterno(
+    tenantId,
+    pedido.id,
+    "cancelacion_shop"
+  );
+  const revisarStock = consumido || ESTADOS_QUE_CONSUMEN.some((e) => e === pedido.estado);
+
+  const cuando = new Date(fecha ?? Date.now()).toLocaleDateString("es-AR");
+  const nota =
+    `[${cuando}] El Shop canceló este pedido.` +
+    (revisarStock
+      ? " Ya se había entregado: el stock no volvió solo, revisar si la pieza volvió antes de sumarla."
+      : devueltas > 0
+        ? ` Volvieron ${devueltas} unidades al stock.`
+        : "");
+
+  await prisma.pedido.update({
+    where: { id: pedido.id },
+    data: {
+      etiquetas: [
+        ...new Set([...pedido.etiquetas, "cancelado_shop", ...(revisarStock ? ["revision_manual"] : [])]),
+      ],
+      notas: [pedido.notas, nota].filter(Boolean).join("\n"),
+    },
+  });
+
+  return { devueltas, revisarStock };
 }
 
 export async function POST(request: NextRequest) {
@@ -381,7 +466,8 @@ export async function POST(request: NextRequest) {
 
       // 6b. Mapear items: SKU → modelo + variantes
       const itemsData: Array<{
-        modeloId: string;
+        modeloId: string | null;
+        descripcion: string | null;
         cantidad: number;
         precioUnitario: number;
         costoUnitario: number;
@@ -390,8 +476,36 @@ export async function POST(request: NextRequest) {
       }> = [];
 
       const warnings: string[] = [];
+      const aMedida: string[] = [];
+
+      // Una línea sin modelo guarda igual lo que eligió el comprador, como
+      // registro: sin `varianteId`, así no entra en ningún reparto de stock.
+      const opcionesComoRegistro = (item: ShopPayload["items"][number]) =>
+        item.opciones_seleccionadas.map((o) => ({
+          nombre: o.nombre,
+          shopGrupo: o.grupo,
+          precioExtra: o.precio_extra ?? 0,
+          matched: false,
+        })) as unknown as Prisma.InputJsonValue;
 
       for (const item of payload.items) {
+        // Un trabajo a medida no es del catálogo: no hay modelo que buscar, ni
+        // stock que reservar, ni nada que revisar. Entra como línea sin modelo
+        // para que el pedido cobre lo que cobró y aparezca en producción.
+        if (item.personalizado) {
+          itemsData.push({
+            modeloId: null,
+            descripcion: `A medida: ${item.nombre_producto}`,
+            cantidad: item.cantidad,
+            precioUnitario: item.precio_unitario,
+            costoUnitario: 0,
+            ajusteManual: 0,
+            variantesInfo: opcionesComoRegistro(item),
+          });
+          aMedida.push(item.nombre_producto);
+          continue;
+        }
+
         // Buscar modelo por SKU
         let modelo = null;
         if (item.sku) {
@@ -412,10 +526,22 @@ export async function POST(request: NextRequest) {
           });
         }
 
+        // Un producto del catálogo que no coincide no se descarta: la plata ya
+        // se cobró, y sin la línea el pedido quedaba mal o, si eran todas así,
+        // directamente no entraba. Va sin modelo y el pedido queda a revisar.
         if (!modelo) {
           warnings.push(
-            `Producto sin match: "${item.nombre_producto}" (SKU: ${item.sku || "—"})`
+            `Producto sin match: "${item.nombre_producto}" (SKU: ${item.sku || "—"}). Quedó como línea sin modelo: editá el pedido y cargalo con el modelo que corresponde.`
           );
+          itemsData.push({
+            modeloId: null,
+            descripcion: `Sin modelo: ${item.nombre_producto}${item.sku ? ` (SKU ${item.sku})` : ""}`,
+            cantidad: item.cantidad,
+            precioUnitario: item.precio_unitario,
+            costoUnitario: 0,
+            ajusteManual: 0,
+            variantesInfo: opcionesComoRegistro(item),
+          });
           continue;
         }
 
@@ -490,6 +616,7 @@ export async function POST(request: NextRequest) {
 
         itemsData.push({
           modeloId: modelo.id,
+          descripcion: null,
           cantidad: item.cantidad,
           precioUnitario: item.precio_unitario,
           costoUnitario: costoModelo(modelo) + costoExtraVariantes,
@@ -519,7 +646,7 @@ export async function POST(request: NextRequest) {
           metodoPago: payload.metodo_pago || null,
           precioEnvio: payload.costo_envio,
           contacto: payload.cliente.email || payload.cliente.telefono || null,
-          notas: buildNotas(payload, warnings),
+          notas: buildNotas(payload, warnings, aMedida),
           etiquetas: necesitaRevision ? ["revision_manual"] : [],
           externoId: payload.numero_pedido,
           origenExterno: {
@@ -634,7 +761,7 @@ function formatDireccion(d: ShopPayload["direccion_envio"]): string | null {
   return parts.length > 0 ? parts.join(", ") : null;
 }
 
-function buildNotas(p: ShopPayload, warnings: string[]): string {
+function buildNotas(p: ShopPayload, warnings: string[], aMedida: string[]): string {
   const lines: string[] = [`📦 Pedido del Shop: ${p.numero_pedido}`];
   if (p.metodo_pago) lines.push(`💳 Pago: ${p.metodo_pago}`);
   if (p.tipo_envio) lines.push(`🚚 Envío: ${p.tipo_envio}`);
@@ -642,6 +769,12 @@ function buildNotas(p: ShopPayload, warnings: string[]): string {
     lines.push(`📍 Sucursal: ${p.sucursal_correo.nombre}`);
   }
   if (p.cliente.dni) lines.push(`DNI: ${p.cliente.dni}`);
+  // No es un aviso: es lo esperado. Pero el costo de una pieza única no se
+  // conoce de antemano y la ganancia del pedido sale inflada hasta cargarlo.
+  if (aMedida.length > 0) {
+    lines.push("", "🎨 A medida (costo en $0 hasta cargarlo):");
+    aMedida.forEach((n) => lines.push(`  • ${n}`));
+  }
   if (warnings.length > 0) {
     lines.push("", "⚠️ Revisar manualmente:");
     warnings.forEach((w) => lines.push(`  • ${w}`));

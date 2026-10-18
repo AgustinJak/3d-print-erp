@@ -15,6 +15,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/empty-state";
+import { nombreDeItem } from "@/lib/items";
 
 /* ─── Types ─────────────────────────────────────────── */
 
@@ -50,7 +51,8 @@ interface PedidoRevision {
   items: Array<{
     id: string;
     cantidad: number;
-    modelo: { id: string; nombre: string; sku: string | null };
+    descripcion?: string | null;
+    modelo: { id: string; nombre: string; sku: string | null } | null;
   }>;
 }
 
@@ -1108,8 +1110,8 @@ function IntegracionesContent() {
                   {p.items.map((it) => (
                     <div key={it.id} className="flex justify-between">
                       <span>
-                        {it.cantidad}x {it.modelo.nombre}
-                        {it.modelo.sku && (
+                        {it.cantidad}x {nombreDeItem(it)}
+                        {it.modelo?.sku && (
                           <span className="text-muted-foreground ml-1">({it.modelo.sku})</span>
                         )}
                       </span>

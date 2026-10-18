@@ -16,6 +16,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/data-loading";
 import { EmptyState } from "@/components/empty-state";
 import { CANALES_VENTA } from "@/lib/constants";
+import { nombreDeItem } from "@/lib/items";
 
 interface VarianteInfo {
   nombre: string;
@@ -29,12 +30,13 @@ interface ItemPedido {
   costoUnitario: number;
   ajusteManual: number;
   variantesInfo: VarianteInfo[] | null;
+  descripcion?: string | null;
   modelo: {
     id: string;
     nombre: string;
     imagenUrl: string | null;
     categorias: Array<{ categoria: { id: string; nombre: string; color: string | null } }>;
-  };
+  } | null;
 }
 
 interface Pedido {
@@ -243,7 +245,7 @@ export default function HistorialPage() {
                     <div className="space-y-0.5">
                       {p.items.map((i, idx) => (
                         <p key={idx} className="text-sm">
-                          <span className="text-muted-foreground">{i.cantidad}x</span> {i.modelo.nombre}
+                          <span className="text-muted-foreground">{i.cantidad}x</span> {nombreDeItem(i)}
                         </p>
                       ))}
                     </div>
@@ -296,8 +298,8 @@ export default function HistorialPage() {
                         {p.items.map((i, idx) => (
                           <div key={idx} className="mb-0.5">
                             <div className="flex items-center gap-1 flex-wrap">
-                              <span>{i.cantidad}x {i.modelo.nombre}</span>
-                              {i.modelo.categorias.map(({ categoria }) => (
+                              <span>{i.cantidad}x {nombreDeItem(i)}</span>
+                              {i.modelo?.categorias.map(({ categoria }) => (
                                 <Badge
                                   key={categoria.id}
                                   variant="secondary"

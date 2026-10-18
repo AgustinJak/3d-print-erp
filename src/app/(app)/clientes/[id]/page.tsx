@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/data-loading";
 import { ESTADOS_PEDIDO, PLATAFORMAS_CLIENTE, TIPOS_CLIENTE } from "@/lib/constants";
+import { nombreDeItem } from "@/lib/items";
 
 interface ItemPedido {
   id: string;
@@ -23,7 +24,8 @@ interface ItemPedido {
   costoUnitario: number;
   ajusteManual: number;
   variantesInfo: Array<{ nombre: string }> | null;
-  modelo: { id: string; nombre: string; imagenUrl: string | null };
+  descripcion?: string | null;
+  modelo: { id: string; nombre: string; imagenUrl: string | null } | null;
 }
 
 interface Pedido {
@@ -370,7 +372,7 @@ function OrderTable({ pedidos }: { pedidos: Pedido[] }) {
                           {item.cantidad > 1 && (
                             <span className="text-muted-foreground mr-1">{item.cantidad}x</span>
                           )}
-                          {item.modelo.nombre}
+                          {nombreDeItem(item)}
                         </span>
                         {item.variantesInfo && item.variantesInfo.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-0.5">

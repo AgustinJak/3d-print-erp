@@ -94,7 +94,7 @@ export async function PUT(
         let costoUnitario = item.costoUnitario;
 
         // If pricing not provided, fetch from Modelo
-        if (precioUnitario == null || costoUnitario == null) {
+        if (item.modeloId && (precioUnitario == null || costoUnitario == null)) {
           const modelo = await prisma.modelo.findUnique({
             where: { id: item.modeloId },
             select: { precioVenta: true, costoFab: true, costoInsumos: true },
@@ -106,7 +106,9 @@ export async function PUT(
         }
 
         return {
-          modeloId: item.modeloId,
+          // Sin modelo = pieza a medida: se guarda con su descripción.
+          modeloId: item.modeloId || null,
+          descripcion: item.modeloId ? null : String(item.descripcion ?? "").trim() || "Pieza a medida",
           cantidad: item.cantidad || 1,
           precioUnitario: parseFloat(String(precioUnitario ?? 0)),
           costoUnitario: parseFloat(String(costoUnitario ?? 0)),

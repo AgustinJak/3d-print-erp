@@ -19,6 +19,7 @@ import { TableSkeleton } from "@/components/data-loading";
 import { EmptyState } from "@/components/empty-state";
 import { ESTADOS_PEDIDO, PRIORIDADES } from "@/lib/constants";
 import { useDatosEnVivo } from "@/hooks/use-datos-en-vivo";
+import { nombreDeItem } from "@/lib/items";
 
 interface VarianteInfo {
   nombre: string;
@@ -30,12 +31,13 @@ interface ItemPedido {
   id: string;
   cantidad: number;
   variantesInfo: VarianteInfo[] | null;
+  descripcion?: string | null;
   modelo: {
     id: string;
     nombre: string;
     imagenUrl: string | null;
     categorias: Array<{ categoria: { id: string; nombre: string; color: string | null } }>;
-  };
+  } | null;
 }
 
 interface Pedido {
@@ -107,17 +109,17 @@ export default function ProduccionPage() {
   }>();
   pedidos.forEach((p) => {
     p.items.forEach((item) => {
-      const key = item.modelo.id;
+      const key = item.modelo?.id ?? `a-medida:${item.id}`;
       const existing = itemsAgrupados.get(key);
       if (existing) {
         existing.cantidad += item.cantidad;
         existing.pedidos.push(p.id.slice(-6));
       } else {
         itemsAgrupados.set(key, {
-          nombre: item.modelo.nombre,
+          nombre: nombreDeItem(item),
           cantidad: item.cantidad,
           pedidos: [p.id.slice(-6)],
-          categorias: item.modelo.categorias,
+          categorias: item.modelo?.categorias ?? [],
         });
       }
     });
@@ -290,8 +292,8 @@ export default function ProduccionPage() {
                                       <div key={item.id} className="space-y-0.5">
                                         <div className="flex items-center gap-2 text-sm flex-wrap">
                                           <span className="font-medium">{item.cantidad}x</span>
-                                          <span>{item.modelo.nombre}</span>
-                                          {item.modelo.categorias.map(({ categoria }) => (
+                                          <span>{nombreDeItem(item)}</span>
+                                          {item.modelo?.categorias.map(({ categoria }) => (
                                             <Badge
                                               key={categoria.id}
                                               variant="secondary"

@@ -72,7 +72,8 @@ export async function GET() {
         },
       }),
       prisma.itemPedido.findMany({
-        where: { pedido: { tenantId, fechaPedido: { gte: desde }, estado: { not: "CANCELADO" } } },
+        // Los trabajos a medida no tienen modelo: no son demanda de ninguna fila.
+        where: { modeloId: { not: null }, pedido: { tenantId, fechaPedido: { gte: desde }, estado: { not: "CANCELADO" } } },
         select: { modeloId: true, cantidad: true, variantesInfo: true },
       }),
       // Lo que ya tiene dueño: sigue en el galpón pero no se puede prometer.
@@ -89,6 +90,7 @@ export async function GET() {
     const demModelo = new Map<string, number>();
     const demVariante = new Map<string, number>();
     for (const it of items) {
+      if (!it.modeloId) continue;
       demModelo.set(it.modeloId, (demModelo.get(it.modeloId) ?? 0) + it.cantidad);
       const vi = Array.isArray(it.variantesInfo) ? (it.variantesInfo as Array<Record<string, unknown>>) : [];
       for (const v of vi) {
@@ -165,7 +167,7 @@ export async function GET() {
         fechaEntrega: true,
         fechaPedido: true,
         cliente: { select: { nombre: true } },
-        items: { select: { id: true, modeloId: true, cantidad: true, variantesInfo: true } },
+        items: { select: { id: true, modeloId: true, descripcion: true, cantidad: true, variantesInfo: true } },
       },
     });
     const cobertura = await coberturaDePedidos(tenantId, abiertos);
@@ -184,7 +186,7 @@ export async function GET() {
     }> = [];
 
     const modeloDeItem = new Map<string, string>();
-    for (const p of abiertos) for (const it of p.items) modeloDeItem.set(it.id, it.modeloId);
+    for (const p of abiertos) for (const it of p.items) if (it.modeloId) modeloDeItem.set(it.id, it.modeloId);
     const dispPorFila = new Map(salida.map((s) => [s.id, s.disponible]));
 
     for (const p of abiertos) {

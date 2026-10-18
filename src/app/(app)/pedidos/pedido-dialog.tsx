@@ -55,6 +55,12 @@ interface ItemForm {
   ajusteManual: string;
   categoriaFiltro: string;
   variantesSeleccionadas: string[];
+  /**
+   * Trabajo a medida que llegó del Shop sin modelo. No se elige del catálogo:
+   * se conserva con su descripción y lo que eligió el cliente, para que editar
+   * el pedido no lo borre.
+   */
+  aMedida?: { descripcion: string; variantesInfo: unknown };
 }
 
 interface PedidoData {
@@ -75,7 +81,8 @@ interface PedidoData {
   fechaLiquidacionMl: string | null;
   idMercadolibre: string | null;
   items: {
-    modeloId: string;
+    modeloId: string | null;
+    descripcion?: string | null;
     cantidad: number;
     precioUnitario: number;
     costoUnitario: number;
@@ -158,13 +165,16 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
       setIdMercadolibre(pedido.idMercadolibre || "");
       setItems(
         pedido.items.map((i) => ({
-          modeloId: i.modeloId,
+          modeloId: i.modeloId ?? "",
           cantidad: i.cantidad.toString(),
           precioUnitario: i.precioUnitario.toString(),
           costoUnitario: i.costoUnitario.toString(),
           ajusteManual: i.ajusteManual.toString(),
           categoriaFiltro: "",
           variantesSeleccionadas: [],
+          aMedida: i.modeloId
+            ? undefined
+            : { descripcion: i.descripcion ?? "", variantesInfo: i.variantesInfo ?? null },
         }))
       );
     } else {
@@ -264,7 +274,8 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (items.length === 0 || !items[0].modeloId) return;
+    const completo = (i: ItemForm) => Boolean(i.modeloId || i.aMedida);
+    if (!items.some(completo)) return;
     setLoading(true);
 
     const body = {
@@ -283,7 +294,18 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
       comprobanteUrl: comprobanteUrl || null,
       fechaLiquidacionMl: fechaLiquidacionMl || null,
       idMercadolibre: idMercadolibre || null,
-      items: items.filter((i) => i.modeloId).map((i) => {
+      items: items.filter(completo).map((i) => {
+        if (i.aMedida) {
+          return {
+            modeloId: null,
+            descripcion: i.aMedida.descripcion.trim() || "Pieza a medida",
+            cantidad: parseInt(i.cantidad) || 1,
+            precioUnitario: parsePrice(i.precioUnitario),
+            costoUnitario: parsePrice(i.costoUnitario),
+            ajusteManual: parsePrice(i.ajusteManual),
+            variantesInfo: i.aMedida.variantesInfo ?? undefined,
+          };
+        }
         const modelo = modelos.find(m => m.id === i.modeloId);
         const variantesInfo = i.variantesSeleccionadas
           .map(vid => modelo?.variantes?.find(v => v.id === vid))
@@ -550,6 +572,20 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
                     </Button>
                   )}
                 </div>
+                {item.aMedida ? (
+                  <div className="space-y-1">
+                    <Label className="text-sm">Pieza a medida (no es del catálogo)</Label>
+                    <Input
+                      value={item.aMedida.descripcion}
+                      placeholder="Qué pidió el cliente"
+                      onChange={(e) => {
+                        const updated = [...items];
+                        updated[idx] = { ...item, aMedida: { ...item.aMedida!, descripcion: e.target.value } };
+                        setItems(updated);
+                      }}
+                    />
+                  </div>
+                ) : (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-sm">Categoría (filtro)</Label>
@@ -594,6 +630,7 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
                     </Select>
                   </div>
                 </div>
+                )}
                 {/* Variantes */}
                 {item.modeloId && (() => {
                   const modelo = modelos.find(m => m.id === item.modeloId);
