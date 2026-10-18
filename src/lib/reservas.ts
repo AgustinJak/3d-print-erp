@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma";
+import { claveDe, combinacionDeLinea } from "@/lib/combinaciones";
 
 /**
  * Reservas de stock por pedido.
@@ -174,7 +175,19 @@ interface ItemResoluble {
   descripcion?: string | null;
   cantidad: number;
   variantesInfo: unknown;
+  /** La combinación vendible de la línea (docs/sdd/001). */
+  combinacion?: { modeloId: string; variantes: string[] } | null;
 }
+
+/**
+ * De dónde salen el modelo y las variantes de una línea.
+ *
+ * `json` es como siempre: las entradas de `variantesInfo` con `matched` y
+ * `varianteId`. `combinacion` usa la combinación vendible de la línea (spec 002).
+ * Mientras dure el modo sombra el reparto usa `json`, y `verificarReparto`
+ * compara las dos.
+ */
+export type FuenteVariantes = "json" | "combinacion";
 
 /** Ids de variantes del inventario que quedaron registradas en el item. */
 function variantesDelItem(item: ItemResoluble): string[] {
@@ -196,7 +209,11 @@ function llevaInsumoFunda(ids: string[], ctx: Contexto): boolean {
  * Qué unidades de stock hacen falta para despachar un item:
  * la pieza principal, más los insumos que consume (la funda).
  */
-export function componentesDeItem(item: ItemResoluble, ctx: Contexto): Componente[] {
+export function componentesDeItem(
+  item: ItemResoluble,
+  ctx: Contexto,
+  fuente: FuenteVariantes = "json"
+): Componente[] {
   // Un trabajo a medida no tiene fila de stock ni recetas: se imprime para ese
   // cliente. Se lo muestra como "a pedido", igual que un modelo sin stock, para
   // que la cobertura del pedido diga la verdad sin reservar nada.
@@ -211,9 +228,10 @@ export function componentesDeItem(item: ItemResoluble, ctx: Contexto): Component
       },
     ];
   }
-  const modeloId = item.modeloId;
+  const porCombinacion = fuente === "combinacion" && item.combinacion;
+  const modeloId = porCombinacion ? item.combinacion!.modeloId : item.modeloId;
 
-  const ids = variantesDelItem(item);
+  const ids = porCombinacion ? item.combinacion!.variantes : variantesDelItem(item);
   const out: Componente[] = [];
 
   // 1) la pieza principal: modelo + las variantes que definen una pieza distinta
@@ -469,6 +487,83 @@ export async function reasignarSiElStockCambio(tenantId: string): Promise<Result
   if (!movido) return null;
   if (estado.marca && new Date(estado.marca) >= movido) return null;
   return reasignarReservas(tenantId);
+}
+
+/* ───────────────────── modo sombra: JSON contra combinación ───────────────────── */
+
+export interface ResultadoVerificacion {
+  pedidos: number;
+  lineas: number;
+  iguales: number;
+  /** Líneas donde la combinación reservaría otra cosa que el JSON. Tiene que estar vacío. */
+  distintas: Array<{ pedidoId: string; pedido: string | null; itemId: string; json: string[]; combinacion: string[] }>;
+  /** Líneas con modelo cuya combinación no existe todavía (las completa la siembra o el backfill). */
+  sinCombinacion: Array<{ pedidoId: string; pedido: string | null; itemId: string; clave: string }>;
+  /** Líneas a medida o sin modelo: no tienen combinación y no se comparan. */
+  sinModelo: number;
+}
+
+/** Componentes como texto comparable: qué fila, cuántas y por qué. */
+function firma(comps: Componente[]): string[] {
+  return comps.map((c) => `${c.tipo}|${c.stockId ?? `sin fila: ${c.etiqueta}`}|${c.necesita}|${c.motivo ?? ""}`).sort();
+}
+
+/**
+ * Compara, en cada línea de cada pedido abierto, lo que reserva el reparto de hoy
+ * (JSON) contra lo que reservaría con la combinación (docs/sdd/001, spec 002).
+ * Sólo lee. El reparto pasa a la combinación recién cuando `distintas` da vacío.
+ *
+ * Si la línea todavía no tiene combinación guardada, usa la que le daría el
+ * backfill: así la sombra se puede mirar antes de escribir nada.
+ */
+export async function verificarReparto(tenantId: string): Promise<ResultadoVerificacion> {
+  const ctx = await cargarContexto(prisma, tenantId);
+  const pedidos = await prisma.pedido.findMany({
+    where: { tenantId, estado: { in: [...ESTADOS_QUE_RESERVAN] as never } },
+    select: {
+      id: true,
+      externoId: true,
+      items: {
+        select: {
+          id: true,
+          modeloId: true,
+          descripcion: true,
+          cantidad: true,
+          variantesInfo: true,
+          combinacion: { select: { modeloId: true, variantes: true } },
+          modelo: { select: { variantes: { select: { id: true, nombre: true, precioAdicional: true, costoFabAdicional: true } } } },
+        },
+      },
+    },
+  });
+  const combos = await prisma.combinacion.findMany({
+    where: { tenantId },
+    select: { clave: true, modeloId: true, variantes: true },
+  });
+  const porClave = new Map(combos.map((c) => [c.clave, c]));
+
+  const out: ResultadoVerificacion = { pedidos: pedidos.length, lineas: 0, iguales: 0, distintas: [], sinCombinacion: [], sinModelo: 0 };
+  for (const p of pedidos) {
+    for (const it of p.items) {
+      out.lineas++;
+      if (!it.modeloId) {
+        out.sinModelo++;
+        continue;
+      }
+      const deduce = combinacionDeLinea(it, it.modelo?.variantes ?? []);
+      const clave = deduce ? claveDe(deduce.modeloId, deduce.variantes) : `${it.modeloId}|`;
+      const combinacion = it.combinacion ?? porClave.get(clave) ?? null;
+      if (!combinacion) {
+        out.sinCombinacion.push({ pedidoId: p.id, pedido: p.externoId, itemId: it.id, clave });
+        continue;
+      }
+      const json = firma(componentesDeItem(it, ctx, "json"));
+      const porComb = firma(componentesDeItem({ ...it, combinacion }, ctx, "combinacion"));
+      if (json.join("\n") === porComb.join("\n")) out.iguales++;
+      else out.distintas.push({ pedidoId: p.id, pedido: p.externoId, itemId: it.id, json, combinacion: porComb });
+    }
+  }
+  return out;
 }
 
 /* ───────────────────────── consumo y devolución ───────────────────────── */

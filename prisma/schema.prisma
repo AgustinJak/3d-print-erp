@@ -108,6 +108,7 @@ model Modelo {
   publicacionesMl PublicacionMl[]
   stock           Stock[]
   reglasInsumo    ReglaInsumo[]
+  combinaciones   Combinacion[]
 
   @@unique([tenantId, sku])
   @@map("modelos")
@@ -201,9 +202,15 @@ model ItemPedido {
   variantesInfo  Json?   @map("variantes_info")
   mlaOrigen      String? @map("mla_origen") // publicación de ML que originó el item
 
-  pedido   Pedido         @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
-  modelo   Modelo?        @relation(fields: [modeloId], references: [id])
-  reservas ReservaStock[]
+  /// Qué se vendió (docs/sdd/001). null = línea vieja sin resolver, a medida o sin mapear.
+  combinacionId  String? @map("combinacion_id")
+  /// Con qué clave entró del canal, para completarla cuando se mapea esa clave.
+  claveCanal     String? @map("clave_canal")
+
+  pedido      Pedido         @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  modelo      Modelo?        @relation(fields: [modeloId], references: [id])
+  combinacion Combinacion?   @relation(fields: [combinacionId], references: [id], onDelete: SetNull)
+  reservas    ReservaStock[]
 
   @@map("items_pedido")
 }
@@ -609,4 +616,65 @@ model GastoCompartido {
 
   @@unique([tenantId, anio, mes])
   @@map("gastos_compartidos")
+}
+
+// ==================== COMBINACIONES VENDIBLES (docs/sdd/001) ====================
+
+/// Lo que se vende: un modelo más las variantes que lo definen. Tiene SKU propio
+/// (el del modelo + un sufijo por variante) y es a lo que apuntan las líneas de
+/// pedido y el mapeo de cada canal. Tabla creada por prisma/sql/combinaciones.sql.
+model Combinacion {
+  id        String   @id @default(cuid())
+  tenantId  String   @default("sendero3d") @map("tenant_id")
+  modeloId  String   @map("modelo_id")
+  /// ids de VarianteModelo, ordenados
+  variantes String[] @default([])
+  /// "<modeloId>|<variantes ordenadas, con coma>"
+  clave     String
+  /// Siempre en mayúsculas. null si el modelo no tiene SKU.
+  sku       String?
+  nombre    String
+  activo    Boolean  @default(true)
+  creadoEn  DateTime @default(now()) @map("creado_en")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  modelo Modelo       @relation(fields: [modeloId], references: [id])
+  items  ItemPedido[]
+  mapeos MapeoCanal[]
+
+  @@unique([tenantId, clave])
+  @@unique([tenantId, sku])
+  @@index([tenantId, modeloId])
+  @@map("combinaciones")
+}
+
+/// A qué combinación corresponde cada publicación de un canal (spec 004).
+/// Sin combinación y sin `ignorar` = está en la cola de Integraciones › Mapeo.
+model MapeoCanal {
+  id            String   @id @default(cuid())
+  tenantId      String   @default("sendero3d") @map("tenant_id")
+  /// "mercadolibre" | "shop"
+  canal         String
+  /// ML: "<MLA>|<variation_id>". Shop: "<producto_id>|<opcion_ids>" o "sku:<SKU>|<opciones>".
+  clave         String
+  combinacionId String?  @map("combinacion_id")
+  /// Un "pack de 10" es 10 unidades de la combinación.
+  unidades      Int      @default(1)
+  /// Otro negocio (Shay): la línea se descarta, como publicaciones_ml.ignorar.
+  ignorar       Boolean  @default(false)
+  /// "siembra" | "auto" | "manual". Uno manual no lo pisa la resolución automática.
+  origen        String   @default("auto")
+  descripcion   String?
+  /// Lo último que mandó el canal con esta clave (título, opciones).
+  muestra       Json?
+  vecesVista    Int      @default(0) @map("veces_vista")
+  ultimaVenta   String?  @map("ultima_venta")
+  creadoEn      DateTime @default(now()) @map("creado_en")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  combinacion Combinacion? @relation(fields: [combinacionId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, canal, clave])
+  @@index([combinacionId])
+  @@map("mapeos_canal")
 }
