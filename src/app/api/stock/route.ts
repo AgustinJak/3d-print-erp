@@ -167,7 +167,16 @@ export async function GET() {
         fechaEntrega: true,
         fechaPedido: true,
         cliente: { select: { nombre: true } },
-        items: { select: { id: true, modeloId: true, descripcion: true, cantidad: true, variantesInfo: true } },
+        items: {
+          select: {
+            id: true,
+            modeloId: true,
+            descripcion: true,
+            cantidad: true,
+            variantesInfo: true,
+            combinacion: { select: { modeloId: true, variantes: true } },
+          },
+        },
       },
     });
     const cobertura = await coberturaDePedidos(tenantId, abiertos);

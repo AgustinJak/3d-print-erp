@@ -16,6 +16,8 @@ const itemsInclude = {
       },
     },
   },
+  // La cobertura reparte por la combinación vendible de la línea (docs/sdd/001).
+  combinacion: { select: { modeloId: true, variantes: true, sku: true, nombre: true } },
 };
 
 export async function GET(request: NextRequest) {

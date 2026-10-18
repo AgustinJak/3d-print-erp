@@ -182,12 +182,14 @@ interface ItemResoluble {
 /**
  * De dónde salen el modelo y las variantes de una línea.
  *
- * `json` es como siempre: las entradas de `variantesInfo` con `matched` y
- * `varianteId`. `combinacion` usa la combinación vendible de la línea (spec 002).
- * Mientras dure el modo sombra el reparto usa `json`, y `verificarReparto`
- * compara las dos.
+ * `json` es como era: las entradas de `variantesInfo` con `matched` y `varianteId`.
+ * `combinacion` usa la combinación vendible de la línea (spec 002). `auto`, la que
+ * usa el reparto desde el 2026-10-18: la combinación si la línea la tiene, y el
+ * JSON si no (líneas a medida, o que entraron sin mapear). Se pasó a `auto` con el
+ * modo sombra en cero: 32 de 32 líneas abiertas iguales. `verificarReparto` sigue
+ * comparando `json` contra `combinacion`.
  */
-export type FuenteVariantes = "json" | "combinacion";
+export type FuenteVariantes = "json" | "combinacion" | "auto";
 
 /** Ids de variantes del inventario que quedaron registradas en el item. */
 function variantesDelItem(item: ItemResoluble): string[] {
@@ -212,7 +214,7 @@ function llevaInsumoFunda(ids: string[], ctx: Contexto): boolean {
 export function componentesDeItem(
   item: ItemResoluble,
   ctx: Contexto,
-  fuente: FuenteVariantes = "json"
+  fuente: FuenteVariantes = "auto"
 ): Componente[] {
   // Un trabajo a medida no tiene fila de stock ni recetas: se imprime para ese
   // cliente. Se lo muestra como "a pedido", igual que un modelo sin stock, para
@@ -228,7 +230,7 @@ export function componentesDeItem(
       },
     ];
   }
-  const porCombinacion = fuente === "combinacion" && item.combinacion;
+  const porCombinacion = fuente !== "json" && item.combinacion;
   const modeloId = porCombinacion ? item.combinacion!.modeloId : item.modeloId;
 
   const ids = porCombinacion ? item.combinacion!.variantes : variantesDelItem(item);
@@ -342,7 +344,16 @@ export async function reasignarReservas(tenantId: string): Promise<ResultadoReas
             canalVenta: true,
             fechaEntrega: true,
             fechaPedido: true,
-            items: { select: { id: true, modeloId: true, descripcion: true, cantidad: true, variantesInfo: true } },
+            items: {
+              select: {
+                id: true,
+                modeloId: true,
+                descripcion: true,
+                cantidad: true,
+                variantesInfo: true,
+                combinacion: { select: { modeloId: true, variantes: true } },
+              },
+            },
           },
         })
       ).filter((p) => !yaConsumieron.has(p.id));
@@ -708,7 +719,14 @@ export async function coberturaDePedidos(
     canalVenta: string;
     fechaEntrega: Date | null;
     fechaPedido: Date;
-    items: Array<{ id: string; modeloId: string | null; descripcion?: string | null; cantidad: number; variantesInfo: unknown }>;
+    items: Array<{
+      id: string;
+      modeloId: string | null;
+      descripcion?: string | null;
+      cantidad: number;
+      variantesInfo: unknown;
+      combinacion?: { modeloId: string; variantes: string[] } | null;
+    }>;
   }>
 ): Promise<Map<string, CoberturaPedido>> {
   const out = new Map<string, CoberturaPedido>();

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/data-loading";
+import { CombinacionesModelo } from "@/components/combinaciones-modelo";
 
 interface Variante {
   id: string;
@@ -322,6 +323,9 @@ export default function ModeloDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Combinaciones vendibles y sus recetas (docs/sdd/001) */}
+          <CombinacionesModelo modeloId={modelo.id} />
         </div>
       </div>
     </div>
