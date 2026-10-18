@@ -7,7 +7,7 @@ import { normalizeForMatch } from "@/lib/webhook-security";
  * Normaliza colapsando TODO lo no alfanumérico, así "95 cm" === "95cm".
  * `normalizeForMatch` deja espacios, por eso los tamaños nunca matcheaban.
  */
-const normalizeVariante = (s: string) => normalizeForMatch(s).replace(/s+/g, "");
+const normalizeVariante = (s: string) => normalizeForMatch(s).replace(/\s+/g, "");
 
 /** Busca la variante del modelo que corresponde a un valor que mandó ML. */
 function buscarVariante<T extends { nombre: string }>(variantes: T[], valor: string): T | undefined {

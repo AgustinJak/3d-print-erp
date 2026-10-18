@@ -17,6 +17,7 @@ import {
 } from "@/lib/constants";
 import { Badge } from "@/components/ui/badge";
 import { FileUpload } from "@/components/file-upload";
+import { variantesElegidas, variantesParaGuardar } from "@/lib/variantes-item";
 
 interface Variante {
   id: string;
@@ -61,6 +62,8 @@ interface ItemForm {
    * el pedido no lo borre.
    */
   aMedida?: { descripcion: string; variantesInfo: unknown };
+  /** Cómo estaba guardada la línea, para no perder lo que el reparto necesita (lib/variantes-item.ts). */
+  original?: { modeloId: string; variantesInfo: unknown };
 }
 
 interface PedidoData {
@@ -87,7 +90,7 @@ interface PedidoData {
     precioUnitario: number;
     costoUnitario: number;
     ajusteManual: number;
-    variantesInfo?: { nombre: string; precioAdicional: number; costoFabAdicional?: number }[] | null;
+    variantesInfo?: unknown;
   }[];
 }
 
@@ -175,6 +178,7 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
           aMedida: i.modeloId
             ? undefined
             : { descripcion: i.descripcion ?? "", variantesInfo: i.variantesInfo ?? null },
+          original: i.modeloId ? { modeloId: i.modeloId, variantesInfo: i.variantesInfo ?? null } : undefined,
         }))
       );
     } else {
@@ -203,15 +207,12 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
     setItems((prev) =>
       prev.map((item, idx) => {
         const pedidoItem = pedido.items[idx];
-        if (!pedidoItem?.variantesInfo?.length) return item;
+        if (!pedidoItem?.variantesInfo) return item;
         if (item.variantesSeleccionadas.length > 0) return item;
         const modelo = modelos.find(m => m.id === item.modeloId);
         if (!modelo) return item;
-        const seleccionadas: string[] = [];
-        for (const vi of pedidoItem.variantesInfo) {
-          const match = modelo.variantes.find(v => v.nombre === vi.nombre);
-          if (match) seleccionadas.push(match.id);
-        }
+        // Por id, y por nombre sólo en las líneas viejas que no lo guardaron.
+        const seleccionadas = variantesElegidas(pedidoItem.variantesInfo, modelo.variantes);
         return seleccionadas.length > 0 ? { ...item, variantesSeleccionadas: seleccionadas } : item;
       })
     );
@@ -307,10 +308,18 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
           };
         }
         const modelo = modelos.find(m => m.id === i.modeloId);
-        const variantesInfo = i.variantesSeleccionadas
-          .map(vid => modelo?.variantes?.find(v => v.id === vid))
-          .filter(Boolean)
-          .map(v => ({ nombre: v!.nombre, precioAdicional: v!.precioAdicional, costoFabAdicional: v!.costoFabAdicional }));
+        const original = i.original?.modeloId === i.modeloId ? i.original.variantesInfo : null;
+        // Sin el modelo cargado no se puede rearmar nada: la línea queda como estaba.
+        const variantesInfo = modelo
+          ? variantesParaGuardar(
+              i.variantesSeleccionadas
+                .map((vid) => modelo.variantes.find((v) => v.id === vid))
+                .filter((v): v is Variante => Boolean(v)),
+              original
+            )
+          : Array.isArray(original)
+            ? original
+            : [];
         return {
           modeloId: i.modeloId,
           cantidad: parseInt(i.cantidad) || 1,
