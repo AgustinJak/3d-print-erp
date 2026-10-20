@@ -24,10 +24,15 @@ export async function GET(request: NextRequest) {
     if (sp.get("todas") !== "1") where.activo = true;
     if (modeloId) where.modeloId = modeloId;
     if (q) {
-      where.OR = [
-        { nombre: { contains: q, mode: "insensitive" } },
-        { sku: { contains: q.toUpperCase() } },
-      ];
+      // Cada palabra en cualquier parte: "tanjiro 95 con" encuentra
+      // "Tanjiro Katana nueva 95cm · Con Funda".
+      where.AND = q
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 6)
+        .map((p) => ({
+          OR: [{ nombre: { contains: p, mode: "insensitive" as const } }, { sku: { contains: p.toUpperCase() } }],
+        }));
     }
 
     const combinaciones = await prisma.combinacion.findMany({

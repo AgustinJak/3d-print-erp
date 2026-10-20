@@ -371,6 +371,14 @@ export async function sembrarCombinacionesDeModelo(db: Db, tenantId: string, mod
     // accesorio" lo haya desactivado antes.
     else if (ids.length === 0) await db.combinacion.update({ where: { id: c.id }, data: { activo: true } });
   }
+  // Con variantes, al revés: "el modelo solo" no dice cuál es, y un mapeo que
+  // apuntaba ahí tiene que volver a resolverse (docs/sdd/001, spec 004).
+  if (m.variantes.length > 0) {
+    await db.combinacion.updateMany({
+      where: { tenantId, clave: claveDe(modeloId, []), activo: true },
+      data: { activo: false },
+    });
+  }
   return creadas;
 }
 

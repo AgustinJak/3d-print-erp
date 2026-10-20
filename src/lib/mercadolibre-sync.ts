@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { costoModelo, costoVariante } from "@/lib/costos";
 import { aplicarEstadoPedido, cancelarPedidoExterno, reasignarReservas } from "@/lib/reservas";
 import { normalizeForMatch } from "@/lib/webhook-security";
+import { aplicarUnidades, claveMl, describirVenta, lineaDeCombinacion, resolverLinea } from "@/lib/mapeo-canal";
 
 /**
  * Normaliza colapsando TODO lo no alfanumérico, así "95 cm" === "95cm".
@@ -382,113 +383,9 @@ export async function processMlOrderGroup(
     return { action: "ignored", warnings, reason: "orden_cancelada" };
   }
 
-  // ── Resolver items por MLA (juntando todos los items del pack) ──
-  const itemsData: Array<{
-    modeloId: string;
-    cantidad: number;
-    precioUnitario: number;
-    costoUnitario: number;
-    ajusteManual: number;
-    variantesInfo: Prisma.InputJsonValue;
-    mlaOrigen: string;
-  }> = [];
-
-  let itemsIgnorados = 0;
-  let itemsSinMapear = 0;
-
+  // ── Resolver items: por el mapeo, y si no, por la publicación (todo el pack) ──
   const allItems = orders.flatMap((o) => o.order_items);
-
-  for (const oi of allItems) {
-    const mla = oi.item.id;
-    const titulo = oi.item.title;
-
-    const mapeo = await prisma.publicacionMl.findUnique({
-      where: { tenantId_mla: { tenantId, mla } },
-    });
-
-    if (mapeo?.ignorar) {
-      itemsIgnorados++;
-      continue;
-    }
-
-    if (!mapeo || !mapeo.modeloId) {
-      itemsSinMapear++;
-      await prisma.publicacionMl.upsert({
-        where: { tenantId_mla: { tenantId, mla } },
-        create: { tenantId, mla, titulo, ultimoMla: key },
-        update: { titulo, ultimoMla: key, vecesVista: { increment: 1 } },
-      });
-      warnings.push(`Publicación sin mapear: "${titulo}" (${mla})`);
-      continue;
-    }
-
-    const modelo = await prisma.modelo.findFirst({
-      where: { tenantId, id: mapeo.modeloId },
-      include: { variantes: true },
-    });
-    if (!modelo) {
-      itemsSinMapear++;
-      warnings.push(`Modelo mapeado no encontrado para "${titulo}" (${mla})`);
-      continue;
-    }
-
-    // ── Variantes: las que manda ML + las que la publicación lleva SIEMPRE ──
-    // Muchas publicaciones no tienen variaciones en ML: el "95cm" y el "Con
-    // Funda" viven sólo en el título. Esas se configuran una vez por publicación
-    // (`variantesImplicitas`) y se aplican acá. Sin esto el pedido entraba con el
-    // costoFab base y la billetera de fabricación quedaba corta.
-    const variantesMatched: Array<Record<string, unknown>> = [];
-    const idsAplicados = new Set<string>();
-    let costoExtraVariantes = 0;
-
-    const aplicarVariante = (
-      v: (typeof modelo.variantes)[number],
-      origen: "variacion_ml" | "implicita_publicacion",
-      mlAtributo?: string,
-    ) => {
-      if (idsAplicados.has(v.id)) return; // no cobrar dos veces la misma variante
-      idsAplicados.add(v.id);
-      costoExtraVariantes += costoVariante(v);
-      variantesMatched.push({
-        nombre: v.nombre,
-        matched: true,
-        varianteId: v.id,
-        costoFabAdicional: v.costoFabAdicional,
-        origen,
-        ...(mlAtributo ? { mlAtributo } : {}),
-      });
-    };
-
-    for (const attr of oi.item.variation_attributes || []) {
-      const match = buscarVariante(modelo.variantes, attr.value_name);
-      if (match) {
-        aplicarVariante(match, "variacion_ml", attr.name);
-      } else {
-        // Opción cosmética (color, personaje) que no existe como variante del
-        // modelo. Se guarda para saber qué imprimir; no afecta el costo.
-        variantesMatched.push({ nombre: attr.value_name, mlAtributo: attr.name, matched: false });
-      }
-    }
-
-    for (const varianteId of mapeo.variantesImplicitas) {
-      const v = modelo.variantes.find((x) => x.id === varianteId);
-      if (v) {
-        aplicarVariante(v, "implicita_publicacion");
-      } else {
-        warnings.push(`Variante implícita ya no existe en "${titulo}" (${mla})`);
-      }
-    }
-
-    itemsData.push({
-      modeloId: modelo.id,
-      cantidad: oi.quantity,
-      precioUnitario: oi.unit_price,
-      costoUnitario: costoModelo(modelo) + costoExtraVariantes,
-      ajusteManual: 0,
-      variantesInfo: variantesMatched as unknown as Prisma.InputJsonValue,
-      mlaOrigen: mla,
-    });
-  }
+  const { itemsData, itemsIgnorados, itemsSinMapear } = await resolverItemsMl(tenantId, allItems, key, warnings);
 
   if (itemsData.length === 0) {
     return {
@@ -598,6 +495,229 @@ export async function processMlOrderGroup(
 }
 
 const CONSUMEN_AL_CREAR = new Set(["ESPERANDO_LIQUIDACION_ML", "ENTREGADO", "COMPLETADO"]);
+
+/* ───────────────────── Qué se vendió: mapeo y publicación ───────────────────── */
+
+type AtributoMl = { name: string; value_name: string };
+
+const PARECE_CANTIDAD = /\b(cantidad|unidades?|pack|x\s*\d+)\b/i;
+
+/** Una línea de pedido de ML lista para crear. */
+export interface ItemMl {
+  modeloId: string;
+  combinacionId: string | null;
+  claveCanal: string;
+  cantidad: number;
+  precioUnitario: number;
+  costoUnitario: number;
+  ajusteManual: number;
+  variantesInfo: Prisma.InputJsonValue;
+  mlaOrigen: string;
+}
+
+/** Lo que deduce la lógica de antes del mapeo: la publicación y los nombres. */
+export interface DeduccionMl {
+  /** La publicación está marcada como de otro negocio. */
+  ignorar: boolean;
+  /** La publicación tiene modelo en `publicaciones_ml` (aunque ya no exista). */
+  publicacionMapeada: boolean;
+  modelo: { id: string; nombre: string } | null;
+  /** Variantes aplicadas: las que mandó ML y las implícitas de la publicación. */
+  variantes: string[];
+  variantesInfo: Array<Record<string, unknown>>;
+  costoUnitario: number;
+  /** La regla estricta de la spec 004, RN-4: si es false, la clave va a la cola. */
+  sinDudas: boolean;
+  avisos: string[];
+}
+
+/**
+ * Qué se vendió según `publicaciones_ml`: el modelo de la publicación, los
+ * atributos de la variación buscados por nombre entre sus variantes, y las
+ * variantes que la publicación lleva siempre (`variantesImplicitas`).
+ *
+ * Es la lógica de antes del mapeo por canal. Ahora sólo propone: lo que deduce
+ * sin dudas queda mapeado, y lo demás va a la cola (docs/sdd/001, spec 004).
+ *
+ * Sin dudas = hay modelo, las variantes implícitas existen, y cada atributo es
+ * una variante del modelo, o no define qué se vende: porque es igual en todas las
+ * variaciones de la publicación (`atributosQueNoDefinen`, sólo en la siembra) o
+ * porque el modelo no tiene variantes y entonces es una sola cosa. Así entra el
+ * color de un llavero, que dice qué imprimir pero no cambia qué pieza es.
+ */
+export async function deducirPorPublicacion(
+  tenantId: string,
+  mla: string,
+  atributos: AtributoMl[],
+  opts: { atributosQueNoDefinen?: Set<string> } = {}
+): Promise<DeduccionMl> {
+  const vacia: DeduccionMl = {
+    ignorar: false,
+    publicacionMapeada: false,
+    modelo: null,
+    variantes: [],
+    variantesInfo: [],
+    costoUnitario: 0,
+    sinDudas: false,
+    avisos: [],
+  };
+  const pub = await prisma.publicacionMl.findUnique({ where: { tenantId_mla: { tenantId, mla } } });
+  if (pub?.ignorar) return { ...vacia, ignorar: true, sinDudas: true };
+  if (!pub?.modeloId) return vacia;
+
+  const modelo = await prisma.modelo.findFirst({
+    where: { tenantId, id: pub.modeloId },
+    include: { variantes: true },
+  });
+  if (!modelo) {
+    return { ...vacia, publicacionMapeada: true, avisos: [`Modelo mapeado no encontrado para la publicación ${mla}`] };
+  }
+
+  const variantesInfo: Array<Record<string, unknown>> = [];
+  const idsAplicados = new Set<string>();
+  const avisos: string[] = [];
+  let costoExtraVariantes = 0;
+  let atributosSueltos = 0;
+  let hayCantidad = false;
+
+  const aplicarVariante = (
+    v: (typeof modelo.variantes)[number],
+    origen: "variacion_ml" | "implicita_publicacion",
+    mlAtributo?: string,
+  ) => {
+    if (idsAplicados.has(v.id)) return; // no cobrar dos veces la misma variante
+    idsAplicados.add(v.id);
+    costoExtraVariantes += costoVariante(v);
+    variantesInfo.push({
+      nombre: v.nombre,
+      matched: true,
+      varianteId: v.id,
+      costoFabAdicional: v.costoFabAdicional,
+      origen,
+      ...(mlAtributo ? { mlAtributo } : {}),
+    });
+  };
+
+  for (const attr of atributos) {
+    const match = buscarVariante(modelo.variantes, attr.value_name);
+    if (match) {
+      aplicarVariante(match, "variacion_ml", attr.name);
+    } else {
+      // Opción cosmética (color, personaje) que no existe como variante del
+      // modelo. Se guarda para saber qué imprimir; no afecta el costo.
+      variantesInfo.push({ nombre: attr.value_name, mlAtributo: attr.name, matched: false });
+      if (!opts.atributosQueNoDefinen?.has(attr.name)) atributosSueltos++;
+      // Un pack no es cosmético: cambia cuántas unidades salen (spec 004, RN-2).
+      if (PARECE_CANTIDAD.test(`${attr.name} ${attr.value_name}`)) hayCantidad = true;
+    }
+  }
+
+  // Muchas publicaciones no tienen variaciones en ML: el "95cm" y el "Con Funda"
+  // viven sólo en el título. Esas se configuran una vez por publicación.
+  for (const varianteId of pub.variantesImplicitas) {
+    const v = modelo.variantes.find((x) => x.id === varianteId);
+    if (v) aplicarVariante(v, "implicita_publicacion");
+    else avisos.push(`Variante implícita ya no existe en la publicación ${mla}`);
+  }
+
+  const modeloSinVariantes = !modelo.variantes.some((v) => v.activo);
+  return {
+    ignorar: false,
+    publicacionMapeada: true,
+    modelo: { id: modelo.id, nombre: modelo.nombre },
+    variantes: [...idsAplicados],
+    variantesInfo,
+    costoUnitario: costoModelo(modelo) + costoExtraVariantes,
+    sinDudas: avisos.length === 0 && (atributosSueltos === 0 || (modeloSinVariantes && !hayCantidad)),
+    avisos,
+  };
+}
+
+/**
+ * Las líneas del pedido para los items de una compra de ML (docs/sdd/001, spec 004).
+ *
+ * Cada item se resuelve por su clave `<MLA>|<variation_id>` en el mapeo. Si la
+ * clave está en la cola, entra como antes, con lo que deduce la publicación, y el
+ * pedido queda a revisar; si la publicación ni siquiera tiene modelo, se descarta
+ * como siempre (puede ser de otro negocio) y espera a que alguien la mapee.
+ */
+export async function resolverItemsMl(
+  tenantId: string,
+  items: MlOrder["order_items"],
+  venta: string,
+  warnings: string[]
+): Promise<{ itemsData: ItemMl[]; itemsIgnorados: number; itemsSinMapear: number }> {
+  const itemsData: ItemMl[] = [];
+  let itemsIgnorados = 0;
+  let itemsSinMapear = 0;
+
+  for (const oi of items) {
+    const mla = oi.item.id;
+    const titulo = oi.item.title;
+    const atributos = oi.item.variation_attributes || [];
+    const clave = claveMl(mla, oi.item.variation_id);
+
+    const d = await deducirPorPublicacion(tenantId, mla, atributos);
+    const r = await resolverLinea(prisma, tenantId, "mercadolibre", clave, {
+      sugerencia: d.ignorar
+        ? { ignorar: true }
+        : d.modelo
+          ? { modeloId: d.modelo.id, variantes: d.variantes, sinDudas: d.sinDudas }
+          : null,
+      descripcion: describirVenta(titulo, atributos.map((a) => ({ grupo: a.name, nombre: a.value_name }))),
+      muestra: { titulo, variation_id: oi.item.variation_id ?? null, atributos } as Prisma.InputJsonValue,
+      venta,
+    });
+
+    if (r.tipo === "ignorar") {
+      itemsIgnorados++;
+      continue;
+    }
+
+    if (r.tipo === "combinacion") {
+      const linea = await lineaDeCombinacion(
+        prisma,
+        tenantId,
+        r.combinacion,
+        atributos.map((a) => ({ nombre: a.value_name, extra: { mlAtributo: a.name } }))
+      );
+      const { cantidad, precioUnitario } = aplicarUnidades(oi.quantity, oi.unit_price, r.unidades);
+      itemsData.push({ ...linea, cantidad, precioUnitario, ajusteManual: 0, mlaOrigen: mla, claveCanal: clave });
+      continue;
+    }
+
+    // En la cola.
+    if (!d.modelo) {
+      itemsSinMapear++;
+      if (!d.publicacionMapeada) {
+        await prisma.publicacionMl.upsert({
+          where: { tenantId_mla: { tenantId, mla } },
+          create: { tenantId, mla, titulo, ultimoMla: venta },
+          update: { titulo, ultimoMla: venta, vecesVista: { increment: 1 } },
+        });
+      }
+      warnings.push(...d.avisos, `Publicación sin mapear: "${titulo}" (${mla})`);
+      continue;
+    }
+    warnings.push(
+      ...d.avisos,
+      `Variación sin mapear: "${describirVenta(titulo, atributos.map((a) => ({ grupo: a.name, nombre: a.value_name })))}". Mapeala en Integraciones › Mapeo.`
+    );
+    itemsData.push({
+      modeloId: d.modelo.id,
+      combinacionId: null,
+      claveCanal: clave,
+      cantidad: oi.quantity,
+      precioUnitario: oi.unit_price,
+      costoUnitario: d.costoUnitario,
+      ajusteManual: 0,
+      variantesInfo: d.variantesInfo as unknown as Prisma.InputJsonValue,
+      mlaOrigen: mla,
+    });
+  }
+
+  return { itemsData, itemsIgnorados, itemsSinMapear };
+}
 
 /** Parsea la parte de día de un ISO y la fija al mediodía local (evita shifts). */
 function parseFechaDia(iso?: string | null): Date | null {

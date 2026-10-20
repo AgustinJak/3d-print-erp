@@ -9,6 +9,7 @@ import {
   reasignarReservas,
 } from "@/lib/reservas";
 import { verifyWebhookSignature, normalizeForMatch } from "@/lib/webhook-security";
+import { aplicarUnidades, claveShop, describirVenta, lineaDeCombinacion, resolverLinea } from "@/lib/mapeo-canal";
 
 /**
  * Encuentra el modelo del tamaño elegido cuando la Shop pega contra uno partido.
@@ -73,13 +74,22 @@ import type { Prisma } from "@/generated/prisma";
  * Diseñado para mapear 1:1 con su tabla `pedidos` + `pedido_items`.
  * ───────────────────────────────────────────────────────────────────── */
 
+// Los ids son opcionales (docs/sdd/001, spec 005): el Shop los suma cuando puede
+// y el ERP acepta el payload con y sin ellos. No se exige formato de uuid: un id
+// raro sólo da una clave que no está mapeada, y cae en la cola. Rechazarlo
+// perdería el pedido entero.
+const idShop = z.string().trim().min(1).max(64).nullable().optional();
+
 const opcionSchema = z.object({
+  grupo_id: idShop,
   grupo: z.string().optional(),       // "Tamaño", "Accesorios"
+  opcion_id: idShop,
   nombre: z.string(),                 // "65cm", "Con Funda"
   precio_extra: z.number().optional().default(0),
 });
 
 const itemSchema = z.object({
+  producto_id: idShop,
   sku: z.string().nullable().optional(),
   nombre_producto: z.string(),
   cantidad: z.number().int().min(1),
@@ -128,6 +138,136 @@ const payloadSchema = z.object({
 });
 
 type ShopPayload = z.infer<typeof payloadSchema>;
+
+/** Todas las líneas del pedido son de otro negocio: se registra y se responde 200. */
+class TodoIgnorado extends Error {
+  constructor(public lineas: number) {
+    super("todo_otro_negocio");
+  }
+}
+
+/**
+ * Lo que deduce la lógica de antes del mapeo para una línea del Shop: el modelo
+ * por SKU o por nombre exacto, el modelo del tamaño si es una katana partida, y
+ * las opciones buscadas por nombre entre sus variantes.
+ *
+ * Ahora sólo propone (docs/sdd/001, spec 004, RN-4): si no hay avisos, la clave
+ * queda mapeada sola; si los hay, va a la cola y la línea entra con esto. A
+ * diferencia de ML, una opción que no es variante siempre es una duda: en el
+ * Shop puede ser un pack de 10 o un diseño que es otra pieza (RN-8).
+ */
+async function deducirLineaShop(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  item: ShopPayload["items"][number]
+): Promise<{
+  modelo: { id: string; nombre: string } | null;
+  variantes: string[];
+  variantesInfo: Prisma.InputJsonValue;
+  costoUnitario: number;
+  avisos: string[];
+}> {
+  // Buscar modelo por SKU
+  let modelo = null;
+  if (item.sku) {
+    modelo = await tx.modelo.findFirst({
+      where: { tenantId, sku: item.sku, consolidadoEnId: null },
+      include: { variantes: true },
+    });
+  }
+  // Fallback: buscar por nombre exacto (case-insensitive), excluyendo consolidados
+  if (!modelo) {
+    modelo = await tx.modelo.findFirst({
+      where: {
+        tenantId,
+        consolidadoEnId: null,
+        nombre: { equals: item.nombre_producto, mode: "insensitive" },
+      },
+      include: { variantes: true },
+    });
+  }
+  if (!modelo) return { modelo: null, variantes: [], variantesInfo: [], costoUnitario: 0, avisos: [] };
+
+  // El SKU puede ser el de un modelo partido por tamaño. No se avisa: la
+  // redirección es el comportamiento correcto, y marcar cada katana de la
+  // Shop para revisión manual sería ruido, no información.
+  const porTamano = await resolverModeloPorTamano(tx, tenantId, modelo, item.opciones_seleccionadas);
+  if (porTamano.modeloId) {
+    const nuevo = await tx.modelo.findFirst({
+      where: { id: porTamano.modeloId },
+      include: { variantes: true },
+    });
+    if (nuevo) modelo = nuevo;
+  }
+
+  // Mapear variantes seleccionadas a las variantes cargadas en el inventario
+  const variantesMatched: Array<{
+    nombre: string;
+    shopGrupo?: string;
+    precioExtra: number;
+    matched: boolean;
+    varianteId?: string;
+    costoFabAdicional?: number;
+    /** El tamaño que definió cuál modelo es: no es una variante de éste. */
+    absorbidaEnElModelo?: boolean;
+  }> = [];
+  const variantes: string[] = [];
+  const avisos: string[] = [];
+
+  let costoExtraVariantes = 0;
+  for (const opcion of item.opciones_seleccionadas) {
+    // El tamaño ya quedó absorbido en la identidad del modelo. Se guarda
+    // para el registro de lo que eligió el comprador, sin `varianteId`:
+    // así no entra en el reparto de stock ni suma costo dos veces.
+    if (porTamano.opcionTamano && opcion.nombre === porTamano.opcionTamano) {
+      variantesMatched.push({
+        nombre: opcion.nombre,
+        shopGrupo: opcion.grupo,
+        precioExtra: opcion.precio_extra ?? 0,
+        matched: true,
+        absorbidaEnElModelo: true,
+      });
+      continue;
+    }
+
+    const target = normalizeForMatch(opcion.nombre);
+    const match = modelo.variantes.find(
+      (v) => normalizeForMatch(v.nombre) === target
+    );
+    if (match) {
+      variantesMatched.push({
+        nombre: match.nombre,
+        shopGrupo: opcion.grupo,
+        precioExtra: opcion.precio_extra ?? 0,
+        matched: true,
+        varianteId: match.id,
+        costoFabAdicional: match.costoFabAdicional,
+      });
+      variantes.push(match.id);
+      costoExtraVariantes += costoVariante(match);
+    } else {
+      variantesMatched.push({
+        nombre: opcion.nombre,
+        shopGrupo: opcion.grupo,
+        precioExtra: opcion.precio_extra ?? 0,
+        matched: false,
+      });
+      avisos.push(
+        `Variante sin match en "${modelo.nombre}": "${opcion.nombre}"${
+          opcion.grupo ? ` (${opcion.grupo})` : ""
+        }`
+      );
+    }
+  }
+
+  return {
+    modelo: { id: modelo.id, nombre: modelo.nombre },
+    variantes,
+    variantesInfo: variantesMatched as unknown as Prisma.InputJsonValue,
+    costoUnitario: costoModelo(modelo) + costoExtraVariantes,
+    avisos,
+  };
+}
 
 /* ───────────────────────── POST handler ───────────────────────── */
 
@@ -464,7 +604,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 6b. Mapear items: SKU → modelo + variantes
+      // 6b. Mapear items: por el mapeo del canal, y si no, SKU → modelo + variantes
       const itemsData: Array<{
         modeloId: string | null;
         descripcion: string | null;
@@ -473,10 +613,13 @@ export async function POST(request: NextRequest) {
         costoUnitario: number;
         ajusteManual: number;
         variantesInfo: Prisma.InputJsonValue;
+        combinacionId?: string | null;
+        claveCanal?: string | null;
       }> = [];
 
       const warnings: string[] = [];
       const aMedida: string[] = [];
+      let ignoradas = 0;
 
       // Una línea sin modelo guarda igual lo que eligió el comprador, como
       // registro: sin `varianteId`, así no entra en ningún reparto de stock.
@@ -506,32 +649,58 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Buscar modelo por SKU
-        let modelo = null;
-        if (item.sku) {
-          modelo = await tx.modelo.findFirst({
-            where: { tenantId, sku: item.sku, consolidadoEnId: null },
-            include: { variantes: true },
-          });
-        }
-        // Fallback: buscar por nombre exacto (case-insensitive), excluyendo consolidados
-        if (!modelo) {
-          modelo = await tx.modelo.findFirst({
-            where: {
-              tenantId,
-              consolidadoEnId: null,
-              nombre: { equals: item.nombre_producto, mode: "insensitive" },
-            },
-            include: { variantes: true },
-          });
+        // Primero el mapeo del canal (docs/sdd/001, spec 004): la clave por ids
+        // si el Shop los manda, o por SKU y opciones mientras no.
+        const clave = claveShop({
+          productoId: item.producto_id,
+          sku: item.sku,
+          nombre: item.nombre_producto,
+          opciones: item.opciones_seleccionadas.map((o) => ({ opcionId: o.opcion_id, nombre: o.nombre })),
+        });
+        const d = await deducirLineaShop(tx, tenantId, item);
+        const r = await resolverLinea(tx, tenantId, "shop", clave, {
+          sugerencia: d.modelo ? { modeloId: d.modelo.id, variantes: d.variantes, sinDudas: d.avisos.length === 0 } : null,
+          descripcion: describirVenta(item.nombre_producto, item.opciones_seleccionadas),
+          muestra: {
+            producto_id: item.producto_id ?? null,
+            sku: item.sku ?? null,
+            nombre_producto: item.nombre_producto,
+            opciones: item.opciones_seleccionadas,
+            precio_unitario: item.precio_unitario,
+          } as Prisma.InputJsonValue,
+          venta: payload.numero_pedido,
+        });
+
+        if (r.tipo === "ignorar") {
+          ignoradas++;
+          continue;
         }
 
+        if (r.tipo === "combinacion") {
+          const linea = await lineaDeCombinacion(
+            tx,
+            tenantId,
+            r.combinacion,
+            item.opciones_seleccionadas.map((o) => ({
+              nombre: o.nombre,
+              extra: { shopGrupo: o.grupo, precioExtra: o.precio_extra ?? 0 },
+            }))
+          );
+          // Un "Pack · 10 unidades" son 10 unidades de la combinación.
+          const { cantidad, precioUnitario } = aplicarUnidades(item.cantidad, item.precio_unitario, r.unidades);
+          itemsData.push({ ...linea, descripcion: null, cantidad, precioUnitario, ajusteManual: 0, claveCanal: clave });
+          continue;
+        }
+
+        // En la cola: entra como antes, con lo que se pudo deducir, y el pedido
+        // queda a revisar (spec 004, RN-5).
+        //
         // Un producto del catálogo que no coincide no se descarta: la plata ya
         // se cobró, y sin la línea el pedido quedaba mal o, si eran todas así,
         // directamente no entraba. Va sin modelo y el pedido queda a revisar.
-        if (!modelo) {
+        if (!d.modelo) {
           warnings.push(
-            `Producto sin match: "${item.nombre_producto}" (SKU: ${item.sku || "—"}). Quedó como línea sin modelo: editá el pedido y cargalo con el modelo que corresponde.`
+            `Producto sin match: "${item.nombre_producto}" (SKU: ${item.sku || "—"}). Quedó como línea sin modelo: mapealo en Integraciones › Mapeo, o editá el pedido y cargalo con el modelo que corresponde.`
           );
           itemsData.push({
             modeloId: null,
@@ -541,91 +710,31 @@ export async function POST(request: NextRequest) {
             costoUnitario: 0,
             ajusteManual: 0,
             variantesInfo: opcionesComoRegistro(item),
+            claveCanal: clave,
           });
           continue;
         }
 
-        // El SKU puede ser el de un modelo partido por tamaño. No se avisa: la
-        // redirección es el comportamiento correcto, y marcar cada katana de la
-        // Shop para revisión manual sería ruido, no información.
-        const porTamano = await resolverModeloPorTamano(tx, tenantId, modelo, item.opciones_seleccionadas);
-        if (porTamano.modeloId) {
-          const nuevo = await tx.modelo.findFirst({
-            where: { id: porTamano.modeloId },
-            include: { variantes: true },
-          });
-          if (nuevo) modelo = nuevo;
-        }
-
-        // Mapear variantes seleccionadas a las variantes cargadas en el inventario
-        const variantesMatched: Array<{
-          nombre: string;
-          shopGrupo?: string;
-          precioExtra: number;
-          matched: boolean;
-          varianteId?: string;
-          costoFabAdicional?: number;
-          /** El tamaño que definió cuál modelo es: no es una variante de éste. */
-          absorbidaEnElModelo?: boolean;
-        }> = [];
-
-        let costoExtraVariantes = 0;
-        for (const opcion of item.opciones_seleccionadas) {
-          // El tamaño ya quedó absorbido en la identidad del modelo. Se guarda
-          // para el registro de lo que eligió el comprador, sin `varianteId`:
-          // así no entra en el reparto de stock ni suma costo dos veces.
-          if (porTamano.opcionTamano && opcion.nombre === porTamano.opcionTamano) {
-            variantesMatched.push({
-              nombre: opcion.nombre,
-              shopGrupo: opcion.grupo,
-              precioExtra: opcion.precio_extra ?? 0,
-              matched: true,
-              absorbidaEnElModelo: true,
-            });
-            continue;
-          }
-
-          const target = normalizeForMatch(opcion.nombre);
-          const match = modelo.variantes.find(
-            (v) => normalizeForMatch(v.nombre) === target
-          );
-          if (match) {
-            variantesMatched.push({
-              nombre: match.nombre,
-              shopGrupo: opcion.grupo,
-              precioExtra: opcion.precio_extra ?? 0,
-              matched: true,
-              varianteId: match.id,
-              costoFabAdicional: match.costoFabAdicional,
-            });
-            costoExtraVariantes += costoVariante(match);
-          } else {
-            variantesMatched.push({
-              nombre: opcion.nombre,
-              shopGrupo: opcion.grupo,
-              precioExtra: opcion.precio_extra ?? 0,
-              matched: false,
-            });
-            warnings.push(
-              `Variante sin match en "${modelo.nombre}": "${opcion.nombre}"${
-                opcion.grupo ? ` (${opcion.grupo})` : ""
-              }`
-            );
-          }
-        }
-
+        warnings.push(
+          ...(d.avisos.length > 0
+            ? d.avisos
+            : [`Sin mapear: "${describirVenta(item.nombre_producto, item.opciones_seleccionadas)}". Mapealo en Integraciones › Mapeo.`])
+        );
         itemsData.push({
-          modeloId: modelo.id,
+          modeloId: d.modelo.id,
           descripcion: null,
           cantidad: item.cantidad,
           precioUnitario: item.precio_unitario,
-          costoUnitario: costoModelo(modelo) + costoExtraVariantes,
+          costoUnitario: d.costoUnitario,
           ajusteManual: 0,
-          variantesInfo: variantesMatched as unknown as Prisma.InputJsonValue,
+          variantesInfo: d.variantesInfo,
+          claveCanal: clave,
         });
       }
 
       if (itemsData.length === 0) {
+        // Todo lo del pedido es de otro negocio: no hay nada que cargar acá.
+        if (ignoradas > 0) throw new TodoIgnorado(ignoradas);
         throw new Error("ningún item del pedido pudo mapearse a modelos del inventario");
       }
 
@@ -663,7 +772,9 @@ export async function POST(request: NextRequest) {
       });
 
       return { pedido, clienteId: cliente.id, warnings };
-    });
+      // Cada línea resuelve su mapeo adentro (varias consultas por línea): con
+      // los 5 s por defecto un pedido de varias líneas podía quedar a mitad.
+    }, { timeout: 20_000, maxWait: 10_000 });
 
     // 7. Reservar el stock que le toca a este pedido según la cola.
     //    Si falla, el pedido igual quedó guardado: se arregla en el próximo
@@ -701,6 +812,23 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (e) {
+    if (e instanceof TodoIgnorado) {
+      await prisma.webhookLog
+        .create({
+          data: {
+            tenantId,
+            origen: "shop",
+            evento: "pedido.confirmado",
+            externoId: payload.numero_pedido,
+            estado: "ignorado",
+            errorMsg: `otro_negocio: ${e.lineas} líneas`,
+            payload: payload as unknown as Prisma.InputJsonValue,
+            ipAddress,
+          },
+        })
+        .catch(() => {});
+      return NextResponse.json({ ok: true, ignorado: "otro_negocio", lineas: e.lineas });
+    }
     const errorMsg = e instanceof Error ? e.message : "unknown_error";
     await prisma.webhookLog
       .create({

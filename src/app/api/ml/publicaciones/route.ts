@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { normalizeForMatch } from "@/lib/webhook-security";
 import { sugerirVariantesImplicitas, costoDeVariantes } from "@/lib/ml-variantes-implicitas";
+import { sembrarMapeosMl } from "@/lib/mapeo-ml";
 import { NextRequest, NextResponse } from "next/server";
 
 /* ───────────────────────── Similitud de título ───────────────────────── */
@@ -272,7 +273,19 @@ export async function PATCH(request: NextRequest) {
       data,
     });
 
-    return NextResponse.json({ ok: true, publicacion: updated });
+    // Las claves del mapeo por canal de esta publicación salen de lo que se acaba
+    // de cambiar: las que nadie tocó a mano se vuelven a resolver (docs/sdd/001,
+    // spec 004). Lee la publicación en ML; si ML no responde, quedan como estaban
+    // y se arreglan con la próxima venta o sembrando de nuevo.
+    let mapeo: { claves: number; mapeadas: number; enCola: number } | null = null;
+    try {
+      const r = await sembrarMapeosMl(tenantId, { mlas: [mla], rehacer: true });
+      mapeo = { claves: r.claves, mapeadas: r.mapeadas, enCola: r.enCola };
+    } catch (err) {
+      console.error("[ml/publicaciones] no se pudo rehacer el mapeo de", mla, err);
+    }
+
+    return NextResponse.json({ ok: true, publicacion: updated, mapeo });
   } catch (e) {
     if (e instanceof NextResponse) return e;
     const msg = e instanceof Error ? e.message : "error";

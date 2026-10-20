@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   Plug, ShoppingBag, RefreshCw, Copy, Check, AlertTriangle,
   CheckCircle2, XCircle, Eye, ExternalLink, Wand2, FileWarning,
-  Tags, Pencil, Plus, Box, Store, Unplug, Download, Loader2, Coins, ChevronRight,
+  Tags, Pencil, Plus, Box, Store, Unplug, Download, Loader2, Coins, ChevronRight, Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/empty-state";
 import { nombreDeItem } from "@/lib/items";
+import { MapeoCanales } from "./mapeo-canales";
 
 /* ─── Types ─────────────────────────────────────────── */
 
@@ -192,7 +193,7 @@ interface AltasBodega {
 
 const plata = (n: number) => "$" + Math.round(n).toLocaleString("es-AR");
 
-type Tab = "estado" | "mercadolibre" | "logs" | "revision" | "skus" | "costos";
+type Tab = "estado" | "mercadolibre" | "mapeo" | "logs" | "revision" | "skus" | "costos";
 
 /* ─── Page ───────────────────────────────────────────── */
 
@@ -219,6 +220,13 @@ function IntegracionesContent() {
   const [verSaltados, setVerSaltados] = useState(false);
   const [altas, setAltas] = useState<AltasBodega | null>(null);
   const [altasSel, setAltasSel] = useState<Set<string>>(new Set());
+  const [colaMapeo, setColaMapeo] = useState(0);
+
+  // Sólo el conteo de la cola, para la pestaña; la lista la pide la pestaña misma.
+  const fetchColaMapeo = useCallback(async () => {
+    const r = await fetch("/api/integraciones/mapeos?resumen=1");
+    if (r.ok) setColaMapeo((await r.json()).cola ?? 0);
+  }, []);
 
   // El plan mira todos los modelos, el stock y las recetas: se pide sólo
   // cuando se abre la pestaña, no en cada carga de Integraciones.
@@ -297,7 +305,8 @@ function IntegracionesContent() {
     setPedidosRevision(await revRes.json());
     setSkusAudit(await skusRes.json());
     setLoading(false);
-  }, []);
+    fetchColaMapeo();
+  }, [fetchColaMapeo]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -557,6 +566,14 @@ function IntegracionesContent() {
             <span className="ml-1.5 h-2 w-2 rounded-full bg-emerald-500" />
           ) : null}
         </TabBtn>
+        <TabBtn active={tab === "mapeo"} onClick={() => setTab("mapeo")}>
+          <Link2 className="h-4 w-4 mr-1.5" /> Mapeo
+          {colaMapeo > 0 && (
+            <Badge className="ml-1.5 h-5 px-1.5 bg-amber-500/20 text-amber-500 border-amber-500/30 hover:bg-amber-500/20">
+              {colaMapeo}
+            </Badge>
+          )}
+        </TabBtn>
         <TabBtn active={tab === "logs"} onClick={() => setTab("logs")}>
           <Eye className="h-4 w-4 mr-1.5" /> Logs
           {logs.length > 0 && (
@@ -591,6 +608,9 @@ function IntegracionesContent() {
           )}
         </TabBtn>
       </div>
+
+      {/* Tab: Mapeo por canal (docs/sdd/001, spec 004) */}
+      {tab === "mapeo" && <MapeoCanales onCambio={fetchColaMapeo} />}
 
       {/* Tab: Estado */}
       {tab === "estado" && status && (
