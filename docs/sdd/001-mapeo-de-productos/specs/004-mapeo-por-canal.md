@@ -40,8 +40,11 @@ una sola tabla en el ERP.
   publicación, sin tocar la publicación.
 - **REQ-7** — Los mapeos del Shop deben sembrarse una vez desde su catálogo: cada producto activo
   por cada combinación de sus opciones, con la clave por ids. Al 2026-10-18, los 48 pedidos del
-  Shop con opciones guardan `opcion_id` en todas, así que la clave por ids sirve también para el
-  historial.
+  Shop con opciones guardan `opcion_id` en todas, ~~así que la clave por ids sirve también para el
+  historial~~. **Corregido el 2026-10-19:** esos ids no eran estables hasta el `docs/sdd/017` del
+  Shop ("Guardar variantes" recreaba las opciones); 32 de 58 opciones de pedidos viejos ya no
+  existen. La siembra desde el catálogo de hoy cubre las ventas de acá en adelante; un reenvío
+  de un pedido viejo con ids muertos cae en la cola.
 
 ## Reglas de negocio
 - **RN-1** — Claves externas:
@@ -51,6 +54,7 @@ una sola tabla en el ERP.
   | Mercado Libre | `<MLA>\|<variation_id>`; vacío si la publicación no tiene variaciones | `MLA2810531220\|` |
   | Shop (con ids, spec 005) | `<producto_id>\|<opcion_ids ordenados, separados por coma>` | `3f2a…\|9c1d…,a07e…` |
   | Shop (mientras no mande ids) | `sku:<SKU>\|<valores de las opciones normalizados y ordenados>` | `sku:SS-DEM-KAT-006\|95cm,con funda` |
+  | Shop (sin ids ni SKU) | `nombre:<producto normalizado>\|<valores>` | `nombre:katana tanjiro\|95cm` |
 
 - **RN-2** — **Unidades:** la línea guarda `cantidad × unidades` y `precio_unitario ÷ unidades`.
   "Pack · 10 unidades ($2250u)" de 1 → 10 unidades a $2.250. Por defecto 1.
@@ -60,8 +64,23 @@ una sola tabla en el ERP.
   atributos del canal son variantes del modelo o están en una lista de atributos que no definen
   qué se vende (por ejemplo, un color en una publicación de un solo color). Cualquier otra cosa va
   a la cola.
+  Precisado al implementar (2026-10-19):
+  - **ML:** un atributo no define qué se vende si vale lo mismo en todas las variaciones de la
+    publicación (lo ve la siembra), o si el modelo no tiene variantes activas, salvo que el
+    atributo parezca una cantidad (pack, unidades, "x10"). En los últimos 180 días eso cubre las
+    240 líneas con un color que el modelo no tiene: son una sola cosa.
+  - **Shop:** sin esa excepción. Una opción que no es variante siempre es una duda, porque en el
+    Shop puede ser un pack o un diseño que es otra pieza (RN-8).
+  - **"El modelo solo" de un modelo con variantes nunca resuelve:** una katana que no dice si
+    lleva funda va a la cola. Por la misma razón, cuando un modelo pasa a tener variantes su
+    combinación sin variantes se desactiva, y los mapeos automáticos que apuntaban ahí vuelven a
+    resolverse.
 - **RN-5** — Una venta con una clave en la cola entra igual (como hoy): con el mejor modelo que se
   pudo deducir, o sin modelo, y el pedido con `revision_manual`. Nunca se pierde una línea.
+  Excepción que ya existía: en ML, una publicación que no tiene modelo en `publicaciones_ml` se
+  sigue descartando hasta mapearla, porque puede ser de otro negocio. Su clave queda en la cola.
+  Cuando una clave de la cola se resuelve (a mano o sola, en una venta posterior o en una
+  siembra), las líneas de pedidos abiertos que la esperaban se completan.
 - **RN-6** — Un mapeo automático se puede corregir a mano; desde ese momento queda manual y la
   resolución automática no lo pisa.
 - **RN-7** — El tamaño de una katana es una opción del Shop y una combinación del modelo de ese

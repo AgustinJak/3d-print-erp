@@ -13,7 +13,7 @@
     "approvedAt": "2026-10-18",
     "notes": "Validado en el chat (\"dale go\"), con las respuestas de la spec 004 (RN-8) y la spec 006 incluidas."
   },
-  "updatedAt": "2026-10-18",
+  "updatedAt": "2026-10-19",
   "tasks": [
     {
       "id": "TASK-001",
@@ -238,7 +238,7 @@
       "title": "Lógica del mapeo por canal",
       "description": "src/lib/mapeo-canal.ts: claveMl, claveShop (por ids y transitoria), aplicarUnidades y resolverLinea (mapeo, resolución automática estricta, cola). Pruebas con fixtures.",
       "component": "integration",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-003"
@@ -251,15 +251,15 @@
         "src/lib/mapeo-canal.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-19",
+      "notes": "Con resolverLinea, lineaDeCombinacion, completarLineasDeClave, mapearClave y esAmbigua. RN-4 precisada en la spec (ML admite atributos cosméticos en modelos sin variantes; el Shop no)."
     },
     {
       "id": "TASK-011",
       "title": "Sembrar los mapeos de Mercado Libre",
       "description": "POST /api/integraciones/mapeos/sembrar-ml: para cada publicación mapeada en publicaciones_ml, lee GET /items/{MLA} y crea una clave por variación (o una sin variación), resuelta con las variantes implícitas y los atributos. Lo que no resuelve, a la cola. Sólo lee ML.",
       "component": "integration",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-010"
@@ -271,19 +271,20 @@
         "CA-1 de 004-mapeo-por-canal"
       ],
       "files": [
+        "src/lib/mapeo-ml.ts",
         "src/app/api/integraciones/mapeos/sembrar-ml/route.ts",
-        "src/lib/mercadolibre.ts"
+        "scripts/sdd-001-sembrar-ml.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-19",
+      "notes": "Siembra real del 2026-10-19: 113 publicaciones, 115 claves. Desde la PC tarda unos 15 minutos (latencia a us-east-2); desde Vercel debería entrar en el maxDuration de 300 s."
     },
     {
       "id": "TASK-012",
       "title": "El sync de ML resuelve por el mapeo",
       "description": "processMlOrderGroup arma MLA|variation_id, resuelve con resolverLinea y guarda combinacion_id y clave_canal; publicaciones_ml queda como respaldo mientras exista.",
       "component": "integration",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-010",
@@ -299,11 +300,12 @@
         "CA-1 de 003-linea-con-combinacion"
       ],
       "files": [
-        "src/lib/mercadolibre-sync.ts"
+        "src/lib/mercadolibre-sync.ts",
+        "src/app/api/ml/publicaciones/route.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-19",
+      "notes": "resolverItemsMl y deducirPorPublicacion (la lógica de antes, ahora sólo propone). Una publicación sin modelo se sigue descartando como antes (RN-5). Editar una publicación en la pestaña de ML vuelve a resolver sus claves no manuales."
     },
     {
       "id": "TASK-013",
@@ -327,14 +329,14 @@
       ],
       "blockedReason": null,
       "completedAt": null,
-      "notes": "Grupos especiales del Shop definidos en la spec 004, RN-8 (vaso y llavero BT21 comparten fila; jabonera, una por diseño; exhibidor, insumo; pack, unidades)."
+      "notes": "Grupos especiales del Shop definidos en la spec 004, RN-8 (vaso y llavero BT21 comparten fila; jabonera, una por diseño; exhibidor, insumo; pack, unidades). Desde el docs/sdd/017 del Shop los ids de opción son estables: se siembra desde el catálogo de hoy, con la clave por ids."
     },
     {
       "id": "TASK-014",
       "title": "El webhook del Shop resuelve por el mapeo",
       "description": "Acepta producto_id, grupo_id y opcion_id opcionales; arma la clave por ids o la transitoria; resuelve con resolverLinea, aplica unidades y guarda combinacion_id y clave_canal. Las líneas personalizado no se mapean.",
       "component": "integration",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-010",
@@ -354,15 +356,15 @@
         "src/app/api/webhook/shop/pedido/route.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-19",
+      "notes": "Los ids son opcionales y sin formato de uuid obligatorio (un id raro cae en la cola, no rechaza el pedido). Transacción con timeout de 20 s: con el mapeo adentro, un pedido de varias líneas pasaba los 5 s por defecto. Un pedido todo de otro negocio responde 200 y no se carga."
     },
     {
       "id": "TASK-015",
       "title": "Pantalla de Mapeo en Integraciones",
       "description": "GET /api/integraciones/mapeos y PATCH /api/integraciones/mapeos/[id]; pestaña Mapeo con la cola y el listado por canal. Al mapear, completa las líneas abiertas con esa clave_canal, recalcula su costo y reparte.",
       "component": "ui",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-010",
@@ -378,18 +380,20 @@
       "files": [
         "src/app/api/integraciones/mapeos/route.ts",
         "src/app/api/integraciones/mapeos/[id]/route.ts",
-        "src/app/(app)/integraciones/page.tsx"
+        "src/app/(app)/integraciones/mapeo-canales.tsx",
+        "src/app/(app)/integraciones/page.tsx",
+        "src/app/api/combinaciones/route.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-19",
+      "notes": "Pestaña en su propio componente (mapeo-canales.tsx). El buscador de combinaciones ahora busca cada palabra en cualquier parte (sirve también al diálogo de pedido)."
     },
     {
       "id": "TASK-016",
       "title": "Pasarle la spec 005 a la sesión del Shop",
       "description": "El Shop suma producto_id, grupo_id y opcion_id al payload (spec 005). Lo implementa su sesión; acá sólo se entrega y se verifica el primer pedido que llegue con ids.",
       "component": "docs",
-      "status": "pending",
+      "status": "in-progress",
       "origin": "plan",
       "dependencies": [],
       "specs": [
@@ -401,14 +405,14 @@
       "files": [],
       "blockedReason": null,
       "completedAt": null,
-      "notes": null
+      "notes": "El Shop la implementó en su docs/sdd/017 (commit 5050b03, en producción el 2026-10-19). Sus ids de opción son estables recién desde ese deploy: pedidos viejos pueden traer ids muertos (32 de 58 opciones) y caen en la cola. Falta verificar el primer pedido con ids con la spec 004 desplegada."
     },
     {
       "id": "TASK-017",
       "title": "Prueba de punta a punta en un tenant aislado",
       "description": "Webhooks firmados contra el inventario local: venta mapeada, sin mapear, pack, katana por tamaño, y mapear la cola completa la línea abierta. Se borra todo después.",
       "component": "test",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-012",
@@ -425,10 +429,12 @@
         "CA-5 de 004-mapeo-por-canal",
         "CA-6 de 004-mapeo-por-canal"
       ],
-      "files": [],
+      "files": [
+        "scripts/sdd-001-probar-mapeo.ts"
+      ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-19",
+      "notes": "scripts/sdd-001-probar-mapeo.ts: 26 de 26, con webhooks firmados contra el handler real del Shop y órdenes inventadas contra resolverItemsMl (sin llamar a ML). Tenant borrado al final. La pantalla no se vio en el navegador: pide sesión."
     },
     {
       "id": "TASK-020",

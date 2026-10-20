@@ -103,7 +103,8 @@ alter table public.mapeos_canal  enable row level security;
 | POST | `/api/combinaciones/backfill` (nuevo) | NonDemo | Completa `combinacion_id` en líneas existentes (spec 003, RN-1); con `?simular=1` sólo informa |
 | GET | `/api/integraciones/mapeos?canal=&estado=cola\|todos` (nuevo) | NonDemo | La cola y los mapeos |
 | PATCH | `/api/integraciones/mapeos/[id]` (nuevo) | NonDemo | `{ combinacionId, unidades, ignorar }`; queda `manual`; completa las líneas abiertas con esa `clave_canal` y reparte (spec 004, REQ-5) |
-| POST | `/api/integraciones/mapeos/sembrar-ml` (nuevo) | NonDemo | Lee `GET /items/{MLA}` de cada publicación mapeada y siembra una clave por variación |
+| POST | `/api/integraciones/mapeos/sembrar-ml` (nuevo) | NonDemo | Lee `GET /items/{MLA}` de cada publicación mapeada o ignorada y siembra una clave por variación. `?simular=1`, `?rehacer=1`, `?mla=` (repetible). `maxDuration` 300 |
+| PATCH | `/api/ml/publicaciones` (existente) | sin cambios | Además de guardar, vuelve a resolver las claves no manuales de esa publicación (una lectura de ML; si falla, no rompe el guardado) |
 | GET | `/api/combinaciones/[id]/receta` (nuevo) | `getAuthenticatedTenant` | La pieza y los insumos que consume la combinación (lo mismo que calcula `componentesDeItem`) |
 | PUT | `/api/combinaciones/[id]/receta` (nuevo) | NonDemo | `{ insumos: [{ stockId, cantidad }] }`: reescribe las `reglas_insumo` con `requiere` = variantes de la combinación, y reparte |
 | GET | `/api/insumos` (nuevo) | `getAuthenticatedTenant` | Filas de stock de los modelos de la categoría Insumos, activos o no |
@@ -120,7 +121,10 @@ Shop exportado a JSON (productos activos con grupos y opciones) y crea las clave
 | Ruta / componente | Server o client | Notas |
 |---|---|---|
 | `src/lib/combinaciones.ts` (nuevo) | — | Puro: `claveDe`, `nombreDe`, `sufijosDe` (RN-2 de la spec 001, colisiones incluidas), `skuDe`. Con base: `asegurarCombinacion(tx, tenantId, modeloId, variantes)` |
-| `src/lib/mapeo-canal.ts` (nuevo) | — | Puro: `claveMl`, `claveShop` (ids o transitoria), `aplicarUnidades`. Con base: `resolverLinea(canal, clave, sugerencia)` → `{ combinacion, unidades }`, `{ ignorar }` o `{ cola }` |
+| `src/lib/mapeo-canal.ts` (nuevo) | — | Puro: `claveMl`, `claveShop` (ids o transitoria), `aplicarUnidades`. Con base: `resolverLinea(canal, clave, sugerencia)` → `{ combinacion, unidades }`, `{ ignorar }` o `{ cola }`; `lineaDeCombinacion` (modelo, costo y `variantesInfo` de la línea), `completarLineasDeClave`, `mapearClave` (lo que hace el PATCH) y `esAmbigua` |
+| `src/lib/mapeo-ml.ts` (nuevo) | — | `sembrarMapeosMl(tenantId, { simular, rehacer, mlas })`. Lo usan el endpoint de siembra y el PATCH de `/api/ml/publicaciones`, que vuelve a resolver las claves no manuales de la publicación que se edita |
+| `src/lib/mercadolibre-sync.ts` | — | `deducirPorPublicacion` (la lógica de antes, ahora sólo propone) y `resolverItemsMl` (los items de una compra, sin llamar a ML: se puede probar con órdenes inventadas) |
+| `/integraciones` › Mapeo (`mapeo-canales.tsx`, nuevo) | Client | Componente aparte: la página ya pasaba las 1.900 líneas |
 | `src/lib/reservas.ts` | — | `ItemResoluble` suma `combinacion?: { modeloId, variantes }`; si está, las variantes salen de ahí (spec 002). Nueva `verificarReparto(tenantId)` |
 | `/modelos/[id]` | Client | Sección "Combinaciones" con SKU, estado, alta, lo que consume cada una, "Agregar accesorio" y selector de insumo |
 | `/integraciones` | Client | Pestaña "Mapeo": cola y listado por canal, con selector de combinación |

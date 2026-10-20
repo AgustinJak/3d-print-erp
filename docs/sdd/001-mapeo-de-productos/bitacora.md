@@ -119,3 +119,86 @@ Si un problema puede volver a pasar en **otra** feature, además de anotarlo ac�
 **Para el que sigue**
 - El formulario de edición sigue dejando cargar a mano el "+$ costo" de "Con Funda". Si la funda
   tiene costo de Bodega, guardar la receta lo pisa con el costo real (spec 006, RN-4).
+
+## 2026-10-19 · Claude (sesión del inventario) — segunda mitad: el mapeo por canal
+
+**Tareas:** TASK-010, 011, 012, 014, 015 y 017 (pending → completed); TASK-016 en curso. Sin
+commitear ni desplegar al cerrar esta entrada.
+
+**Qué se hizo**
+- `src/lib/mapeo-canal.ts`: claves, unidades, `resolverLinea` (mapeo primero; si no, la lógica
+  de antes propone y lo que propone sin dudas queda mapeado solo), `lineaDeCombinacion`,
+  `completarLineasDeClave` y `mapearClave`.
+- ML: `deducirPorPublicacion` y `resolverItemsMl` salieron de `processMlOrderGroup`. La siembra
+  (`src/lib/mapeo-ml.ts`) lee cada publicación con `GET /items/{MLA}`, sólo lectura.
+- Shop: el webhook resuelve cada línea por el mapeo y acepta `producto_id`, `grupo_id` y
+  `opcion_id` opcionales (spec 005, que todavía no manda nadie).
+- Integraciones › Mapeo: la cola y todas las claves, con buscador de combinaciones, unidades y
+  "Otro negocio". Al mapear, las líneas abiertas que esperaban la clave se completan y se
+  reparte.
+- Prueba de punta a punta (`scripts/sdd-001-probar-mapeo.ts`): 26 de 26. Las de la primera
+  mitad siguen bien (recetas, modelos, y el reparto en sombra: 42 iguales, 0 distintas).
+- **Siembra de ML real**, en producción: 113 publicaciones, 115 claves; 73 resueltas solas, 15 de
+  otro negocio, 27 en la cola. Creó dos combinaciones nuevas (Lostvayne 65cm · verde y · Azul
+  acero, sin SKU porque el modelo no tiene). Ninguna línea de pedido cambió: el código
+  desplegado todavía no lee `mapeos_canal`.
+
+**Problemas y cómo se resolvieron**
+- *La siembra iba a crear "el modelo solo" activo para las katanas sin funda configurada.* La
+  primera simulación mostró 9 "combinaciones nuevas" que eran eso. Regla nueva (`esAmbigua`):
+  "el modelo solo" de un modelo con variantes nunca resuelve, va a la cola. Y cuando un modelo
+  pasa a tener variantes, su combinación sin variantes se desactiva
+  (`sembrarCombinacionesDeModelo`), para que los mapeos que apuntaban ahí vuelvan a resolverse.
+- *RN-4 no alcanzaba para ML.* En 180 días hubo 240 líneas con un color que el modelo no tiene,
+  todas de modelos sin variantes: son una sola cosa. ML acepta ese caso (salvo atributos que
+  parecen cantidades); el Shop no, porque ahí una opción puede ser un pack o un diseño que es
+  otra pieza (RN-8). Quedó escrito en la spec 004.
+- *La transacción del webhook del Shop pasaba los 5 s de Prisma* en la prueba (desde la PC, con
+  la latencia a us-east-2). Con el mapeo adentro, cada línea hace varias consultas. Se subió a
+  20 s. Desde Vercel (mismo datacenter) debería sobrar, pero un pedido de varias líneas podía
+  cortarse a mitad.
+- *La siembra real desde la PC tardó unos 15 minutos* (la simulación, 8). En Vercel el endpoint
+  tiene `maxDuration` 300; con la latencia de allá debería entrar en un minuto.
+- *Un heredoc de bash convirtió `\b` en un carácter de retroceso* en una regex. Ya estaba
+  anotado: los cambios con barras invertidas van con Edit o con un script escrito con Write.
+- *El validador de mermaid del scratchpad perdió un archivo de jsdom*; se reinstaló.
+
+**Decisiones tomadas sin preguntar** (chicas, a revisar con Agustín)
+- En ML, una publicación **sin modelo** se sigue descartando como antes (su clave queda en la
+  cola). Cargarla sin modelo metería en el ERP las ventas de Shay que todavía no estén marcadas.
+- Los ids del Shop no se validan como uuid: un id raro da una clave sin mapear y no rechaza el
+  pedido.
+- Editar una publicación en la pestaña vieja de ML vuelve a resolver sus claves no manuales (una
+  lectura de ML por guardado), para que las dos pantallas no se contradigan mientras convivan.
+
+**Para el que sigue**
+- La cola de ML tiene 27 claves para mapear a mano desde la pestaña nueva, una vez desplegada.
+- La pantalla no se vio en el navegador: pide sesión.
+- Falta TASK-022 con Agustín, después TASK-013 (siembra del Shop: exportar su catálogo con SQL
+  de sólo lectura) y TASK-019. La clave del Shop por ids sólo sirve cuando el Shop los mande
+  (spec 005); mientras tanto entra la transitoria por SKU, así que la siembra del Shop conviene
+  después de ese cambio, o sembrando las dos claves.
+- `INV - Changelog` no tiene todavía la primera mitad ni esta: se arma con los commits.
+
+## 2026-10-19 · Claude (sesión del inventario) — el Shop ya manda los ids
+
+**Qué pasó**
+- El Shop hizo la spec 005 en su `docs/sdd/017` (commit `5050b03`, en producción). Dato nuevo:
+  sus ids de opción **no eran estables** hasta ese deploy ("Guardar variantes" recreaba las
+  opciones). 32 de 58 opciones de pedidos viejos ya no existen. Se corrigió REQ-7 de la spec 004,
+  que daba por buena la clave por ids para el historial.
+- El ERP desplegado (sin la spec 004) recibe el payload nuevo sin problema: zod descarta los
+  campos que no conoce. SS-00136 entró bien después del deploy del Shop.
+
+**Encontrado de paso**
+- Desde el deploy de la primera mitad, los webhooks no completan `combinacion_id` (eso llega con
+  esta segunda mitad): 18 líneas con modelo y sin combinación, 17 de pedidos abiertos. Todas
+  tienen la variante elegida o un modelo sin variantes: el backfill de combinaciones las completa
+  solo. Correrlo después del deploy. El reparto no se vio afectado: cae al JSON.
+- Dos líneas "sin modelo" de pedidos abiertos del Shop, entradas con el código viejo y por eso
+  sin `clave_canal`: SS-00133 ("Bola De Demolicion, Wrecking Ball…", sin SKU) y SS-00136
+  ("Katana de Tanjiro Kamado (Roja)", SKU `SS-DEM-KAT-007`, que no existe en el ERP). Mapear la
+  clave no las completa: se corrigen editando el pedido.
+
+**Para el que sigue**
+- La siembra del Shop (TASK-013) se hace desde el catálogo de hoy, con la clave por ids.

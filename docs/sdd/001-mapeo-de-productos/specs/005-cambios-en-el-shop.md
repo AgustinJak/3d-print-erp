@@ -2,8 +2,8 @@
 id: 005-cambios-en-el-shop
 feature: 001-mapeo-de-productos
 titulo: El Shop manda ids estables del producto y de cada opción en el webhook
-estado: validated
-actualizado: 2026-10-18
+estado: implemented
+actualizado: 2026-10-19
 ---
 
 # Cambios en el Shop
@@ -11,6 +11,21 @@ actualizado: 2026-10-18
 > [!info] La implementa la sesión del Shop
 > Es el único cambio que esta feature le pide al Shop. Es aditivo: el ERP acepta el payload de
 > hoy y el nuevo.
+
+> [!success] En producción desde el 2026-10-19
+> El Shop la hizo en su `docs/sdd/017` (commit `5050b03`): `pedido.confirmado` manda
+> `producto_id` por línea y `grupo_id` + `opcion_id` por opción, sacados de `pedido_items`; las
+> líneas personalizadas van con `producto_id: null` y sin ids de opción.
+>
+> **Lo que no sabíamos al escribirla:** los ids de opción son estables recién desde ese deploy.
+> Antes, "Guardar variantes" del admin del Shop borraba y recreaba todas las opciones del
+> producto. Pedidos anteriores pueden traer ids que ya no existen (32 de 58 opciones al
+> 2026-10-19, las Steel Ball hasta SS-00129): van tal cual y caen en la cola de mapeo. La regla
+> de RN-3 vale desde ahora.
+>
+> Falta del lado del ERP: verificar el primer pedido que llegue con ids una vez desplegada la
+> spec 004. El ERP de antes los descarta sin error (zod ignora los campos que no conoce):
+> SS-00136 entró bien después del deploy del Shop.
 
 ## Contexto
 El Shop ya guarda ids estables de lo que eligió el cliente: cada opción de
