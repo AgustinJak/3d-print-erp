@@ -13,7 +13,7 @@
     "approvedAt": "2026-10-18",
     "notes": "Validado en el chat (\"dale go\"), con las respuestas de la spec 004 (RN-8) y la spec 006 incluidas."
   },
-  "updatedAt": "2026-10-19",
+  "updatedAt": "2026-10-20",
   "tasks": [
     {
       "id": "TASK-001",
@@ -513,7 +513,7 @@
       "title": "Actualizar el cerebro",
       "description": "INV - Flujos, Flujos del ecosistema (contratos 1 y 2), INV - Integración Mercado Libre, INV - Integración Sendero Shop, INV - Modelos, INV - Changelog, INV - Decisiones, Mapeo de productos y Convención de SKU. Validar los mermaid.",
       "component": "docs",
-      "status": "pending",
+      "status": "in-progress",
       "origin": "plan",
       "dependencies": [
         "TASK-017"
@@ -523,7 +523,7 @@
       "files": [],
       "blockedReason": null,
       "completedAt": null,
-      "notes": null
+      "notes": "Hechas el 2026-10-19/20: INV - Flujos (2.1, 2.2, 2.3 nueva y el índice de endpoints), Flujos del ecosistema (contrato 1, junto con la sesión del Shop), Mapeo de productos e INV - Changelog. Faltan INV - Integración Mercado Libre, INV - Integración Sendero Shop, INV - Modelos, INV - Decisiones, Convención de SKU y Stock unificado."
     },
     {
       "id": "TASK-019",

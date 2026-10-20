@@ -202,3 +202,22 @@ commitear ni desplegar al cerrar esta entrada.
 
 **Para el que sigue**
 - La siembra del Shop (TASK-013) se hace desde el catálogo de hoy, con la clave por ids.
+
+## 2026-10-20 · Claude (sesión del inventario) — deploy de la segunda mitad
+
+**Qué pasó**
+- Con aprobación de Agustín: commits `df1fc56` (código) y `353b23d` (SDD) en master, desplegados
+  en Vercel (`iad1`, READY en un minuto). Sin errores de ejecución en la primera hora.
+- Backfill de combinaciones (`scripts/sdd-001-backfill.ts`): las 18 líneas que habían entrado
+  sin combinación desde el deploy de la primera mitad la tienen; ninguna combinación nueva.
+- Reparto en sombra después del backfill: 42 de 42 líneas iguales, 0 distintas.
+- Las rutas nuevas responden 307 sin sesión (el middleware las manda al login), como las demás.
+
+**Para el que sigue**
+- Verificar el primer pedido del Shop que llegue con ids: tiene que crear una clave
+  `<producto_id>|<opcion_ids>` en `mapeos_canal` (TASK-016).
+- Las 27 claves de ML de la cola y las dos líneas sin modelo (SS-00133, SS-00136) las resuelve
+  Agustín desde la pantalla.
+- TASK-018 está a medias: se actualizaron `INV - Flujos`, `Flujos del ecosistema`, `Mapeo de
+  productos` e `INV - Changelog`; faltan `INV - Integración Mercado Libre`, `INV - Integración
+  Sendero Shop`, `INV - Modelos`, `INV - Decisiones`, `Convención de SKU` y `Stock unificado`.
