@@ -1,0 +1,378 @@
+{
+  "$schema": "../_plantillas/tasks.schema.json",
+  "featureId": "003-precios-desde-bodega",
+  "epic": null,
+  "version": "1.0.0",
+  "status": "in-progress",
+  "branch": "feat/003-precios-desde-bodega",
+  "baseBranch": "master",
+  "pullRequest": null,
+  "validation": {
+    "approved": true,
+    "approvedBy": "Agustín",
+    "approvedAt": "2026-10-20",
+    "notes": "\"Empezá con los cambios a la bodega, más adelante seguimos con lo demás\": validada la parte de Bodega (specs 001 y 002, TASK-001 a TASK-005). El resto se retoma cuando lo pida."
+  },
+  "updatedAt": "2026-10-20",
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Crear las tablas y columnas de Bodega en la base del ERP",
+      "description": "prisma/sql/bodega-materiales-y-precios.sql: bodega.materials (RLS con bodega.is_allowed(), trigger de updated_at, índice único del por defecto) y su vista, columnas de política en bodega.models, gastos_venta en bodega.cost_settings y las vistas públicas con las columnas nuevas (security_invoker). Se aplica antes de instalar la Bodega que las manda. Las tablas del ERP (precio_publicado en mapeos_canal y cambios_precio) pasaron a TASK-009 y TASK-010.",
+      "component": "database",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [
+        "001-catalogo-de-materiales",
+        "002-politica-de-precio-por-modelo",
+        "004-pantalla-de-precios"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "prisma/sql/bodega-materiales-y-precios.sql"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-20",
+      "notes": "Aplicado en producción el 2026-10-20 (bodega_materiales_y_precios y bodega_materials_sin_anon: Supabase le daba todo a anon en la vista nueva). Probado con upserts por la vista dentro de una transacción deshecha: el orden de Bodega pasa y el contrario falla con unique_violation."
+    },
+    {
+      "id": "TASK-002",
+      "title": "Bodega: catálogo de materiales y material por modelo",
+      "description": "Tabla materials en SQLite con la migración del día cero (un material con el calc_precioKg de hoy, por defecto); pantalla Materiales; selector de material en la calculadora y en la ficha; la ficha recalcula con el precio de su material. IPC materials:*.",
+      "component": "ui",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [
+        "001-catalogo-de-materiales"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 001-catalogo-de-materiales",
+        "CA-2 de 001-catalogo-de-materiales"
+      ],
+      "files": [
+        "Bodega: src/main/db.ts",
+        "Bodega: src/main/ipc.ts",
+        "Bodega: src/preload/index.ts",
+        "Bodega: src/renderer/src/lib/api.ts",
+        "Bodega: src/renderer/src/types.ts",
+        "Bodega: src/renderer/src/pages/Configuracion.tsx",
+        "Bodega: src/renderer/src/pages/Calculadora.tsx",
+        "Bodega: src/renderer/src/pages/ModeloDetalle.tsx"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-20",
+      "notes": "El catálogo es una sección de Configuración (Materiales y precio por kilo), no una pantalla aparte; el campo suelto de precio de filamento salió de Configuración y de la calculadora. calc_precioKg queda igual al precio del material por defecto (lo usan el historial de impresiones y el ERP)."
+    },
+    {
+      "id": "TASK-003",
+      "title": "Bodega: margen, redondeo y promo por modelo, y Guardar precios",
+      "description": "Columnas de política en models; la calculadora arranca con la política del modelo; botón Guardar precios en el modelo (política + foto de los tres precios); redondeo y promo globales como settings; la ficha muestra los tres precios con la fórmula nueva en lugar del x1,8. IPC models:savePricing.",
+      "component": "ui",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002"
+      ],
+      "specs": [
+        "002-politica-de-precio-por-modelo"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 002-politica-de-precio-por-modelo",
+        "CA-4 de 002-politica-de-precio-por-modelo"
+      ],
+      "files": [
+        "Bodega: src/renderer/src/lib/politica.ts",
+        "Bodega: src/renderer/src/pages/Calculadora.tsx",
+        "Bodega: src/renderer/src/pages/ModeloDetalle.tsx",
+        "Bodega: src/main/ipc.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-20",
+      "notes": "Con un modelo abierto, margen, redondeo y promo son del modelo; sin modelo, los generales (se guardan con Guardar). La calculadora ahora también carga los insumos guardados del modelo: antes, volver a guardar los dejaba en cero."
+    },
+    {
+      "id": "TASK-004",
+      "title": "Bodega: subir materiales, política y gastos de venta",
+      "description": "sync.ts sube bodega_materials, los campos nuevos de bodega_models y gastos_venta en bodega_cost_settings, cada uno sólo si cambió (huella). Probado contra la base real con un modelo de prueba.",
+      "component": "integration",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-001",
+        "TASK-003"
+      ],
+      "specs": [
+        "001-catalogo-de-materiales",
+        "002-politica-de-precio-por-modelo"
+      ],
+      "acceptanceCriteria": [
+        "CA-2 de 002-politica-de-precio-por-modelo",
+        "CA-3 de 002-politica-de-precio-por-modelo"
+      ],
+      "files": [
+        "Bodega: src/main/sync.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-20",
+      "notes": "Probado con el código real empaquetado (esbuild) sobre una copia de la base de Bodega, con electron como stub y fetch falso: 17 de 17. Los materiales suben con el por defecto al final, por el índice único."
+    },
+    {
+      "id": "TASK-005",
+      "title": "Bodega: release",
+      "description": "Release con TASK-002 a TASK-004, con el procedimiento de siempre (stash del WIP, conflicto de versión al pop, nunca asar extract-file en el repo), y BOD - Flujos actualizado. Agustín la instala en el taller.",
+      "component": "infra",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-004"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": "2026-10-20",
+      "notes": "Bodega 2.34.0 publicada el 2026-10-20 (commits c388a23 y 7eb8a98 en main; release en AgustinJak/bodega-3d-releases). Verificado el asar con @electron/asar: versión, IPC nuevos, sincronización y pantallas, sin el WIP de three.js. Falta instalarla en el taller."
+    },
+    {
+      "id": "TASK-006",
+      "title": "ERP: costear cada pieza con el precio de su material",
+      "description": "costos-bodega.ts lee bodega.materials y el material_id de cada modelo; fabricacionDeReceta usa ese precio. Comparar costosPorFilaDeStock antes y después de la migración: tiene que dar igual.",
+      "component": "api",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-001"
+      ],
+      "specs": [
+        "001-catalogo-de-materiales"
+      ],
+      "acceptanceCriteria": [
+        "CA-2 de 001-catalogo-de-materiales",
+        "CA-3 de 001-catalogo-de-materiales"
+      ],
+      "files": [
+        "src/lib/costos-bodega.ts",
+        "src/lib/sincronizar-costos.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-007",
+      "title": "ERP: copia de la fórmula de precios y prueba de paridad",
+      "description": "src/lib/precios-bodega.ts copia precios.ts y calc.ts de Bodega sin cambiar lógica; scripts/sdd-003-comparar-formula.ts corre las dos sobre una grilla de entradas y falla si difieren.",
+      "component": "api",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [
+        "003-precio-de-cada-combinacion"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/precios-bodega.ts",
+        "scripts/sdd-003-comparar-formula.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-008",
+      "title": "ERP: precio de cada combinación",
+      "description": "src/lib/precios-combinacion.ts: costo de la combinación (pieza + insumos de Bodega + receta), tres precios con la política del modelo de Bodega y los gastos de venta, precio de una clave con unidades y tramos, y el precio de venta del ERP (base + adicionales). Falta costear cuando falta un dato.",
+      "component": "api",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-006",
+        "TASK-007"
+      ],
+      "specs": [
+        "003-precio-de-cada-combinacion"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 003-precio-de-cada-combinacion",
+        "CA-2 de 003-precio-de-cada-combinacion",
+        "CA-3 de 003-precio-de-cada-combinacion",
+        "CA-4 de 003-precio-de-cada-combinacion"
+      ],
+      "files": [
+        "src/lib/precios-combinacion.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-009",
+      "title": "ERP: leer los precios publicados de ML",
+      "description": "src/lib/precios-ml.ts lee en tandas de 20 con GET /items?ids= y guarda precio_publicado y precio_leido_en en mapeos_canal. Sólo lectura.",
+      "component": "integration",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-001"
+      ],
+      "specs": [
+        "004-pantalla-de-precios",
+        "005-precios-en-mercado-libre"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/precios-ml.ts",
+        "src/app/api/precios/leer/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-010",
+      "title": "ERP: pantalla Precios y aplicar el precio de venta del ERP",
+      "description": "GET /api/precios, POST /api/precios/aplicar (canal erp), GET /api/precios/historial y la página /precios con filtros, diferencias, marca roja a más de 30 % y confirmación. El canal erp escribe precioVenta y precioAdicional y deja historial.",
+      "component": "ui",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-008",
+        "TASK-009"
+      ],
+      "specs": [
+        "004-pantalla-de-precios",
+        "003-precio-de-cada-combinacion"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 004-pantalla-de-precios",
+        "CA-3 de 004-pantalla-de-precios",
+        "CA-4 de 004-pantalla-de-precios"
+      ],
+      "files": [
+        "src/app/api/precios/route.ts",
+        "src/app/api/precios/aplicar/route.ts",
+        "src/app/api/precios/historial/route.ts",
+        "src/app/(app)/precios/page.tsx",
+        "src/components/app-sidebar.tsx"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-011",
+      "title": "Pasarle la spec 006 a la sesión del Shop",
+      "description": "El Shop implementa el endpoint de precios firmado. Acá se entrega y se prueba con simular contra producción.",
+      "component": "docs",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [
+        "006-cambios-en-el-shop"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 006-cambios-en-el-shop"
+      ],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-012",
+      "title": "ML: verificar cómo se escribe hoy el precio, y escribirlo",
+      "description": "Primero confirmar en la documentación vigente y con lecturas (sin escribir) el recurso para el precio después del cambio de marzo de 2026, y los de automatización y promoción para MLA. Después, src/lib/precios-ml.ts escribe el precio con los chequeos de la spec 005, y la primera escritura real es una publicación elegida por Agustín, comparando todos los campos antes y después.",
+      "component": "integration",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-010"
+      ],
+      "specs": [
+        "005-precios-en-mercado-libre"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 005-precios-en-mercado-libre",
+        "CA-2 de 005-precios-en-mercado-libre",
+        "CA-3 de 005-precios-en-mercado-libre",
+        "CA-4 de 005-precios-en-mercado-libre"
+      ],
+      "files": [
+        "src/lib/precios-ml.ts",
+        "src/app/api/precios/aplicar/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-013",
+      "title": "Web: leer y aplicar precios por el endpoint del Shop",
+      "description": "src/lib/precios-shop.ts firma y llama al endpoint de la spec 006: simular para leer, sin simular para aplicar. Agrupa las claves del Shop por producto y manda todas sus combinaciones.",
+      "component": "integration",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-010",
+        "TASK-011"
+      ],
+      "specs": [
+        "006-cambios-en-el-shop",
+        "004-pantalla-de-precios"
+      ],
+      "acceptanceCriteria": [
+        "CA-2 de 004-pantalla-de-precios"
+      ],
+      "files": [
+        "src/lib/precios-shop.ts",
+        "src/app/api/precios/leer/route.ts",
+        "src/app/api/precios/aplicar/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": "Necesita la siembra del mapeo del Shop (SDD 001, TASK-013), que espera las respuestas de TASK-022 de la 001."
+    },
+    {
+      "id": "TASK-014",
+      "title": "Prueba de punta a punta",
+      "description": "Tenant aislado para el cálculo, la pantalla y el canal erp; simulación completa de ML y del Shop contra producción; una escritura real por canal, elegida por Agustín.",
+      "component": "test",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-012",
+        "TASK-013"
+      ],
+      "specs": [
+        "003-precio-de-cada-combinacion",
+        "004-pantalla-de-precios",
+        "005-precios-en-mercado-libre",
+        "006-cambios-en-el-shop"
+      ],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-015",
+      "title": "Actualizar el cerebro",
+      "description": "INV - Flujos, BOD - Flujos, Flujos del ecosistema (contratos nuevos ERP → Shop y ERP → ML, y lo que suma el contrato 3), INV - Decisiones y el README de SDD de Bodega. Validar los mermaid.",
+      "component": "docs",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-014"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    }
+  ]
+}

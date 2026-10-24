@@ -58,5 +58,6 @@ propia (`NNN-cambios-en-el-shop.md`) y lo implementa la sesión de ese sistema.
 |---|---|---|---|
 | 001 | [mapeo-de-productos](001-mapeo-de-productos/sdd-funcional.md) | validated (2026-10-18) | `master` |
 | 002 | disponibilidad-en-canales | planned (después de la 001) | — |
+| 003 | [precios-desde-bodega](003-precios-desde-bodega/sdd-funcional.md) | in-progress (Bodega publicada en la 2.34.0; el ERP sigue después) | `master` |
 
 `planned` = pedida y descrita en el SDD funcional de la 001 (sección 8), todavía sin carpeta.
