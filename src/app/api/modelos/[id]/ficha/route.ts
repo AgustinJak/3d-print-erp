@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { gruposDe, tipoDeVariante, type TipoGrupo } from "@/lib/catalogo";
 import { fabricacionDePieza, leerParametros, leerRecetas } from "@/lib/costos-bodega";
 import { cargarContexto, componentesDeItem, type Componente } from "@/lib/reservas";
+import { preciosDeCombinaciones } from "@/lib/precios-combinacion";
+import { PREFIJO_FALTA, textoDeFalta } from "@/lib/precios-reglas";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -67,7 +69,19 @@ export interface Ficha {
   fila: FilaDeFicha | null;
   /** Filas que ya no corresponden a nada que se venda (quedaron con stock o pieza). */
   filasSobrantes: FilaDeFicha[];
-  combinaciones: Array<{ id: string; nombre: string; sku: string | null; activo: boolean; variantes: string[]; consume: Componente[]; pendiente: boolean }>;
+  combinaciones: Array<{
+    id: string;
+    nombre: string;
+    sku: string | null;
+    activo: boolean;
+    variantes: string[];
+    consume: Componente[];
+    pendiente: boolean;
+    /** Los tres precios de Bodega (docs/sdd/003, spec 004, REQ-6); se aplican desde Precios. */
+    precios: { ml: number; mlPublicado: number; web: number; personalizado: number } | null;
+    /** Por qué no tiene precio. */
+    faltaCostear: string | null;
+  }>;
   /** Para un insumo: los productos que lo usan. */
   usadoPor: Array<{ id: string; nombre: string }>;
   canales: {
@@ -96,7 +110,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     });
     if (!m) return NextResponse.json({ error: "Producto no encontrado" }, { status: 404 });
 
-    const [filas, combinaciones, reglas, publicaciones, ctx, parametros, recetas] = await Promise.all([
+    const [filas, combinaciones, reglas, publicaciones, ctx, parametros, recetas, precios] = await Promise.all([
       prisma.stock.findMany({ where: { tenantId, modeloId: id }, select: { id: true, etiqueta: true, cantidad: true, variantes: true, bodegaModelId: true }, orderBy: { etiqueta: "asc" } }),
       prisma.combinacion.findMany({ where: { tenantId, modeloId: id }, select: { id: true, nombre: true, sku: true, activo: true, variantes: true }, orderBy: [{ activo: "desc" }, { nombre: "asc" }] }),
       prisma.reglaInsumo.findMany({ where: { tenantId, modeloId: id }, select: { requiere: true, stockId: true, cantidad: true, stock: { select: { etiqueta: true } } } }),
@@ -104,7 +118,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       cargarContexto(prisma, tenantId),
       leerParametros(),
       leerRecetas(),
+      preciosDeCombinaciones(tenantId, { modeloIds: [id] }),
     ]);
+    const precioDe = new Map(precios.map((p) => [p.combinacionId, p]));
 
     // Nombres de las piezas (también las que no tienen receta, que leerRecetas no trae).
     const idsPieza = filas.map((f) => f.bodegaModelId).filter((x): x is string => !!x);
@@ -168,6 +184,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         ctx,
         "combinacion"
       );
+      const precio = precioDe.get(c.id);
       const conInsumo = c.variantes.some((v) => tipoDe.get(v) === "insumo" && /^\s*con\s+/i.test(m.variantes.find((x) => x.id === v)?.nombre ?? ""));
       return {
         id: c.id,
@@ -177,6 +194,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         variantes: c.variantes,
         consume,
         pendiente: c.activo && conInsumo && !consume.some((x) => x.tipo === "insumo" && x.stockId),
+        precios: precio?.precios ? { ml: precio.precios.ml, mlPublicado: precio.precios.mlPublicado, web: precio.precios.web, personalizado: precio.precios.personalizado } : null,
+        faltaCostear: precio && !precio.precios ? textoDeFalta(precio.falta).replace(`${PREFIJO_FALTA} — `, "") : null,
       };
     });
 

@@ -209,9 +209,9 @@ model ItemPedido {
   mlaOrigen      String? @map("mla_origen") // publicación de ML que originó el item
 
   /// Qué se vendió (docs/sdd/001). null = línea vieja sin resolver, a medida o sin mapear.
-  combinacionId  String? @map("combinacion_id")
+  combinacionId String? @map("combinacion_id")
   /// Con qué clave entró del canal, para completarla cuando se mapea esa clave.
-  claveCanal     String? @map("clave_canal")
+  claveCanal    String? @map("clave_canal")
 
   pedido      Pedido         @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
   modelo      Modelo?        @relation(fields: [modeloId], references: [id])
@@ -657,30 +657,57 @@ model Combinacion {
 /// A qué combinación corresponde cada publicación de un canal (spec 004).
 /// Sin combinación y sin `ignorar` = está en la cola de Integraciones › Mapeo.
 model MapeoCanal {
-  id            String   @id @default(cuid())
-  tenantId      String   @default("sendero3d") @map("tenant_id")
+  id              String    @id @default(cuid())
+  tenantId        String    @default("sendero3d") @map("tenant_id")
   /// "mercadolibre" | "shop"
-  canal         String
+  canal           String
   /// ML: "<MLA>|<variation_id>". Shop: "<producto_id>|<opcion_ids>" o "sku:<SKU>|<opciones>".
-  clave         String
-  combinacionId String?  @map("combinacion_id")
+  clave           String
+  combinacionId   String?   @map("combinacion_id")
   /// Un "pack de 10" es 10 unidades de la combinación.
-  unidades      Int      @default(1)
+  unidades        Int       @default(1)
   /// Otro negocio (Shay): la línea se descarta, como publicaciones_ml.ignorar.
-  ignorar       Boolean  @default(false)
+  ignorar         Boolean   @default(false)
   /// "siembra" | "auto" | "manual". Uno manual no lo pisa la resolución automática.
-  origen        String   @default("auto")
-  descripcion   String?
+  origen          String    @default("auto")
+  descripcion     String?
   /// Lo último que mandó el canal con esta clave (título, opciones).
-  muestra       Json?
-  vecesVista    Int      @default(0) @map("veces_vista")
-  ultimaVenta   String?  @map("ultima_venta")
-  creadoEn      DateTime @default(now()) @map("creado_en")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  muestra         Json?
+  vecesVista      Int       @default(0) @map("veces_vista")
+  ultimaVenta     String?   @map("ultima_venta")
+  /// Lo último que se leyó del canal (docs/sdd/003, spec 004). En ML, el precio standard.
+  precioPublicado Float?    @map("precio_publicado")
+  precioLeidoEn   DateTime? @map("precio_leido_en")
+  /// Estado, promoción, automatización, variaciones: lo que decide si se puede tocar.
+  precioLectura   Json?     @map("precio_lectura")
+  creadoEn        DateTime  @default(now()) @map("creado_en")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   combinacion Combinacion? @relation(fields: [combinacionId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, canal, clave])
   @@index([combinacionId])
   @@map("mapeos_canal")
+}
+
+/// Cada precio que el ERP aplicó, o intentó aplicar, en un canal (docs/sdd/003, spec 004, REQ-4).
+model CambioPrecio {
+  id            String   @id @default(cuid())
+  tenantId      String   @default("sendero3d") @map("tenant_id")
+  /// "mercadolibre" | "shop" | "erp"
+  canal         String
+  /// La de mapeos_canal. En "erp", el id del modelo o "variante:<id>".
+  clave         String
+  combinacionId String?  @map("combinacion_id")
+  antes         Float?
+  despues       Float
+  /// "aplicado" | "rechazado" | "error"
+  estado        String
+  /// Lo que contestó el canal, o por qué no se mandó.
+  respuesta     Json?
+  usuario       String?
+  creadoEn      DateTime @default(now()) @map("creado_en")
+
+  @@index([tenantId, canal, clave, creadoEn])
+  @@map("cambios_precio")
 }

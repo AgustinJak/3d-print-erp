@@ -1,16 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { AlertTriangle, ShoppingBag } from "lucide-react";
+import { AlertTriangle, BadgeDollarSign, ShoppingBag } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { json, pedir, Seccion } from "@/components/producto/seccion";
+import { json, pedir, pesos, Seccion } from "@/components/producto/seccion";
 import type { Ficha } from "@/app/api/modelos/[id]/ficha/route";
 
 /**
  * Lo que se vende (spec 003, REQ-11): cada combinación con su SKU, qué consume y si está activa.
  * Las desactivadas son historia (una variante borrada, "el modelo solo" de uno con variantes).
+ *
+ * Cada una muestra sus tres precios de Bodega (docs/sdd/003, spec 004, REQ-6). Se ven acá y se
+ * aplican sólo en Precios: una sola pantalla para los precios.
  */
 export function SeccionLoQueSeVende({ ficha, onCambio }: { ficha: Ficha; onCambio: () => void }) {
   const [guardando, setGuardando] = useState<string | null>(null);
@@ -36,11 +40,22 @@ export function SeccionLoQueSeVende({ ficha, onCambio }: { ficha: Ficha; onCambi
       titulo={`Lo que se vende (${activas.length})`}
       icono={ShoppingBag}
       acciones={
-        historia.length > 0 ? (
-          <Button size="sm" variant="ghost" onClick={() => setVerHistoria(!verHistoria)}>
-            {verHistoria ? "Ocultar desactivadas" : `Ver desactivadas (${historia.length})`}
-          </Button>
-        ) : undefined
+        <>
+          {historia.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => setVerHistoria(!verHistoria)}>
+              {verHistoria ? "Ocultar desactivadas" : `Ver desactivadas (${historia.length})`}
+            </Button>
+          )}
+          {activas.length > 0 && (
+            <Link
+              href={`/precios?modelo=${ficha.producto.id}`}
+              className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 px-2"
+            >
+              <BadgeDollarSign className="h-3.5 w-3.5" />
+              Ver en Precios
+            </Link>
+          )}
+        </>
       }
     >
       {visibles.length === 0 ? (
@@ -73,6 +88,20 @@ export function SeccionLoQueSeVende({ ficha, onCambio }: { ficha: Ficha; onCambi
                   </span>
                 )}
               </div>
+              {c.activo && (
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {c.precios ? (
+                    <span className="tabular-nums">
+                      ML <span className="text-foreground">{pesos(c.precios.mlPublicado)}</span>
+                      {c.precios.mlPublicado !== c.precios.ml && <> (paga {pesos(c.precios.ml)})</>} · Web{" "}
+                      <span className="text-foreground">{pesos(c.precios.web)}</span> · Personalizados{" "}
+                      <span className="text-foreground">{pesos(c.precios.personalizado)}</span>
+                    </span>
+                  ) : (
+                    <span>Sin precio: {c.faltaCostear}</span>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

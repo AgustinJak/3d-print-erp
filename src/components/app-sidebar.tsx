@@ -18,6 +18,7 @@ import {
   Plug,
   Home,
   Store,
+  BadgeDollarSign,
 } from "lucide-react";
 import {
   Sidebar,
@@ -46,6 +47,7 @@ const navPrincipal = [
 const navCatalogo = [
   { title: "Categorías", href: "/categorias", icon: Tag },
   { title: "Productos", href: "/modelos", icon: Box },
+  { title: "Precios", href: "/precios", icon: BadgeDollarSign },
   { title: "Filamentos", href: "/filamentos", icon: Palette },
   { title: "Stock", href: "/stock", icon: Boxes },
 ];
@@ -123,7 +125,7 @@ export function AppSidebar() {
 
       <SidebarContent>
         {renderGroup("Principal", navPrincipal)}
-        {renderGroup("Catálogo", navCatalogo)}
+        {renderGroup("Catálogo", isDemo ? navCatalogo.filter((i) => i.href !== "/precios") : navCatalogo)}
         {renderGroup("Negocio", navNegocio)}
         {!isDemo && renderGroup("Sistema", navSistema)}
         {!isDemo && renderGroup("Personal", navPersonal)}

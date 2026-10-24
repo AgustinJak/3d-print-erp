@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Command } from "cmdk";
 import {
   LayoutDashboard, Tag, Box, ShoppingCart, Factory, Users, Palette,
-  DollarSign, Receipt, History, Radar, Search, Plug,
+  DollarSign, Receipt, History, Radar, Search, Plug, BadgeDollarSign,
 } from "lucide-react";
 import { useIsDemoTenant } from "@/components/current-user-provider";
 
@@ -23,6 +23,7 @@ const pages: PageEntry[] = [
   { name: "Produccion", href: "/produccion", icon: Factory, keywords: "produccion cola impresion fabricar" },
   { name: "Categorias", href: "/categorias", icon: Tag, keywords: "categorias productos tipos" },
   { name: "Productos", href: "/modelos", icon: Box, keywords: "productos modelos variantes insumos fundas" },
+  { name: "Precios", href: "/precios", icon: BadgeDollarSign, keywords: "precios mercado libre web bodega margen aplicar", hideOnDemo: true },
   { name: "Filamentos", href: "/filamentos", icon: Palette, keywords: "filamentos material pla abs petg" },
   { name: "Clientes", href: "/clientes", icon: Users, keywords: "clientes contactos personas" },
   { name: "Tendencias", href: "/tendencias", icon: Radar, keywords: "tendencias eventos radar viral" },
