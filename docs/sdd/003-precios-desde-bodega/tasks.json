@@ -13,7 +13,7 @@
     "approvedAt": "2026-10-20",
     "notes": "\"Empezá con los cambios a la bodega, más adelante seguimos con lo demás\": validada la parte de Bodega (specs 001 y 002, TASK-001 a TASK-005). El resto se retoma cuando lo pida."
   },
-  "updatedAt": "2026-10-20",
+  "updatedAt": "2026-10-24",
   "tasks": [
     {
       "id": "TASK-001",
@@ -158,7 +158,7 @@
       ],
       "blockedReason": null,
       "completedAt": null,
-      "notes": null
+      "notes": "2026-10-24: absorbida por la TASK-007 del SDD 004 (costo desde las piezas, con el material de cada una)."
     },
     {
       "id": "TASK-007",

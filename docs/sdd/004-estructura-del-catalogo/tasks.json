@@ -1,0 +1,447 @@
+{
+  "$schema": "../_plantillas/tasks.schema.json",
+  "featureId": "004-estructura-del-catalogo",
+  "epic": "ninguna",
+  "version": "1.0.0",
+  "status": "in-progress",
+  "branch": "feat/004-estructura-del-catalogo",
+  "baseBranch": "master",
+  "pullRequest": null,
+  "validation": {
+    "approved": true,
+    "approvedBy": "Agustín",
+    "approvedAt": "2026-10-24",
+    "notes": "Aprobado en el chat (\"dale apruebo el SDD\"), con guardado por sección y consolidar/eliminar sólo en la página del producto."
+  },
+  "updatedAt": "2026-10-24",
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Que el lápiz deje de borrar el costo de insumos de las variantes",
+      "description": "En src/app/(app)/modelos/page.tsx (:372 y :462) las variantes del formulario no copian costoInsumosAdicional, y el PUT lo guarda como 0. Copiarlo. Sale solo, antes que el resto, porque el lápiz sigue en uso hasta TASK-012.",
+      "component": "ui",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [
+        "002-datos-precio-y-fotos"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 002-datos-precio-y-fotos"
+      ],
+      "files": [
+        "src/app/(app)/modelos/page.tsx"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-24",
+      "notes": "Las dos copias del formulario (?edit y el lápiz) copian costoInsumosAdicional. Sin desplegar."
+    },
+    {
+      "id": "TASK-002",
+      "title": "Grupo y tipo de variante, y la marca de insumo",
+      "description": "prisma/sql/catalogo-grupos-e-insumos.sql (columnas grupo, tipo y es_insumo) y schema.prisma. Script de relleno con simulación: muestra cada variante con el tipo y el grupo que le tocarían y cada modelo que pasaría a insumo; Agustín lo revisa; recién ahí se aplica, y después el NOT NULL y la restricción tipo/afecta_stock.",
+      "component": "database",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [
+        "003-grupos-de-variantes",
+        "006-insumos"
+      ],
+      "acceptanceCriteria": [
+        "CA-5 de 003-grupos-de-variantes",
+        "CA-1 de 006-insumos"
+      ],
+      "files": [
+        "prisma/sql/catalogo-grupos-e-insumos.sql",
+        "prisma/schema.prisma",
+        "scripts/sdd-004-rellenar-grupos.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-24",
+      "notes": "Relleno aplicado (190 variantes, 10 insumos), parte 2 (tipo obligatorio y atado a afecta_stock) y parte 3: trigger que completa grupo y tipo cuando vienen vacíos, para que el ERP desplegado (sin la 004) no falle al crear variantes."
+    },
+    {
+      "id": "TASK-003",
+      "title": "La lógica de grupos y opciones, y sus endpoints",
+      "description": "src/lib/catalogo.ts (crear grupo de los tres tipos, agregar opciones, renombrar por id actualizando el nombre de las combinaciones, cambiar de tipo con la regla de las filas con stock, borrar) y las rutas /api/modelos/[id]/grupos y /api/modelos/[id]/variantes[/vid]. El grupo insumo reusa lo de /accesorios.",
+      "component": "api",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002"
+      ],
+      "specs": [
+        "003-grupos-de-variantes"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 003-grupos-de-variantes",
+        "CA-3 de 003-grupos-de-variantes",
+        "CA-4 de 003-grupos-de-variantes",
+        "CA-6 de 003-grupos-de-variantes"
+      ],
+      "files": [
+        "src/lib/catalogo.ts",
+        "src/app/api/modelos/[id]/grupos/route.ts",
+        "src/app/api/modelos/[id]/variantes/route.ts",
+        "src/app/api/modelos/[id]/variantes/[vid]/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-24",
+      "notes": "src/lib/catalogo.ts y las rutas /grupos y /variantes[/vid]. agregarAccesorio guarda grupo y tipo. El PUT y el POST de /api/modelos asignan grupo y tipo por nombre a lo que crea el lápiz, para que no falle cuando tipo sea obligatorio."
+    },
+    {
+      "id": "TASK-004",
+      "title": "PATCH parcial del producto y la ficha completa",
+      "description": "PATCH /api/modelos/[id] sólo con los campos que vienen, nunca variantes, SKU repetido → 409 con el modelo que lo tiene, costo editable sólo sin pieza. GET /api/modelos/[id]/ficha con todo lo que pinta la página, una consulta por tabla.",
+      "component": "api",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002"
+      ],
+      "specs": [
+        "002-datos-precio-y-fotos",
+        "004-donde-se-vende"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 002-datos-precio-y-fotos",
+        "CA-3 de 002-datos-precio-y-fotos"
+      ],
+      "files": [
+        "src/app/api/modelos/[id]/route.ts",
+        "src/app/api/modelos/[id]/ficha/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-24",
+      "notes": "PATCH parcial (409 con SKU repetido o costo de Bodega) y GET /ficha. DELETE responde 409 con las ventas en vez de 500."
+    },
+    {
+      "id": "TASK-005",
+      "title": "Enganchar una fila con su pieza desde el ERP",
+      "description": "PUT /api/stock/[id]/bodega (verifica el tenant y llama a bodega_mapear_modelo, devuelve liberado) y GET /api/bodega/piezas (piezas con costo y a qué fila están). Cuenta demo bloqueada.",
+      "component": "api",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [
+        "003-grupos-de-variantes"
+      ],
+      "acceptanceCriteria": [
+        "CA-2 de 003-grupos-de-variantes"
+      ],
+      "files": [
+        "src/app/api/stock/[id]/bodega/route.ts",
+        "src/app/api/bodega/piezas/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-24",
+      "notes": null
+    },
+    {
+      "id": "TASK-006",
+      "title": "Insumos: usado por, reemplazo en bloque",
+      "description": "GET /api/insumos suma cuántos productos y cuáles usan cada insumo, y sólo devuelve modelos con es_insumo. PUT /api/insumos/[stockId]/reemplazar mueve todas las recetas a otro insumo.",
+      "component": "api",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002"
+      ],
+      "specs": [
+        "006-insumos"
+      ],
+      "acceptanceCriteria": [
+        "CA-2 de 006-insumos",
+        "CA-3 de 006-insumos"
+      ],
+      "files": [
+        "src/app/api/insumos/route.ts",
+        "src/app/api/insumos/[stockId]/reemplazar/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-24",
+      "notes": "insumosDisponibles usa esInsumo o la categoría (hasta el relleno) y devuelve usadoPor; reemplazarInsumo y su ruta."
+    },
+    {
+      "id": "TASK-007",
+      "title": "Costo automático desde las piezas, con su material",
+      "description": "costosPorFilaDeStock con el precio por kilo del material de cada pieza (bodega.materials). aplicarCostosSiCambio: si cambió alguna pieza desde la última corrida, aplica el plan de lo explicable; se llama donde altasAutomaticas. Absorbe la TASK-006 del SDD 003.",
+      "component": "api",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [
+        "007-costo-desde-las-piezas"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 007-costo-desde-las-piezas",
+        "CA-2 de 007-costo-desde-las-piezas",
+        "CA-3 de 007-costo-desde-las-piezas"
+      ],
+      "files": [
+        "src/lib/costos-bodega.ts",
+        "src/lib/sincronizar-costos.ts",
+        "src/app/api/cambios/route.ts",
+        "src/app/api/stock/route.ts",
+        "src/app/api/cron/ml/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-24",
+      "notes": "Precio por kilo del material de cada pieza (fabricacionDePieza) y aplicarCostosSiCambio en /api/cambios, GET /api/stock y el cron. Hoy sólo 42 de 125 filas tienen receta en Bodega: el resto sigue con costo a mano, editable, hasta que se costee allá."
+    },
+    {
+      "id": "TASK-008",
+      "title": "Alta desde Bodega con la convención y Piezas nuevas",
+      "description": "destinoDePieza en altas-bodega.ts: 'Producto · Opción' → opción del grupo pieza del producto (creándolo si falta); categoría Insumos → insumo; el resto, producto simple; en la duda, Piezas nuevas con motivo. La lista 'no traer' se mantiene.",
+      "component": "integration",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002",
+        "TASK-003"
+      ],
+      "specs": [
+        "005-alta-desde-bodega"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 005-alta-desde-bodega",
+        "CA-2 de 005-alta-desde-bodega",
+        "CA-3 de 005-alta-desde-bodega",
+        "CA-4 de 005-alta-desde-bodega"
+      ],
+      "files": [
+        "src/lib/altas-bodega.ts",
+        "src/app/api/bodega/altas/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-24",
+      "notes": "destinoNuevo/altaComoOpcion/altaComoInsumo en altas-bodega.ts. Si dos piezas de un producto nuevo vienen juntas, la segunda se suma al producto que creó la primera (lo encontró la prueba)."
+    },
+    {
+      "id": "TASK-009",
+      "title": "Página del producto: encabezado, datos, fotos, precio y costo",
+      "description": "Reescribir /modelos/[id] con el encabezado fijo (estado, SKU, precio, costo, margen con el costo completo, menú de consolidar/revertir/eliminar) y las secciones Datos, Fotos y archivo, Precio y costo, cada una con su Guardar. Checklist: todos los campos del diálogo (page.tsx:1017 a :1367).",
+      "component": "ui",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-004"
+      ],
+      "specs": [
+        "001-una-sola-pagina",
+        "002-datos-precio-y-fotos"
+      ],
+      "acceptanceCriteria": [
+        "CA-4 de 001-una-sola-pagina",
+        "CA-5 de 001-una-sola-pagina",
+        "CA-2 de 002-datos-precio-y-fotos",
+        "CA-4 de 002-datos-precio-y-fotos"
+      ],
+      "files": [
+        "src/app/(app)/modelos/[id]/page.tsx",
+        "src/components/producto/seccion.tsx",
+        "src/components/producto/datos.tsx",
+        "src/components/producto/precio-costo.tsx",
+        "src/components/producto/fotos.tsx"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-24",
+      "notes": "Página reescrita con components/producto/*. Sin verificar en el navegador (pide sesión)."
+    },
+    {
+      "id": "TASK-010",
+      "title": "Página del producto: variantes y lo que se vende",
+      "description": "Sección Variantes con los grupos y su tipo, 'Agregar grupo', opciones con su pieza (selector) o su insumo (lista con 'usada por N'), renombrar y borrar; la pieza del producto cuando no hay grupo de piezas. Sección Lo que se vende con las combinaciones.",
+      "component": "ui",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-003",
+        "TASK-005",
+        "TASK-006",
+        "TASK-009"
+      ],
+      "specs": [
+        "003-grupos-de-variantes",
+        "006-insumos"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 003-grupos-de-variantes",
+        "CA-2 de 003-grupos-de-variantes",
+        "CA-3 de 003-grupos-de-variantes",
+        "CA-2 de 006-insumos"
+      ],
+      "files": [
+        "src/components/producto/variantes.tsx",
+        "src/components/producto/lo-que-se-vende.tsx"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-24",
+      "notes": null
+    },
+    {
+      "id": "TASK-011",
+      "title": "Página del producto: dónde se vende",
+      "description": "Publicaciones de ML del producto y claves de los canales que resuelven a sus combinaciones, con enlace a Integraciones › Mapeo.",
+      "component": "ui",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-004",
+        "TASK-009"
+      ],
+      "specs": [
+        "004-donde-se-vende"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 004-donde-se-vende",
+        "CA-2 de 004-donde-se-vende"
+      ],
+      "files": [
+        "src/components/producto/donde-se-vende.tsx"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-24",
+      "notes": null
+    },
+    {
+      "id": "TASK-012",
+      "title": "La lista sin lápiz, 'Productos' y menos pestañas",
+      "description": "En /modelos: sin diálogo de edición ni acciones de fila, 'Nuevo producto' de un campo que abre la página, filtros Insumos y Piezas nuevas, ?edit=<id> → /modelos/<id>. 'Productos' en el menú y los títulos. Integraciones sin las pestañas SKUs y Costos; 'Cargar SKU' y demás enlaces apuntan a la página.",
+      "component": "ui",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-009",
+        "TASK-010"
+      ],
+      "specs": [
+        "001-una-sola-pagina",
+        "006-insumos",
+        "007-costo-desde-las-piezas"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 001-una-sola-pagina",
+        "CA-2 de 001-una-sola-pagina",
+        "CA-3 de 001-una-sola-pagina",
+        "CA-6 de 001-una-sola-pagina"
+      ],
+      "files": [
+        "src/app/(app)/modelos/page.tsx",
+        "src/components/app-sidebar.tsx",
+        "src/app/(app)/integraciones/page.tsx"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-24",
+      "notes": "Lista sin lápiz ni acciones por fila, alta corta, filtro Insumos (sin \"Sin SKU\" para ellos), Piezas nuevas, ?edit → página. Integraciones sin SKUs ni Costos. \"Productos\" en el menú, la paleta y el panel. next build OK."
+    },
+    {
+      "id": "TASK-013",
+      "title": "Bodega: piezas, la convención a la vista y sin mapeador",
+      "description": "Spec 008 en Bodega/Bodega3D-App: 'Pieza' en la interfaz, sacar StockErpSection de Configuración, la convención en el alta, la categoría Insumos. Probado con el renderer en Vite y un window.api falso. Release sólo cuando Agustín la pida, con el procedimiento de la memoria.",
+      "component": "ui",
+      "status": "in-progress",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-010"
+      ],
+      "specs": [
+        "008-cambios-en-bodega"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de 008-cambios-en-bodega",
+        "CA-2 de 008-cambios-en-bodega",
+        "CA-3 de 008-cambios-en-bodega"
+      ],
+      "files": [
+        "Bodega/Bodega3D-App/src/renderer/src/pages/Configuracion.tsx"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": "Código hecho en Bodega (sin commitear): textos \"Pieza\", sin mapeador en Configuración (el IPC queda, nadie lo llama), la convención en el alta, categoría Insumos en la migración. electron-vite build OK; pantallas vistas con el renderer compilado y un window.api falso. Falta la release, a pedido."
+    },
+    {
+      "id": "TASK-014",
+      "title": "Borrar lo que quedó sin uso",
+      "description": "Commit aparte, después de verificar en producción: PUT /api/modelos/[id], /api/modelos/[id]/accesorios, /api/integraciones/skus-audit, /api/costos/bodega y combinaciones-modelo.tsx.",
+      "component": "api",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-012",
+        "TASK-015"
+      ],
+      "specs": [
+        "001-una-sola-pagina"
+      ],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-015",
+      "title": "Prueba de punta a punta",
+      "description": "scripts/sdd-004-probar-catalogo.ts en un tenant aislado (grupos de los tres tipos, renombrar con una clave mapeada, cambio de tipo con stock, insumo compartido y reemplazo, PATCH sin perder insumos, SKU repetido); alta desde Bodega en una transacción deshecha; costo de una pieza en PETG contra la calculadora.",
+      "component": "test",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-003",
+        "TASK-004",
+        "TASK-006",
+        "TASK-007",
+        "TASK-008"
+      ],
+      "specs": [
+        "003-grupos-de-variantes",
+        "005-alta-desde-bodega",
+        "007-costo-desde-las-piezas"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "scripts/sdd-004-probar-catalogo.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-24",
+      "notes": "scripts/sdd-004-probar-catalogo.ts: 37 de 37, también con la restricción tipo/afecta_stock activa. Pantallas del ERP vistas con una página temporal de vista previa (datos falsos, borrada después): página del producto, guardado por sección, Agregar grupo, lista y Piezas nuevas."
+    },
+    {
+      "id": "TASK-016",
+      "title": "Limpieza de datos con Agustín",
+      "description": "Lista para decidir: 30 productos consolidados, 30 inactivos y 17 piezas de Bodega sin fila (pruebas y duplicados). Lo que se descarta se archiva (no se borra lo que tiene ventas).",
+      "component": "database",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-017",
+      "title": "Actualizar el cerebro",
+      "description": "INV - Flujos (rutas y endpoints nuevos, pestañas que se van), BOD - Flujos (sin el mapeador), Flujos del ecosistema (alta desde Bodega), Mapeo de productos, INV - Modelos y los changelogs. Validar los mermaid.",
+      "component": "docs",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-012",
+        "TASK-013"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": "Agustín pidió no tocar el cerebro por ahora (2026-10-24).",
+      "completedAt": null,
+      "notes": null
+    }
+  ]
+}

@@ -269,3 +269,15 @@ commitear ni desplegar al cerrar esta entrada.
   retirar.
 - TASK-018: faltan `INV - Integración Mercado Libre`, `INV - Modelos`, `INV - Decisiones`,
   `Convención de SKU` y `Stock unificado`.
+
+## 2026-10-24 · Claude (sesión del inventario) — la MiniKatana roja y el BT21
+
+**Qué pasó**
+- Agustín confirmó que la MiniKatana de Tanjiro roja es "Tanjiro V2 20cm". En el ERP ese modelo
+  estaba desactivado y **consolidado** en "Tanjiro MiniKatana" (la negra). Consolidar sólo marca
+  (`consolidado_en_id` + inactivo), así que se deshizo: activo, sin consolidar, SKU
+  `SS-DEM-MIN-017` (el del Shop), con su combinación. `sdd-001-catalogo-shop.ts preparar` lo deja
+  registrado (lista `REACTIVAR`) y `mapear` cargó la última clave. **Colas de ML y del Shop: 0.**
+- El 2026-10-18 se había decidido que los personajes del BT21 comparten una fila (spec 004,
+  RN-8). Agustín lo cambió el 2026-10-24: son 8 piezas. Quedan como se crearon (8 filas, 8 piezas
+  de Bodega). Ver el SDD 004.
