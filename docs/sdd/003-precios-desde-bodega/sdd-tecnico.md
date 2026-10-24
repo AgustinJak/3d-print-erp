@@ -1,7 +1,7 @@
 ---
 feature: 003-precios-desde-bodega
-estado: draft
-actualizado: 2026-10-20
+estado: validated
+actualizado: 2026-10-24
 ---
 
 # SDD técnico · Precios desde Bodega
@@ -53,8 +53,9 @@ sesión). La base del ERP es una sola, la de producción: todo cambio es aditivo
 ### Base del ERP
 
 Dos archivos: `prisma/sql/bodega-materiales-y-precios.sql` (lo de Bodega, aplicado el
-2026-10-20) y, cuando se haga la parte del ERP, uno con `mapeos_canal.precio_publicado` y
-`cambios_precio`. Abajo, todo junto.
+2026-10-20) y `prisma/sql/precios-por-canal.sql` (lo del ERP, aplicado el 2026-10-24). Abajo, todo
+junto. Al implementar, los precios del ERP pasaron a `double precision` (como `precio_venta`, para
+que Prisma los lea como `Float`) y se sumó `mapeos_canal.precio_lectura`.
 ```sql
 -- Bodega: materiales y política de precio por modelo (specs 001 y 002).
 create table if not exists bodega.materials (
@@ -92,8 +93,9 @@ create or replace view public.bodega_materials as
 
 -- ERP: historial y precio publicado leído por clave (spec 004).
 alter table public.mapeos_canal
-  add column if not exists precio_publicado numeric,
-  add column if not exists precio_leido_en  timestamptz;
+  add column if not exists precio_publicado double precision,
+  add column if not exists precio_leido_en  timestamptz,
+  add column if not exists precio_lectura   jsonb;   -- estado, promoción, automatización, variaciones
 
 create table if not exists public.cambios_precio (
   id             text primary key default gen_random_uuid()::text,
@@ -131,11 +133,13 @@ alter table public.cambios_precio enable row level security;
 ## 4. Módulos y pantallas
 | Archivo | Qué |
 |---|---|
-| `src/lib/precios-bodega.ts` (ERP, nuevo) | **Copia** de `precios.ts` + `calc.ts` de Bodega, con un encabezado que dice de qué versión. Sin cambios de lógica |
+| `src/lib/precios-bodega.ts` (ERP, nuevo) | **Copia** de `precios.ts` (sin `preciosDeImpresion`, que es lo único que usaba `calc.ts`) y de la política y `tresPrecios` de `politica.ts`, con un encabezado que dice de qué versión. Sin cambios de lógica. La arma `scripts/sdd-003-copiar-formula.ts` |
 | `scripts/sdd-003-comparar-formula.ts` (ERP, nuevo) | Importa la fórmula de Bodega por ruta relativa y la del ERP, las corre sobre una grilla de entradas y falla si difieren. Se corre en cada release de Bodega |
 | `src/lib/precios-combinacion.ts` (ERP, nuevo) | `costoDeCombinacion` (pieza + insumos, spec 003 RN-1), `preciosDeCombinacion`, `precioDeClave` (unidades y tramos, RN-3), `precioDeVentaErp` (RN-4) |
 | `src/lib/precios-ml.ts` (ERP, nuevo) | Leer precios, chequear si se puede tocar (estado, automatización, promoción), escribir el precio |
 | `src/lib/precios-shop.ts` (ERP, nuevo) | Cliente firmado del endpoint de la spec 006 |
+| `src/lib/precios-propuesta.ts` (ERP, nuevo) | Arma lo que muestra la pantalla (filas por clave de canal y por producto para el ERP) y aplica: vuelve a armar la propuesta en el servidor y rechaza la fila si el precio aprobado ya no es el que da la cuenta |
+| `src/lib/precios-reglas.ts` (ERP, nuevo) | Las reglas que usan igual el servidor y la página (30 %, "con diferencia", el texto de "falta costear"), sin Prisma |
 | `src/lib/costos-bodega.ts` (ERP) | `leerRecetas` suma `material_id`; `leerParametros` suma los materiales; `fabricacionDeReceta` recibe el precio del material |
 | `/precios` (ERP, nueva, client) | La pantalla de la spec 004, en el grupo Catálogo del sidebar |
 | Bodega `Configuracion` (sección Materiales y precio por kilo), `Calculadora`, `ModeloDetalle`, `lib/politica.ts` | Specs 001 y 002 |
@@ -146,16 +150,23 @@ alter table public.cambios_precio enable row level security;
 `getAuthenticatedTenantNonDemo` en todos los endpoints nuevos. En Bodega, los mismos que hoy.
 
 ## 6. Integraciones externas
-- **Mercado Libre (escritura nueva, sólo precio).**
-  - Leer: `GET /items?ids=<hasta 20>&attributes=id,price,status,variations`.
+- **Mercado Libre (escritura nueva, sólo precio).** Lo verificado el 2026-10-24 está en el
+  encabezado de `src/lib/precios-ml.ts` y en la bitácora.
+  - Leer: `GET /items?ids=<hasta 20>` para estado, variaciones y catálogo; el precio, de
+    `GET /items/{id}/prices` (el standard), porque ML va a sacar `price` de `/items` y en 3 de 100
+    publicaciones ya devuelve ahí el de la promoción; lo que paga el cliente, de
+    `GET /items/{id}/sale_price?context=channel_marketplace`; la automatización, de
+    `GET /pricing-automation/users/{id}/items`.
   - Chequeos antes de escribir: automatización de precios y promoción activa. Los recursos exactos
     para MLA se confirman en TASK-012 (la documentación pública que se encontró es la de Global
     Selling).
-  - Escribir: `PUT /items/{MLA}` con `{ price }`, o con `{ variations: [{ id, price }] }` todas al
-    mismo precio. **Riesgo:** la documentación de precios dice que desde el 2026-03-18 un `PUT`
-    que sólo cambia el precio se rechaza y que lo reemplaza `/items/{id}/prices`; no se pudo
-    confirmar (la página responde 403). TASK-012 lo verifica antes de escribir nada, y la primera
-    escritura real es una sola publicación elegida por Agustín.
+  - Escribir: `PUT /items/{MLA}` con `{ price }`. Verificado: el rechazo del 2026-03-18 es **sólo**
+    para publicaciones con automatización de precios (400 `item.price.not_modifiable`), y el
+    recurso nuevo (`POST /items/{id}/prices/standard`) todavía no está disponible. Las
+    publicaciones con variaciones no se escriben: mandar `variations` borra las que no van, y hoy
+    ninguna mapeada tiene.
+  - ML recalcula solo el envío gratis obligatorio según el precio y renueva el vencimiento con
+    cualquier `PUT`: se informa aparte y no cuenta como "otro campo tocado".
 - **Shop:** el endpoint de la spec 006. Variables nuevas en el ERP: `SHOP_API_URL` (base del Shop).
   La firma usa `SHOP_WEBHOOK_SECRET`, el mismo secreto del contrato 1.
 - **Bodega:** nada en vivo; todo pasa por las tablas `bodega.*`.

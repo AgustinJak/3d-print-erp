@@ -2,7 +2,7 @@
 id: 006-cambios-en-el-shop
 feature: 003-precios-desde-bodega
 titulo: El Shop recibe del ERP el precio de cada combinación de un producto y lo traduce a su base, extras y reglas
-estado: draft
+estado: validated
 actualizado: 2026-10-20
 ---
 

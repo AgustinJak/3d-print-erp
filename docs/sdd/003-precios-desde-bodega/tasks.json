@@ -10,8 +10,8 @@
   "validation": {
     "approved": true,
     "approvedBy": "Agustín",
-    "approvedAt": "2026-10-20",
-    "notes": "\"Empezá con los cambios a la bodega, más adelante seguimos con lo demás\": validada la parte de Bodega (specs 001 y 002, TASK-001 a TASK-005). El resto se retoma cuando lo pida."
+    "approvedAt": "2026-10-24",
+    "notes": "Specs 001 y 002 validadas el 2026-10-20; 003 a 006 el 2026-10-24 (\"Sí, validado\"), con los ajustes al catálogo del SDD 004. La primera escritura en ML, sobre una publicación de bajo riesgo que elige Claude y avisa antes. La spec 006 se la pasa Agustín a la sesión del Shop."
   },
   "updatedAt": "2026-10-24",
   "tasks": [
@@ -140,7 +140,7 @@
       "title": "ERP: costear cada pieza con el precio de su material",
       "description": "costos-bodega.ts lee bodega.materials y el material_id de cada modelo; fabricacionDeReceta usa ese precio. Comparar costosPorFilaDeStock antes y después de la migración: tiene que dar igual.",
       "component": "api",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-001"
@@ -157,7 +157,7 @@
         "src/lib/sincronizar-costos.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
+      "completedAt": "2026-10-24",
       "notes": "2026-10-24: absorbida por la TASK-007 del SDD 004 (costo desde las piezas, con el material de cada una)."
     },
     {
@@ -165,7 +165,7 @@
       "title": "ERP: copia de la fórmula de precios y prueba de paridad",
       "description": "src/lib/precios-bodega.ts copia precios.ts y calc.ts de Bodega sin cambiar lógica; scripts/sdd-003-comparar-formula.ts corre las dos sobre una grilla de entradas y falla si difieren.",
       "component": "api",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [],
       "specs": [
@@ -174,18 +174,19 @@
       "acceptanceCriteria": [],
       "files": [
         "src/lib/precios-bodega.ts",
+        "scripts/sdd-003-copiar-formula.ts",
         "scripts/sdd-003-comparar-formula.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-24",
+      "notes": "2026-10-24: la copia la arma sdd-003-copiar-formula.ts (sin preciosDeImpresion; suma la política y tresPrecios de politica.ts). La paridad da igual en 63.110 casos contra Bodega 2.35.0, y atrapa las cuatro mutaciones de prueba (redondeo, tolerancia, cuotas, piso mayorista)."
     },
     {
       "id": "TASK-008",
       "title": "ERP: precio de cada combinación",
       "description": "src/lib/precios-combinacion.ts: costo de la combinación (pieza + insumos de Bodega + receta), tres precios con la política del modelo de Bodega y los gastos de venta, precio de una clave con unidades y tramos, y el precio de venta del ERP (base + adicionales). Falta costear cuando falta un dato.",
       "component": "api",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-006",
@@ -201,18 +202,19 @@
         "CA-4 de 003-precio-de-cada-combinacion"
       ],
       "files": [
-        "src/lib/precios-combinacion.ts"
+        "src/lib/precios-combinacion.ts",
+        "scripts/sdd-003-probar-precios.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-24",
+      "notes": "2026-10-24: 40 de 40 en sdd-003-probar-precios.ts. CA-1 contra las 3 fotos de Bodega (kunai, Soporte Angel, vaso Milkshake): iguales. De 164 combinaciones activas, 48 tienen precio; las demás faltan costear (112 piezas sin receta en Bodega, 3 sin enlazar, 5 Con Funda con la funda sin receta)."
     },
     {
       "id": "TASK-009",
       "title": "ERP: leer los precios publicados de ML",
       "description": "src/lib/precios-ml.ts lee en tandas de 20 con GET /items?ids= y guarda precio_publicado y precio_leido_en en mapeos_canal. Sólo lectura.",
       "component": "integration",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-001"
@@ -223,19 +225,21 @@
       ],
       "acceptanceCriteria": [],
       "files": [
+        "prisma/sql/precios-por-canal.sql",
+        "prisma/schema.prisma",
         "src/lib/precios-ml.ts",
         "src/app/api/precios/leer/route.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-24",
+      "notes": "2026-10-24: SQL aplicado en producción (mapeos_canal.precio_publicado, precio_leido_en y precio_lectura, que no estaba en el técnico: estado, promoción, automatización, variaciones y catálogo; y cambios_precio). El precio se lee de /items/{id}/prices (el standard): en 3 de 100 publicaciones /items devuelve el de la promoción como price. Lo que paga el cliente, de /sale_price. Primera lectura: 100 de 100, sin errores; 20 s desde la PC (un solo UPDATE al final)."
     },
     {
       "id": "TASK-010",
       "title": "ERP: pantalla Precios y aplicar el precio de venta del ERP",
       "description": "GET /api/precios, POST /api/precios/aplicar (canal erp), GET /api/precios/historial y la página /precios con filtros, diferencias, marca roja a más de 30 % y confirmación. El canal erp escribe precioVenta y precioAdicional y deja historial.",
       "component": "ui",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-008",
@@ -251,22 +255,28 @@
         "CA-4 de 004-pantalla-de-precios"
       ],
       "files": [
+        "src/lib/precios-propuesta.ts",
+        "src/lib/precios-reglas.ts",
         "src/app/api/precios/route.ts",
         "src/app/api/precios/aplicar/route.ts",
         "src/app/api/precios/historial/route.ts",
         "src/app/(app)/precios/page.tsx",
-        "src/components/app-sidebar.tsx"
+        "src/components/app-sidebar.tsx",
+        "src/components/command-palette.tsx",
+        "src/app/api/modelos/[id]/ficha/route.ts",
+        "src/components/producto/lo-que-se-vende.tsx",
+        "scripts/sdd-003-probar-pantalla.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-24",
+      "notes": "2026-10-24: 30 de 30 en sdd-003-probar-pantalla.ts (tenant aislado y piezas ZZ Prueba Claude en bodega.models, borrado al final). Pestañas Combinaciones, Mercado Libre, Web, ERP e Historial; filtros de la REQ-5. La página del producto muestra los tres precios por combinación y enlaza a Precios filtrado (spec 004, REQ-6). Vista previa con datos de verdad y next build sin errores. Aplicar rearma la propuesta en el servidor y rechaza la fila si el precio cambió, si está bloqueada o si pasa del 30 % sin confirmar."
     },
     {
       "id": "TASK-011",
       "title": "Pasarle la spec 006 a la sesión del Shop",
       "description": "El Shop implementa el endpoint de precios firmado. Acá se entrega y se prueba con simular contra producción.",
       "component": "docs",
-      "status": "pending",
+      "status": "in-progress",
       "origin": "plan",
       "dependencies": [],
       "specs": [
@@ -275,17 +285,19 @@
       "acceptanceCriteria": [
         "CA-1 de 006-cambios-en-el-shop"
       ],
-      "files": [],
+      "files": [
+        "docs/sdd/003-precios-desde-bodega/para-el-shop.md"
+      ],
       "blockedReason": null,
       "completedAt": null,
-      "notes": null
+      "notes": "2026-10-24: texto listo para pegar en para-el-shop.md (propone POST /api/inventario/precios, la firma con headers x-inventario-*, la respuesta por producto). Agustín se lo pasa a mano a la sesión del Shop. Se cierra cuando el Shop lo tenga y el ERP lo pruebe con simular."
     },
     {
       "id": "TASK-012",
       "title": "ML: verificar cómo se escribe hoy el precio, y escribirlo",
       "description": "Primero confirmar en la documentación vigente y con lecturas (sin escribir) el recurso para el precio después del cambio de marzo de 2026, y los de automatización y promoción para MLA. Después, src/lib/precios-ml.ts escribe el precio con los chequeos de la spec 005, y la primera escritura real es una publicación elegida por Agustín, comparando todos los campos antes y después.",
       "component": "integration",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-010"
@@ -304,6 +316,27 @@
         "src/app/api/precios/aplicar/route.ts"
       ],
       "blockedReason": null,
+      "completedAt": "2026-10-24",
+      "notes": "2026-10-24. Verificado en la documentación vigente: el precio se sigue escribiendo con PUT /items/{id} { price } (el recurso /prices/standard \"aún no está disponible\"); el cambio del 18/3 sólo rechaza el PUT en publicaciones con automatización de precios, y la cuenta no tiene ninguna (GET /pricing-automation/users/{id}/items). Ninguna publicación mapeada tiene variaciones. 83 de 100 están en campañas del vendedor (5 % y 10 %) y no se tocan (RN-3); la API de promociones le da 403 a la app. Escritura real: MLA2765577304 (Shinobu 65 Con Funda, pausada, elegida por Claude a pedido de Agustín) de $43.000 a $32.541 por el aplicar del ERP y vuelta a $43.000; ML lo mostró en los dos casos. CA-4: el ERP manda sólo el precio, pero ML recalcula solo el envío gratis obligatorio por precio (lo sacó a $32.541 y lo volvió a poner a $43.000) y renovó el vencimiento; quedó todo como estaba salvo expiration_time. Se informan aparte (envioGratis) y no cuentan como otro campo tocado."
+    },
+    {
+      "id": "TASK-016",
+      "title": "ML: probar qué hace una campaña de porcentaje al cambiar el precio",
+      "description": "83 de 100 publicaciones están en campañas del vendedor (C-MLA1749392 al 10 %, C-MLA1710245 al 5 %) y RN-3 las bloquea. La documentación dice que bajar el precio por debajo de la oferta elimina la promoción y que subirlo la deja activa; en una publicación de la campaña del 10 % el precio de la oferta seguía al standard × 0,9. Probar con una publicación elegida por Agustín: cambiar el precio, ver si la oferta acompaña, y volver. Según lo que pase, levantar el bloqueo o dejarlo.",
+      "component": "integration",
+      "status": "blocked",
+      "origin": "discovered",
+      "dependencies": [
+        "TASK-012"
+      ],
+      "specs": [
+        "005-precios-en-mercado-libre"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/precios-ml.ts"
+      ],
+      "blockedReason": "Necesita que Agustín elija la publicación en campaña para probar.",
       "completedAt": null,
       "notes": null
     },

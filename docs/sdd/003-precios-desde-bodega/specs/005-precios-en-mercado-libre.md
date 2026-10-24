@@ -2,8 +2,8 @@
 id: 005-precios-en-mercado-libre
 feature: 003-precios-desde-bodega
 titulo: El ERP cambia el precio de una publicación de Mercado Libre, sólo el precio y sólo con aprobación
-estado: draft
-actualizado: 2026-10-20
+estado: validated
+actualizado: 2026-10-24
 ---
 
 # Precios en Mercado Libre
@@ -51,14 +51,20 @@ siguen sin tocarse.
 - El token de ML venció: se renueva como hoy (`mlFetch`); si no se puede, se corta y se informa.
 - ML acepta el cambio pero publica otro número (redondeo propio): se guarda el que quedó.
 - Publicación de otro negocio (Shay): nunca aparece, porque su clave está marcada así en el mapeo.
+- ML recalcula solo el envío gratis obligatorio por el precio (verificado el 2026-10-24: bajar de
+  $43.000 a $32.541 lo sacó y volver lo puso) y renueva el vencimiento con cualquier escritura. No
+  es un campo que toque el ERP, pero cambia lo que ve el comprador: se informa en el resultado y en
+  el historial.
 
 ## Fuera de alcance
 - Crear o terminar promociones en ML.
 - Stock, Flex o tiempo de disponibilidad: es la feature 002.
 
 ## Preguntas abiertas
-Ninguna. Lo técnico sin confirmar (cómo se escribe el precio después del cambio de ML de marzo de
-2026) va como primera tarea, verificado con una publicación elegida por Agustín.
+Ninguna. Lo técnico se verificó el 2026-10-24 (TASK-012): el cambio de marzo de 2026 sólo bloquea
+las publicaciones con automatización de precios, y la primera escritura real salió bien. Queda una
+prueba pendiente, la de una publicación en campaña (TASK-016): hasta hacerla, RN-3 no las toca, y
+hoy son 83 de las 100 mapeadas.
 
 ## Referencias
 - `inventario_sendero3d/src/lib/mercadolibre.ts:210` (`mlFetch`).

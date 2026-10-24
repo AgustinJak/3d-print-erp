@@ -2,8 +2,8 @@
 id: 004-pantalla-de-precios
 feature: 003-precios-desde-bodega
 titulo: Una pantalla del ERP muestra qué precio cambiaría en cada canal y lo aplica sólo con aprobación
-estado: draft
-actualizado: 2026-10-20
+estado: validated
+actualizado: 2026-10-24
 ---
 
 # Pantalla de Precios
@@ -23,6 +23,9 @@ de qué se cambió ni cuándo.
 - **REQ-4** — Cada precio aplicado debe quedar en un historial: canal, clave, antes, después,
   quién, cuándo y qué respondió el canal.
 - **REQ-5** — Debe poder filtrar: con diferencias, por canal, "falta costear" y "falta mapear".
+- **REQ-6** — La página de cada producto (SDD 004) debe mostrar, en "Lo que se vende", los tres
+  precios de cada combinación y un enlace a esta pantalla filtrada por el producto. Se aplica sólo
+  desde acá: una sola pantalla para los precios.
 
 ## Reglas de negocio
 - **RN-1** — "Con diferencia" = el propuesto y el publicado difieren en más de $1. El redondeo ya

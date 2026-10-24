@@ -1,9 +1,9 @@
 ---
 feature: 003-precios-desde-bodega
 epica: ninguna
-estado: draft
+estado: validated
 autor: Agustín (pedido) · Claude (redacción)
-actualizado: 2026-10-20
+actualizado: 2026-10-24
 ---
 
 # SDD funcional · Precios desde Bodega
@@ -79,10 +79,11 @@ flowchart TD
 - Precios automáticos o con tope (descartado el 2026-10-20).
 
 ## 8. Dependencias
-- **SDD 001 (mapeo de productos):** los precios llegan a cada canal por `mapeos_canal`. Para ML
-  hay que vaciar la cola (27 claves al 2026-10-20). Para la web hace falta la siembra del Shop
-  (TASK-013 de la 001), que espera las respuestas de TASK-022 (catálogo del Shop).
-- **Bodega:** una release con las specs 001 y 002, instalada en el taller.
+- **SDD 001 (mapeo de productos):** los precios llegan a cada canal por `mapeos_canal`. Al
+  2026-10-24 las colas de ML y del Shop están vacías y el catálogo del Shop está sembrado.
+- **Bodega:** las specs 001 y 002, en la 2.34.0 (instalada).
+- **SDD 004 (estructura del catálogo):** el costo de cada pieza con su material (era la TASK-006 de
+  esta feature) y los grupos de variantes, en producción desde el 2026-10-24.
 - **Shop:** la spec 006, hecha por su sesión.
 
 ## 9. Decisiones tomadas
