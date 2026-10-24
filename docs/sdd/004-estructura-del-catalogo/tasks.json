@@ -3,7 +3,7 @@
   "featureId": "004-estructura-del-catalogo",
   "epic": "ninguna",
   "version": "1.0.0",
-  "status": "in-progress",
+  "status": "in-review",
   "branch": "feat/004-estructura-del-catalogo",
   "baseBranch": "master",
   "pullRequest": null,
@@ -341,7 +341,7 @@
       "title": "Bodega: piezas, la convención a la vista y sin mapeador",
       "description": "Spec 008 en Bodega/Bodega3D-App: 'Pieza' en la interfaz, sacar StockErpSection de Configuración, la convención en el alta, la categoría Insumos. Probado con el renderer en Vite y un window.api falso. Release sólo cuando Agustín la pida, con el procedimiento de la memoria.",
       "component": "ui",
-      "status": "in-progress",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-010"
@@ -358,8 +358,8 @@
         "Bodega/Bodega3D-App/src/renderer/src/pages/Configuracion.tsx"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": "Código hecho en Bodega (sin commitear): textos \"Pieza\", sin mapeador en Configuración (el IPC queda, nadie lo llama), la convención en el alta, categoría Insumos en la migración. electron-vite build OK; pantallas vistas con el renderer compilado y un window.api falso. Falta la release, a pedido."
+      "completedAt": "2026-10-24",
+      "notes": "Bodega 2.35.0: commits bc1fdd3 (feature) y 7b0f9f8 (versión) en main, release v2.35.0 en AgustinJak/bodega-3d-releases. Asar verificado con @electron/asar (versión, textos, migración, sin three.js). El WIP de Agustín volvió entero."
     },
     {
       "id": "TASK-014",

@@ -107,3 +107,21 @@ release). Nada commiteado ni desplegado.
   verificar en producción.
 - `BOD - Flujos` e `INV - Flujos` cambian (se va el mapeador, se van dos pestañas, rutas nuevas):
   TASK-017, esperando que Agustín habilite el cerebro.
+
+## 2026-10-24 · Claude (sesión del inventario) — deploy del ERP y Bodega 2.35.0
+
+**Tareas:** TASK-013 (→ completed). La feature pasa a `in-review`: falta que Agustín la use con
+sus datos.
+
+**Qué pasó**
+- Con el pedido de Agustín ("dale la 1 y 2"): ERP en `master` (`a397a91` código, `cbc080f`
+  SDD), desplegado en Vercel (READY, sin errores de ejecución en la primera hora).
+- Bodega 2.35.0 con el procedimiento de la memoria: commit `bc1fdd3`, stash del WIP de three.js
+  (con respaldo del diff), versión, `npm run dist`, asar verificado leyéndolo con
+  `@electron/asar`, commit `7b0f9f8`, push y release `v2.35.0`. El `stash pop` entró limpio.
+- El costo automático todavía no corrió al cerrar la sesión: corre con la primera consulta a
+  `/api/cambios` o `/api/stock`, o con el cron diario.
+
+**Para el que sigue**
+- TASK-014 (borrar lo que quedó sin uso) y TASK-016 (limpieza) después de que Agustín use la
+  página unos días. TASK-017 (cerebro) cuando lo habilite.
