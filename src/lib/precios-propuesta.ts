@@ -15,6 +15,7 @@ import {
   pausaEntreEscrituras,
   type LecturaMl,
 } from "@/lib/precios-ml";
+import { llamarShop, motivoShop, opcionesDeClave, porClave, productoDeClave, type LecturaShop } from "@/lib/precios-shop";
 
 /**
  * La pantalla de Precios (docs/sdd/003, spec 004): qué precio cambiaría en cada canal y aplicarlo.
@@ -49,6 +50,13 @@ export interface FilaDeCanal {
   /** Por qué pide la confirmación aparte: cambia más de 30 % o ML sacaría la promoción. */
   aparte: string | null;
   etiquetas: string[];
+  /**
+   * Shop: el producto al que pertenece la clave. En la web se aplica el producto entero (todas sus
+   * combinaciones juntas), porque el Shop guarda base + extras y no un precio por combinación.
+   */
+  producto: string | null;
+  /** Shop: una combinación que el Shop no tiene en cuenta (opción inactiva); no frena al producto. */
+  ignorada: boolean;
 }
 
 export interface FilaErp {
@@ -69,8 +77,9 @@ export interface Propuesta {
   combinaciones: PrecioDeCombinacion[];
   canales: FilaDeCanal[];
   erp: FilaErp[];
-  /** La lectura de ML más vieja de las vigentes, para el "leído hace…". */
+  /** La lectura más vieja de cada canal, para el "leído hace…". */
   leidoMl: string | null;
+  leidoShop: string | null;
 }
 
 const diferencia = (publicado: number | null, propuesto: number | null) =>
@@ -109,8 +118,11 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
     .map((m) => {
       const canal = m.canal as "mercadolibre" | "shop";
       const p = m.combinacionId ? porId.get(m.combinacionId) : undefined;
-      const propuesto = p ? precioDeClave(p, canal, m.unidades, cx.general.gastos) : null;
-      const lectura = (m.precioLectura as LecturaMl | null) ?? null;
+      // El Shop sólo acepta precios enteros.
+      const crudo = p ? precioDeClave(p, canal, m.unidades, cx.general.gastos) : null;
+      const propuesto = crudo != null && canal === "shop" ? Math.round(crudo) : crudo;
+      const lectura = canal === "mercadolibre" ? ((m.precioLectura as LecturaMl | null) ?? null) : null;
+      const lecturaShop = canal === "shop" ? ((m.precioLectura as LecturaShop | null) ?? null) : null;
       const mla = canal === "mercadolibre" ? m.clave.split("|")[0] : null;
       const muestra = (m.muestra ?? {}) as { titulo?: string };
 
@@ -119,7 +131,7 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
       else if (!m.combinacion?.activo) motivo = "la combinación está desactivada";
       else if (!p) motivo = "el producto está inactivo";
       else if (!p.precios) motivo = textoDeFalta(p.falta);
-      else if (canal === "shop") motivo = "falta el endpoint de precios del Shop (spec 006)";
+      else if (canal === "shop") motivo = motivoShop(lecturaShop, m.precioLeidoEn);
       else motivo = motivoMl(lectura, m.precioLeidoEn);
 
       const etiquetas: string[] = [];
@@ -127,6 +139,7 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
       if (lectura?.catalogo) etiquetas.push("catálogo");
       if (lectura?.promo) etiquetas.push("en campaña");
       if (m.unidades > 1) etiquetas.push(`pack de ${m.unidades}`);
+      if (lecturaShop?.ignorada) etiquetas.push("ignorada por el Shop");
 
       const dif = diferencia(m.precioPublicado, propuesto);
       const campana = canal === "mercadolibre" ? avisoMl(lectura, propuesto) : null;
@@ -148,8 +161,19 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
         aviso: campana?.aviso ?? null,
         aparte: campana?.sacaPromo ? "ML saca la promoción" : esGrande(dif.pct) ? `cambia más de ${CAMBIO_GRANDE_PCT} %` : null,
         etiquetas,
+        producto: canal === "shop" ? productoDeClave(m.clave) : null,
+        ignorada: !!lecturaShop?.ignorada,
       };
     });
+
+  // En la web se aplica el producto entero: si una combinación no se puede, ninguna del producto.
+  const porProducto = new Map<string, FilaDeCanal[]>();
+  for (const f of canales.filter((f) => f.canal === "shop" && !f.ignorada)) porProducto.set(f.producto!, [...(porProducto.get(f.producto!) ?? []), f]);
+  for (const filas of porProducto.values()) {
+    const frena = filas.find((f) => f.motivo);
+    if (!frena) continue;
+    for (const f of filas) f.motivo ??= `otra combinación del producto no se puede aplicar (${frena.combinacion ?? frena.clave}: ${frena.motivo})`;
+  }
 
   // Dos claves de la misma publicación con precios distintos: ML tiene un solo precio.
   const porMla = new Map<string, FilaDeCanal[]>();
@@ -182,7 +206,10 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
       };
     });
 
-  const lecturas = canales.filter((f) => f.canal === "mercadolibre" && f.leidoEn).map((f) => f.leidoEn!);
+  const masVieja = (canal: "mercadolibre" | "shop") => {
+    const l = canales.filter((f) => f.canal === canal && f.leidoEn).map((f) => f.leidoEn!);
+    return l.length ? l.sort()[0] : null;
+  };
   return {
     gastos: {
       deBodega: cx.general.deBodega,
@@ -193,7 +220,8 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
     combinaciones,
     canales,
     erp,
-    leidoMl: lecturas.length ? lecturas.sort()[0] : null,
+    leidoMl: masVieja("mercadolibre"),
+    leidoShop: masVieja("shop"),
   };
 }
 
@@ -226,11 +254,10 @@ export async function aplicarPrecios(
   filas: Array<{ clave: string; precio: number }>,
   confirmadoGrandes: boolean
 ): Promise<ResultadoFila[]> {
-  if (canal === "shop") throw new ErrorDePrecios("la web se aplica con el endpoint del Shop, que todavía no está (spec 006)", 501);
   const propuesta = await armarPropuesta(tenantId);
-  return canal === "erp"
-    ? aplicarErp(tenantId, usuario, propuesta, filas, confirmadoGrandes)
-    : aplicarMl(tenantId, usuario, propuesta, filas, confirmadoGrandes);
+  if (canal === "erp") return aplicarErp(tenantId, usuario, propuesta, filas, confirmadoGrandes);
+  if (canal === "shop") return aplicarShop(tenantId, usuario, propuesta, filas, confirmadoGrandes);
+  return aplicarMl(tenantId, usuario, propuesta, filas, confirmadoGrandes);
 }
 
 function revisar(
@@ -337,6 +364,113 @@ async function aplicarErp(
       ),
     ]);
     out.push({ clave, estado: "aplicado", antes: f!.actual, despues: f!.propuesto });
+  }
+  return out;
+}
+
+/**
+ * La web, por producto entero (spec 006): cada producto con una fila elegida tiene que venir con
+ * todas sus combinaciones (menos las que el Shop ignora), cada una con el precio propuesto de
+ * ahora. Se manda todo junto y el Shop escribe cada producto entero o nada.
+ */
+async function aplicarShop(
+  tenantId: string,
+  usuario: string | null,
+  propuesta: Propuesta,
+  filas: Array<{ clave: string; precio: number }>,
+  confirmadoGrandes: boolean
+): Promise<ResultadoFila[]> {
+  const out: ResultadoFila[] = [];
+  const pedidas = new Map(filas.map((f) => [f.clave, f.precio]));
+  const delShop = propuesta.canales.filter((f) => f.canal === "shop");
+  const productos = [...new Set(filas.map((f) => productoDeClave(f.clave)))];
+
+  const aMandar: Array<{ producto_id: string; filas: FilaDeCanal[] }> = [];
+  for (const producto of productos) {
+    const todas = delShop.filter((f) => f.producto === producto && !f.ignorada);
+    const claves = todas.map((f) => f.clave);
+    const rechazar = (mensaje: string) => {
+      for (const clave of filas.map((f) => f.clave).filter((c) => productoDeClave(c) === producto)) out.push({ clave, estado: "rechazado", mensaje });
+    };
+    if (!todas.length) {
+      rechazar("no está en la propuesta");
+      continue;
+    }
+    const faltan = claves.filter((c) => !pedidas.has(c));
+    if (faltan.length) {
+      rechazar(`en la web se aplica el producto entero: faltan ${faltan.length} de sus ${claves.length} combinaciones`);
+      continue;
+    }
+    const problema = todas.map((f) => ({ f, m: revisar(f, pedidas.get(f.clave)!, confirmadoGrandes) })).find((x) => x.m);
+    if (problema) {
+      rechazar(`${problema.f.combinacion ?? problema.f.clave}: ${problema.m}`);
+      continue;
+    }
+    if (todas.every((f) => f.publicado != null && Math.abs(f.publicado - f.propuesto!) < 1)) {
+      for (const f of todas) out.push({ clave: f.clave, estado: "sin_cambios", antes: f.publicado, despues: f.publicado });
+      continue;
+    }
+    aMandar.push({ producto_id: producto, filas: todas });
+  }
+  if (!aMandar.length) return out;
+
+  let resultados;
+  try {
+    resultados = await llamarShop(
+      aMandar.map((p) => ({ producto_id: p.producto_id, combinaciones: p.filas.map((f) => ({ opcion_ids: opcionesDeClave(f.clave), precio: f.propuesto! })) })),
+      false
+    );
+  } catch (e) {
+    const mensaje = e instanceof Error ? e.message : String(e);
+    for (const p of aMandar) {
+      for (const f of p.filas) {
+        out.push({ clave: f.clave, estado: "error", mensaje });
+        await prisma.cambioPrecio.create({
+          data: { tenantId, canal: "shop", clave: f.clave, combinacionId: f.combinacionId, antes: f.publicado, despues: f.propuesto!, estado: "error", respuesta: { error: mensaje }, usuario },
+        });
+      }
+    }
+    return out;
+  }
+
+  const ahora = new Date();
+  for (const p of aMandar) {
+    const r = resultados.find((x) => x.producto_id === p.producto_id);
+    const valores = r ? porClave(r) : new Map<string, { actual: number; nuevo: number }>();
+    const aplicado = r?.estado === "ok";
+    const mensaje = !r
+      ? "el Shop no contestó por este producto"
+      : r.estado === "sin_cambio"
+        ? undefined
+        : aplicado
+          ? undefined
+          : r.motivo?.startsWith("cambio_concurrente")
+            ? "el producto cambió en el Shop mientras se aplicaba: volvé a leer"
+            : `${r.estado}: ${r.motivo ?? ""}`.trim();
+    for (const f of p.filas) {
+      const v = valores.get(f.clave);
+      if (r?.estado === "sin_cambio") {
+        out.push({ clave: f.clave, estado: "sin_cambios", antes: v?.actual ?? f.publicado, despues: v?.actual ?? f.publicado });
+        continue;
+      }
+      out.push({ clave: f.clave, estado: aplicado ? "aplicado" : "rechazado", antes: v?.actual ?? f.publicado, despues: aplicado ? (v?.nuevo ?? f.propuesto) : f.publicado, mensaje });
+      await prisma.cambioPrecio.create({
+        data: {
+          tenantId,
+          canal: "shop",
+          clave: f.clave,
+          combinacionId: f.combinacionId,
+          antes: v?.actual ?? f.publicado,
+          despues: v?.nuevo ?? f.propuesto!,
+          estado: aplicado ? "aplicado" : "rechazado",
+          respuesta: (r ? { producto_id: r.producto_id, estado: r.estado, motivo: r.motivo, cambios: r.cambios } : { error: mensaje }) as object,
+          usuario,
+        },
+      });
+      if (aplicado) {
+        await prisma.mapeoCanal.updateMany({ where: { tenantId, canal: "shop", clave: f.clave }, data: { precioPublicado: v?.nuevo ?? f.propuesto, precioLeidoEn: ahora } });
+      }
+    }
   }
   return out;
 }

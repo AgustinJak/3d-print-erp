@@ -105,8 +105,8 @@ function PantallaPrecios() {
   const [filtro, setFiltro] = useState<Filtro>("diferencias");
   const [q, setQ] = useState("");
   const [elegidas, setElegidas] = useState<Set<string>>(new Set());
-  const [leyendo, setLeyendo] = useState(false);
-  const [confirmar, setConfirmar] = useState<{ canal: "mercadolibre" | "erp"; filas: Aplicable[] } | null>(null);
+  const [leyendo, setLeyendo] = useState<"mercadolibre" | "shop" | null>(null);
+  const [confirmar, setConfirmar] = useState<{ canal: "mercadolibre" | "erp" | "shop"; filas: Aplicable[] } | null>(null);
   const [grandesOk, setGrandesOk] = useState(false);
   const [aplicando, setAplicando] = useState(false);
   const [resultados, setResultados] = useState<Map<string, ResultadoFila>>(new Map());
@@ -156,20 +156,29 @@ function PantallaPrecios() {
     setElegidas(new Set());
   }
 
-  async function leerMl() {
-    setLeyendo(true);
+  async function leer(canal: "mercadolibre" | "shop") {
+    setLeyendo(canal);
     try {
-      const r = await pedir<{ leidas: number; errores: Array<{ mla: string; error: string }> }>("/api/precios/leer?canal=mercadolibre", { method: "POST" });
-      toast.success(`${r.leidas} publicaciones leídas` + (r.errores.length ? ` · ${r.errores.length} no se pudieron leer` : ""));
+      const r = await pedir<{ leidas: number; productos?: number; errores: unknown[] }>(`/api/precios/leer?canal=${canal}`, { method: "POST" });
+      toast.success(
+        (canal === "shop" ? `${r.productos} productos de la web leídos` : `${r.leidas} publicaciones leídas`) +
+          (r.errores.length ? ` · ${r.errores.length} no se pudieron leer` : "")
+      );
       await cargar();
     } catch (e) {
-      toast.error(`No se pudo leer ML: ${e instanceof Error ? e.message : e}`);
+      toast.error(`No se pudo leer ${canal === "shop" ? "la web" : "ML"}: ${e instanceof Error ? e.message : e}`);
     } finally {
-      setLeyendo(false);
+      setLeyendo(null);
     }
   }
 
-  function pedirConfirmacion(c: "mercadolibre" | "erp", filas: Aplicable[]) {
+  /** En la web se aplica el producto entero: lo elegido se completa con el resto de sus combinaciones. */
+  function productoEntero(filas: FilaDeCanal[]): FilaDeCanal[] {
+    const productos = new Set(filas.map((f) => f.producto));
+    return (datos?.canales ?? []).filter((f) => f.canal === "shop" && !f.ignorada && productos.has(f.producto));
+  }
+
+  function pedirConfirmacion(c: "mercadolibre" | "erp" | "shop", filas: Aplicable[]) {
     if (!filas.length) return;
     setGrandesOk(false);
     setConfirmar({ canal: c, filas });
@@ -237,12 +246,21 @@ function PantallaPrecios() {
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">ML leído {haceCuanto(datos?.leidoMl ?? null)}</span>
-          <Button size="sm" variant="outline" onClick={leerMl} disabled={leyendo}>
-            {leyendo ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
-            Leer precios de ML
-          </Button>
+        <div className="flex items-center gap-3 flex-wrap">
+          {(
+            [
+              ["mercadolibre", "Leer precios de ML", datos?.leidoMl],
+              ["shop", "Leer precios de la web", datos?.leidoShop],
+            ] as const
+          ).map(([canal, texto, leido]) => (
+            <div key={canal} className="flex items-center gap-1.5">
+              <Button size="sm" variant="outline" onClick={() => leer(canal)} disabled={!!leyendo}>
+                {leyendo === canal ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+                {texto}
+              </Button>
+              <span className="text-xs text-muted-foreground">{haceCuanto(leido ?? null)}</span>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -261,7 +279,7 @@ function PantallaPrecios() {
             [
               ["combinaciones", `Combinaciones (${combinaciones.length})`],
               ["mercadolibre", `Mercado Libre (${cuenta(ml)})`],
-              ["shop", `Web (${shop.length})`],
+              ["shop", `Web (${cuenta(shop)})`],
               ["erp", `ERP (${cuenta(erp)})`],
               ["historial", "Historial"],
             ] as const
@@ -319,7 +337,11 @@ function PantallaPrecios() {
           elegidas={elegidas}
           resultados={resultados}
           onAlternar={alternar}
-          onAplicar={(filas) => pedirConfirmacion("mercadolibre", filas.map(aplicableDeCanal))}
+          onAplicar={(filas) =>
+            pestana === "shop"
+              ? pedirConfirmacion("shop", productoEntero(filas).map(aplicableDeCanal))
+              : pedirConfirmacion("mercadolibre", filas.map(aplicableDeCanal))
+          }
         />
       )}
 
@@ -329,12 +351,14 @@ function PantallaPrecios() {
             <>
               <DialogHeader>
                 <DialogTitle>
-                  ¿Cambiar {confirmar.filas.length} {confirmar.filas.length === 1 ? "precio" : "precios"} en {confirmar.canal === "erp" ? "el ERP" : "Mercado Libre"}?
+                  ¿Cambiar {confirmar.filas.length} {confirmar.filas.length === 1 ? "precio" : "precios"} en {confirmar.canal === "erp" ? "el ERP" : confirmar.canal === "shop" ? "la web" : "Mercado Libre"}?
                 </DialogTitle>
                 <DialogDescription>
                   {confirmar.canal === "erp"
                     ? "Cambia el precio de venta de cada producto y lo que suma cada opción, que es lo que propone el pedido a mano."
-                    : "Se manda sólo el precio, de a una publicación. Queda todo en el historial."}
+                    : confirmar.canal === "shop"
+                      ? "En la web va cada producto entero, con todas sus combinaciones: el Shop decide cómo guardarlo (base, extras y reglas) y escribe todo o nada. Queda todo en el historial."
+                      : "Se manda sólo el precio, de a una publicación. Queda todo en el historial."}
                 </DialogDescription>
               </DialogHeader>
               <div className="max-h-64 overflow-y-auto divide-y text-sm">
@@ -491,7 +515,10 @@ function TablaCanal({
   onAlternar: (clave: string) => void;
   onAplicar: (filas: FilaDeCanal[]) => void;
 }) {
-  const aplicables = filas.filter((f) => !f.motivo && conDiferencia(f));
+  // En la web cuenta el producto: si alguna de sus combinaciones cambia, se aplica entero.
+  const productosConCambio = new Set(filas.filter((f) => f.canal === "shop" && !f.motivo && conDiferencia(f)).map((f) => f.producto));
+  const sePuede = (f: FilaDeCanal) => !f.motivo && !f.ignorada && (f.canal === "shop" ? productosConCambio.has(f.producto) : conDiferencia(f));
+  const aplicables = filas.filter(sePuede);
   const elegidasAca = aplicables.filter((f) => elegidas.has(f.clave));
   if (!filas.length) return <EmptyState icon={Tag} title="Nada para mostrar" description="No hay publicaciones con ese filtro." />;
   return (
@@ -499,7 +526,8 @@ function TablaCanal({
       <BarraDeSeleccion n={elegidasAca.length} onAplicar={() => onAplicar(elegidasAca)} onLimpiar={() => elegidasAca.forEach((f) => onAlternar(f.clave))} />
       {canal === "shop" && (
         <p className="p-3 border-b text-xs text-muted-foreground">
-          El precio de la web se lee y se aplica con un endpoint que tiene que sumar el Shop (spec 006). Mientras tanto se ve lo propuesto.
+          En la web se aplica cada producto entero: al elegir una combinación van todas las del producto, porque el Shop guarda el precio
+          como base más extras y decide él cómo repartirlo. Una combinación que el Shop ignora (una opción inactiva) no frena al resto.
         </p>
       )}
       <table className="w-full text-sm">
@@ -528,7 +556,7 @@ function TablaCanal({
         </thead>
         <tbody>
           {filas.map((f) => {
-            const puede = !f.motivo && conDiferencia(f);
+            const puede = sePuede(f);
             return (
               <tr key={f.clave} className="border-b last:border-0 align-top">
                 <td className="p-2">{puede && <input type="checkbox" checked={elegidas.has(f.clave)} onChange={() => onAlternar(f.clave)} aria-label="Elegir" />}</td>

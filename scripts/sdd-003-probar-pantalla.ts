@@ -13,6 +13,8 @@
  * - CA-4: un cambio de más de 30 % no se aplica sin la confirmación aparte.
  * - RN-5 / spec 003 RN-4: aplicar en el ERP escribe el precio de venta y los adicionales, con
  *   historial; aplicar dos veces no cambia nada; un precio que ya no es el propuesto no se manda.
+ * - spec 006 (la web): se aplica el producto entero; una combinación sin precio frena a las demás del
+ *   producto, una que el Shop ignora no, y elegir sólo una parte no manda nada. No llama al Shop.
  * - spec 005 RN-3: cerrada, en revisión, automatizada, con variaciones o con una
  *   lectura vieja no se escribe. En campaña sí, con aviso; si el precio nuevo queda debajo del de
  *   la oferta (ML la saca), pide la confirmación aparte.
@@ -20,6 +22,7 @@
 import { prisma } from "@/lib/prisma";
 import { crearGrupo } from "@/lib/catalogo";
 import { motivoMl, type LecturaMl } from "@/lib/precios-ml";
+import type { LecturaShop } from "@/lib/precios-shop";
 import { aplicarPrecios, armarPropuesta } from "@/lib/precios-propuesta";
 import { PREFIJO_FALTA } from "@/lib/precios-reglas";
 
@@ -60,6 +63,8 @@ async function piezaDeBodega(id: string, nombre: string, copiaDe: string | null)
   if (n !== 1) throw new Error(`no está la receta de "${copiaDe}" en Bodega`);
 }
 
+const lecturaShop = (cambios: Partial<LecturaShop> = {}): LecturaShop => ({ estado: "sin_cambio", motivo: null, ignorada: null, conRelleno: false, ...cambios });
+
 const lectura = (cambios: Partial<LecturaMl> = {}): LecturaMl => ({
   estado: "active",
   subEstado: [],
@@ -72,6 +77,8 @@ const lectura = (cambios: Partial<LecturaMl> = {}): LecturaMl => ({
 });
 
 async function main() {
+  // Con secreto (de mentira), para que la web no frene por configuración. Nada de esto llega al Shop.
+  process.env.SHOP_WEBHOOK_SECRET ??= "prueba-sin-red";
   await limpiar();
   await piezaDeBodega(PIEZAS.katana, "Katana", "Tokito Katana 95cm");
   await piezaDeBodega(PIEZAS.funda, "Funda", "Funda 95cm Demon Slayer");
@@ -116,7 +123,13 @@ async function main() {
       // Dos variaciones de una misma publicación a combinaciones con precios distintos.
       { tenantId: T, canal: "mercadolibre", clave: "MLA-PRUEBA-6|111", combinacionId: con.id, precioPublicado: 1000, precioLeidoEn: ahora, precioLectura: lectura() as object },
       { tenantId: T, canal: "mercadolibre", clave: "MLA-PRUEBA-6|222", combinacionId: sin.id, precioPublicado: 1000, precioLeidoEn: ahora, precioLectura: lectura() as object },
-      { tenantId: T, canal: "shop", clave: "prod-prueba|", combinacionId: con.id },
+      // La web: un producto con sus dos combinaciones y una que el Shop ignora, y otro con una sin costo.
+      { tenantId: T, canal: "shop", clave: "prod-a|op-con", combinacionId: con.id, precioPublicado: 1000, precioLeidoEn: ahora, precioLectura: lecturaShop() as object },
+      { tenantId: T, canal: "shop", clave: "prod-a|op-sin", combinacionId: sin.id, precioPublicado: 1000, precioLeidoEn: ahora, precioLectura: lecturaShop() as object },
+      { tenantId: T, canal: "shop", clave: "prod-a|op-vieja", combinacionId: sin.id, precioPublicado: null, precioLeidoEn: ahora, precioLectura: lecturaShop({ ignorada: "La opción op-vieja no es de este producto." }) as object },
+      { tenantId: T, canal: "shop", clave: "prod-b|op-1", combinacionId: con.id, precioPublicado: 1000, precioLeidoEn: ahora, precioLectura: lecturaShop() as object },
+      { tenantId: T, canal: "shop", clave: "prod-b|op-2", combinacionId: comboSinReceta.id, precioPublicado: 1000, precioLeidoEn: ahora, precioLectura: lecturaShop() as object },
+      { tenantId: T, canal: "shop", clave: "prod-c|", combinacionId: con.id },
     ],
   });
 
@@ -135,7 +148,10 @@ async function main() {
   const f5 = fila("MLA-PRUEBA-5|");
   ok(f5.motivo?.startsWith(PREFIJO_FALTA) === true && f5.propuesto === null && f5.motivo.includes("gramos y tiempo"), `CA-3: dice qué falta: "${f5.motivo}"`);
   ok(fila("MLA-PRUEBA-6|111").motivo === "precios distintos en la misma publicación", "dos variaciones con precios distintos no se escriben (spec 005, CA-3)");
-  ok(fila("prod-prueba|").motivo?.includes("spec 006") === true && fila("prod-prueba|").propuesto === pCon.precios!.web, "la web propone el precio web y espera el endpoint del Shop");
+  ok(fila("prod-a|op-con").motivo === null && fila("prod-a|op-con").propuesto === Math.round(pCon.precios!.web) && fila("prod-a|op-con").producto === "prod-a", "la web propone el precio web, entero, y se puede aplicar");
+  ok(fila("prod-a|op-vieja").ignorada && fila("prod-a|op-sin").motivo === null, "una combinación que el Shop ignora no frena al producto");
+  ok(fila("prod-b|op-1").motivo?.startsWith("otra combinación del producto no se puede aplicar") === true, `una sin costo frena a las demás del producto: "${fila("prod-b|op-1").motivo?.slice(0, 70)}…"`);
+  ok(fila("prod-c|").motivo?.startsWith("sin leer") === true, "sin leer la web, no se puede aplicar");
 
   const erp = p.erp.find((f) => f.modeloId === katana.id)!;
   const adicionalCon = erp.adicionales.find((a) => a.varianteId === con.variantes[0])!;
@@ -185,9 +201,16 @@ async function main() {
   r = await aplicarPrecios(T, "prueba", "mercadolibre", [{ clave: "MLA-PRUEBA-2|", precio: f2.propuesto! }], false);
   ok(r[0].estado === "rechazado" && r[0].mensaje!.includes("confirmarlo aparte"), `en campaña y más de 30 % sin confirmar: "${r[0].mensaje}"`);
   ok((await prisma.cambioPrecio.count({ where: { tenantId: T, canal: "mercadolibre" } })) === 0, "y no dejan historial de escritura");
-  let err: unknown = null;
-  await aplicarPrecios(T, "prueba", "shop", [{ clave: "prod-prueba|", precio: 1 }], true).catch((x) => (err = x));
-  ok(err instanceof Error && err.message.includes("spec 006"), "la web no se aplica hasta que esté el endpoint del Shop");
+
+  console.log("\n— La web: el producto entero (spec 006) —");
+  const web = (clave: string) => ({ clave, precio: fila(clave).propuesto! });
+  r = await aplicarPrecios(T, "prueba", "shop", [web("prod-a|op-con")], true);
+  ok(r[0].estado === "rechazado" && r[0].mensaje!.includes("faltan 1 de sus 2"), `una parte del producto no se manda: "${r[0].mensaje}"`);
+  r = await aplicarPrecios(T, "prueba", "shop", [web("prod-a|op-con"), { clave: "prod-a|op-sin", precio: 5 }], true);
+  ok(r.every((x) => x.estado === "rechazado" && x.mensaje!.includes("la propuesta cambió")), `un precio que no es el propuesto frena al producto entero: "${r[0].mensaje?.slice(0, 60)}…"`);
+  r = await aplicarPrecios(T, "prueba", "shop", [web("prod-b|op-1")], true);
+  ok(r[0].estado === "rechazado", `con una combinación sin costo tampoco: "${r[0].mensaje?.slice(0, 60)}…"`);
+  ok((await prisma.cambioPrecio.count({ where: { tenantId: T, canal: "shop" } })) === 0, "ninguno de esos llegó al Shop ni dejó historial");
 
   console.log("\n— Cuándo no se escribe en ML (spec 005, RN-3) —");
   const t = new Date();
