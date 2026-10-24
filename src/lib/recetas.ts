@@ -21,36 +21,67 @@ export interface Insumo {
   stockId: string;
   etiqueta: string;
   modelo: string;
+  modeloId: string;
   cantidad: number;
   /** Costo de Bodega de la pieza, si lo tiene. */
   costo: number | null;
+  /** Los productos cuyas recetas lo consumen (docs/sdd/004, spec 006). */
+  usadoPor: Array<{ id: string; nombre: string }>;
 }
 
 /**
- * Lo que se puede poner en una receta: las filas de stock de los modelos de la
- * categoría Insumos, activos o no. Las fundas son modelos inactivos a propósito,
- * para no figurar como productos (spec 006, RN-1).
+ * Lo que se puede poner en una receta: las filas de stock de los insumos (`esInsumo`, docs/sdd/004
+ * spec 006) y, mientras el relleno no corra, de los modelos de la categoría Insumos. Las fundas son
+ * modelos inactivos a propósito, para no figurar como productos (SDD 001, spec 006, RN-1).
  */
 export async function insumosDisponibles(tenantId: string): Promise<Insumo[]> {
   const filas = await prisma.stock.findMany({
     where: {
       tenantId,
-      modelo: { categorias: { some: { categoria: { nombre: { startsWith: "Insumo", mode: "insensitive" } } } } },
+      modelo: {
+        OR: [
+          { esInsumo: true },
+          { categorias: { some: { categoria: { nombre: { startsWith: "Insumo", mode: "insensitive" } } } } },
+        ],
+      },
     },
-    select: { id: true, etiqueta: true, cantidad: true, modelo: { select: { nombre: true } } },
+    select: {
+      id: true,
+      etiqueta: true,
+      cantidad: true,
+      modelo: { select: { id: true, nombre: true } },
+      reglasInsumo: { select: { modelo: { select: { id: true, nombre: true, activo: true } } } },
+    },
     orderBy: { etiqueta: "asc" },
   });
   const costos = await costosPorFilaDeStock(tenantId);
   return filas.map((f) => {
     const c = costos.get(f.id);
+    // Un producto con varias reglas sobre el mismo insumo cuenta una vez; los inactivos no.
+    const usadoPor = new Map(f.reglasInsumo.filter((r) => r.modelo.activo).map((r) => [r.modelo.id, r.modelo.nombre]));
     return {
       stockId: f.id,
       etiqueta: f.etiqueta ?? f.modelo.nombre,
       modelo: f.modelo.nombre,
+      modeloId: f.modelo.id,
       cantidad: f.cantidad,
       costo: c ? c.fab + c.insumos : null,
+      usadoPor: [...usadoPor].map(([id, nombre]) => ({ id, nombre })).sort((a, b) => a.nombre.localeCompare(b.nombre, "es")),
     };
   });
+}
+
+/**
+ * Todas las recetas que usan un insumo pasan a otro (docs/sdd/004, spec 006, RN-2): cambiar la
+ * funda blanca por otra en todas las katanas que la llevan, de una vez. Reparte al final.
+ */
+export async function reemplazarInsumo(tenantId: string, deStockId: string, aStockId: string): Promise<{ recetas: number }> {
+  if (deStockId === aStockId) throw new Error("es el mismo insumo");
+  const validos = new Set((await insumosDisponibles(tenantId)).map((i) => i.stockId));
+  if (!validos.has(deStockId) || !validos.has(aStockId)) throw new Error("los dos tienen que ser insumos");
+  const r = await prisma.reglaInsumo.updateMany({ where: { tenantId, stockId: deStockId }, data: { stockId: aStockId } });
+  await reasignarReservas(tenantId);
+  return { recetas: r.count };
 }
 
 export interface RecetaDeCombinacion {
@@ -176,13 +207,19 @@ export async function agregarAccesorio(
 
   const buscar = (pref: string) =>
     modelo.variantes.find((v) => v.nombre.trim().toLowerCase() === `${pref} ${accesorio}`.toLowerCase());
-  const asegurarVariante = async (pref: "Con" | "Sin") =>
-    buscar(pref)?.id ??
-    (
+  // El par es un grupo de tipo insumo con el nombre del accesorio (docs/sdd/004, spec 003).
+  const asegurarVariante = async (pref: "Con" | "Sin") => {
+    const ya = buscar(pref);
+    if (ya) {
+      await prisma.varianteModelo.update({ where: { id: ya.id }, data: { grupo: titulo, tipo: "insumo" } });
+      return ya.id;
+    }
+    return (
       await prisma.varianteModelo.create({
-        data: { modeloId, nombre: `${pref} ${titulo}`, precioAdicional: 0, costoFabAdicional: 0, afectaStock: false },
+        data: { modeloId, nombre: `${pref} ${titulo}`, precioAdicional: 0, costoFabAdicional: 0, afectaStock: false, grupo: titulo, tipo: "insumo" },
       })
     ).id;
+  };
 
   const conId = await asegurarVariante("Con");
   const sinId = await asegurarVariante("Sin");

@@ -260,7 +260,7 @@ async function main() {
   // mapeo automático vuelve a resolverse.
   const mapeoAuto = await prisma.mapeoCanal.findFirstOrThrow({ where: { tenantId: T, clave: "prod-llavero|op-10" } });
   await prisma.mapeoCanal.update({ where: { id: mapeoAuto.id }, data: { origen: "auto" } });
-  await prisma.varianteModelo.createMany({ data: [{ modeloId: llavero.id, nombre: "Ballena" }, { modeloId: llavero.id, nombre: "Delfín" }] });
+  await prisma.varianteModelo.createMany({ data: [{ modeloId: llavero.id, nombre: "Ballena", grupo: "Modelo", tipo: "decoracion" }, { modeloId: llavero.id, nombre: "Delfín", grupo: "Modelo", tipo: "decoracion" }] });
   await sembrarCombinacionesDeModelo(prisma, T, llavero.id);
   const plano = await prisma.combinacion.findUniqueOrThrow({ where: { id: comboLlavero.id } });
   const rVar = await resolverLinea(prisma, T, "shop", "prod-llavero|op-10", {

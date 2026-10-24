@@ -264,3 +264,42 @@ export async function aplicarPlanDeCostos(
   }
   return { modelos: aEscribir.length, variantes, excluidos: plan.cambios.length - aEscribir.length };
 }
+
+const MARCA = "costosBodegaHasta";
+
+/**
+ * Aplica el plan solo, sin vista previa, cuando algo cambió en Bodega (docs/sdd/004, spec 007).
+ *
+ * Hasta la 004 había que mirar el plan y apretar "aplicar" en Integraciones › Costos, por
+ * miedo a bajar una receta vieja sin querer. El plan ya deja afuera lo que no se puede
+ * explicar (`saltados`), así que lo que queda es exactamente lo que Bodega dice: no hace falta
+ * que nadie lo apruebe. Lo vendido no cambia, porque cada línea guarda su costo al venderse.
+ *
+ * Se llama donde se llama `altasAutomaticas`, y como `/api/cambios` lo consulta cada pocos
+ * segundos, arranca con una sola consulta: la fecha del último cambio en piezas, materiales y
+ * parámetros contra la de la última vez que corrió. Si no cambió nada, se va.
+ */
+export async function aplicarCostosSiCambio(tenantId: string): Promise<{ aplicado: boolean; modelos: number; variantes: number }> {
+  // Bodega es de un solo negocio (ver `altas-bodega.ts`).
+  if (tenantId !== "sendero3d") return { aplicado: false, modelos: 0, variantes: 0 };
+
+  const [f] = await prisma.$queryRaw<Array<{ hasta: Date | null; marca: string | null }>>`
+    SELECT GREATEST(
+             (SELECT max(updated_at) FROM bodega.models),
+             (SELECT max(updated_at) FROM bodega.materials),
+             (SELECT max(updated_at) FROM bodega.cost_settings)
+           ) AS hasta,
+           (SELECT data->>${MARCA} FROM public.config_tenant WHERE tenant_id = ${tenantId}) AS marca
+  `;
+  const hasta = f?.hasta ? new Date(f.hasta).toISOString() : null;
+  if (!hasta || hasta === f?.marca) return { aplicado: false, modelos: 0, variantes: 0 };
+
+  const r = await aplicarPlanDeCostos(await planDeCostos(tenantId));
+  await prisma.$executeRaw`
+    INSERT INTO public.config_tenant (id, tenant_id, data)
+    VALUES (gen_random_uuid()::text, ${tenantId}, jsonb_build_object(${MARCA}::text, ${hasta}::text))
+    ON CONFLICT (tenant_id) DO UPDATE
+      SET data = config_tenant.data || jsonb_build_object(${MARCA}::text, ${hasta}::text)
+  `;
+  return { aplicado: true, modelos: r.modelos, variantes: r.variantes };
+}

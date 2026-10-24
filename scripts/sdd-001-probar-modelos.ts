@@ -50,7 +50,7 @@ async function main() {
   const conVar = await prisma.varianteModelo.findFirst({ where: { modeloId: m.id, nombre: "Con Funda" } });
   await prisma.varianteModelo.delete({ where: { id: conVar!.id } });
   await soltarVariantesBorradas(prisma, T, m.id, [conVar!.id]);
-  await prisma.varianteModelo.create({ data: { modeloId: m.id, nombre: "Con Funda negra" } });
+  await prisma.varianteModelo.create({ data: { modeloId: m.id, nombre: "Con Funda negra", grupo: "Funda negra", tipo: "insumo" } });
   await sembrarCombinacionesDeModelo(prisma, T, m.id);
   ok((await prisma.combinacion.findUnique({ where: { id: con } }))?.activo === false, "renombrar: la combinación vieja queda desactivada");
   ok((await prisma.reglaInsumo.count({ where: { tenantId: T, modeloId: m.id } })) === 0, "renombrar: la receta vieja se borra (ya no aplica)");

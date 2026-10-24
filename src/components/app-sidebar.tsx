@@ -45,7 +45,7 @@ const navPrincipal = [
 
 const navCatalogo = [
   { title: "Categorías", href: "/categorias", icon: Tag },
-  { title: "Modelos", href: "/modelos", icon: Box },
+  { title: "Productos", href: "/modelos", icon: Box },
   { title: "Filamentos", href: "/filamentos", icon: Palette },
   { title: "Stock", href: "/stock", icon: Boxes },
 ];

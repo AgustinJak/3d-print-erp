@@ -94,6 +94,8 @@ model Modelo {
   imagenesUrls      String[] @default([]) @map("imagenes_urls")
   activo            Boolean  @default(true)
   consolidadoEnId   String?  @map("consolidado_en_id")
+  /// Una pieza que no se vende sola y que consumen las recetas (las fundas). docs/sdd/004, spec 006.
+  esInsumo          Boolean  @default(false) @map("es_insumo")
   tenantId          String   @default("sendero3d") @map("tenant_id")
   creadoEn          DateTime @default(now()) @map("creado_en")
   updatedAt         DateTime @updatedAt @map("updated_at")
@@ -126,6 +128,10 @@ model VarianteModelo {
   notas                 String?
   activo                Boolean @default(true)
   afectaStock           Boolean @default(false) @map("afecta_stock") // ¿define una pieza física distinta? (95cm sí, Con Funda no)
+  /// "Color", "Funda", "Diseño": a qué elección pertenece (docs/sdd/004, spec 003).
+  grupo                 String?
+  /// pieza | insumo | decoracion. pieza ⇔ afectaStock (la base lo exige una vez rellenado).
+  tipo                  String?
 
   modelo Modelo @relation(fields: [modeloId], references: [id], onDelete: Cascade)
 

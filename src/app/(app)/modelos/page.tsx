@@ -2,8 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
-  Plus, Search, Pencil, Trash2, FileBox, Download,
-  LayoutGrid, TableIcon, ChevronDown, X, ImagePlus, SlidersHorizontal, ArrowUpDown, Box, Combine, Undo2,
+  Plus, Search, FileBox, LayoutGrid, TableIcon, ChevronDown, SlidersHorizontal, ArrowUpDown, Box, Combine,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -16,13 +15,11 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/data-loading";
 import { EmptyState } from "@/components/empty-state";
-import { FileUpload } from "@/components/file-upload";
-import { parsePrice } from "@/lib/utils";
+import { PiezasNuevas } from "@/components/producto/piezas-nuevas";
 import { costoModelo } from "@/lib/costos";
 
 /* ─── Types ────────────────────────────────────────────── */
@@ -35,10 +32,6 @@ interface Categoria {
 
 interface Variante {
   nombre: string;
-  precioAdicional: number;
-  costoFabAdicional: number;
-  costoInsumosAdicional?: number;
-  notas: string;
 }
 
 interface ModeloRef {
@@ -65,34 +58,13 @@ interface Modelo {
   imagenUrl: string | null;
   imagenesUrls: string[];
   activo: boolean;
+  esInsumo?: boolean;
   creadoEn: string;
   categorias: Array<{
     categoria: Categoria;
   }>;
   variantes: Variante[];
 }
-
-/* ─── Form ─────────────────────────────────────────────── */
-
-const emptyForm = {
-  nombre: "",
-  sku: "",
-  serie: "",
-  pesoGr: "",
-  costoFab: "",
-  costoInsumos: "",
-  precioVenta: "",
-  precioCreditoPorc: "10",
-  precioMayorista: "",
-  precioPromo: "",
-  notas: "",
-  archivo3mfUrl: "",
-  imagenUrl: "",
-  imagenesUrls: [] as string[],
-  activo: true,
-  categoriaIds: [] as string[],
-  variantes: [] as Variante[],
-};
 
 type ViewMode = "table" | "cards";
 
@@ -181,94 +153,6 @@ function CategoryFilter({
   );
 }
 
-/* ─── Category Multi-Select for Form ───────────────────── */
-
-function CategoryMultiSelect({
-  categorias,
-  selected,
-  onChange,
-}: {
-  categorias: Categoria[];
-  selected: string[];
-  onChange: (ids: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
-
-  const toggle = (id: string) => {
-    onChange(
-      selected.includes(id)
-        ? selected.filter((s) => s !== id)
-        : [...selected, id]
-    );
-  };
-
-  const selectedCats = categorias.filter((c) => selected.includes(c.id));
-
-  return (
-    <div className="relative" ref={ref}>
-      <div
-        className="flex min-h-9 w-full cursor-pointer flex-wrap items-center gap-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
-        onClick={() => setOpen(!open)}
-      >
-        {selectedCats.length === 0 && (
-          <span className="text-muted-foreground">Seleccionar categorías...</span>
-        )}
-        {selectedCats.map((c) => (
-          <Badge key={c.id} variant="secondary" className="gap-1">
-            {c.color && (
-              <span
-                className="h-2 w-2 rounded-full"
-                style={{ backgroundColor: c.color }}
-              />
-            )}
-            {c.nombre}
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); toggle(c.id); }}
-              className="ml-0.5 hover:text-destructive"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </Badge>
-        ))}
-      </div>
-      {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md max-h-48 overflow-y-auto">
-          {categorias.map((c) => (
-            <label
-              key={c.id}
-              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
-            >
-              <input
-                type="checkbox"
-                checked={selected.includes(c.id)}
-                onChange={() => toggle(c.id)}
-                className="h-4 w-4 rounded border-input accent-primary"
-              />
-              {c.color && (
-                <span
-                  className="h-3 w-3 rounded-full shrink-0"
-                  style={{ backgroundColor: c.color }}
-                />
-              )}
-              {c.nombre}
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* ─── Category Badges ──────────────────────────────────── */
 
 function CategoriaBadges({ categorias }: { categorias: Modelo["categorias"] }) {
@@ -307,19 +191,16 @@ export default function ModelosPage() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [search, setSearch] = useState("");
   const [filterCategoriaIds, setFilterCategoriaIds] = useState<string[]>([]);
-  const [filterEstado, setFilterEstado] = useState<"todos" | "activos" | "inactivos">("activos");
+  const [filterEstado, setFilterEstado] = useState<"todos" | "activos" | "inactivos" | "insumos">("activos");
   const [filterExtras, setFilterExtras] = useState<{ con3mf: boolean; conImagen: boolean; conVariantes: boolean }>({ con3mf: false, conImagen: false, conVariantes: false });
   const [sortBy, setSortBy] = useState<"nuevo" | "antiguo" | "az" | "za" | "precioAsc" | "precioDesc" | "margen">("nuevo");
   const [showExtraFilters, setShowExtraFilters] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("table");
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState(emptyForm);
-  const [loading, setLoading] = useState(false);
+  // "Nuevo producto": sólo el nombre; el resto se completa en su página (docs/sdd/004, spec 001).
+  const [nuevo, setNuevo] = useState<{ nombre: string; serie: string } | null>(null);
+  const [creando, setCreando] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [mostrarConsolidados, setMostrarConsolidados] = useState(false);
-  const [consolidarDialog, setConsolidarDialog] = useState<{ open: boolean; modelo: Modelo | null }>({ open: false, modelo: null });
-  const [destinoConsolidacion, setDestinoConsolidacion] = useState<string>("");
   const [filterSku, setFilterSku] = useState<"todos" | "con" | "sin">("todos");
 
   /* ─── Fetch ───────────────────────────────────────── */
@@ -339,57 +220,20 @@ export default function ModelosPage() {
     Promise.all([fetchModelos(), fetchCategorias()]).then(() => setInitialLoading(false));
   }, [fetchModelos, fetchCategorias]);
 
-  // Deep links: ?edit=<id> abre el modal de edición. ?nuevo=1&sku=X&nombre=Y
-  // abre el modal de creación pre-cargado.
+  // Enlaces viejos al lápiz: ?edit=<id> va a la página del producto; ?nuevo=1&nombre=Y abre el
+  // alta corta (docs/sdd/004, spec 001, REQ-5).
   useEffect(() => {
-    if (initialLoading) return;
     const editId = searchParams.get("edit");
-    const nuevo = searchParams.get("nuevo");
     if (editId) {
-      const target = modelos.find((m) => m.id === editId);
-      if (target) {
-        setEditingId(target.id);
-        setForm({
-          nombre: target.nombre,
-          sku: target.sku || "",
-          serie: target.serie || "",
-          pesoGr: target.pesoGr?.toString() || "",
-          costoFab: target.costoFab.toString(),
-          costoInsumos: (target.costoInsumos ?? 0).toString(),
-          precioVenta: target.precioVenta.toString(),
-          precioCreditoPorc: target.precioCreditoPorc.toString(),
-          precioMayorista: target.precioMayorista?.toString() || "",
-          precioPromo: target.precioPromo?.toString() || "",
-          notas: target.notas || "",
-          archivo3mfUrl: target.archivo3mfUrl || "",
-          imagenUrl: target.imagenUrl || "",
-          imagenesUrls: [
-            ...(target.imagenUrl ? [target.imagenUrl] : []),
-            ...((target.imagenesUrls || []).filter((u: string) => u !== target.imagenUrl)),
-          ],
-          activo: target.activo,
-          categoriaIds: target.categorias.map(({ categoria }) => categoria.id),
-          variantes: target.variantes?.map((v: Variante) => ({
-            nombre: v.nombre,
-            precioAdicional: v.precioAdicional || 0,
-            costoFabAdicional: v.costoFabAdicional || 0,
-            notas: v.notas || "",
-          })) || [],
-        });
-        setDialogOpen(true);
-        // Limpiar URL para que recargas no reabran el modal
-        router.replace("/modelos");
-      }
-    } else if (nuevo === "1") {
-      const skuParam = searchParams.get("sku") || "";
-      const nombreParam = searchParams.get("nombre") || "";
-      setEditingId(null);
-      setForm({ ...emptyForm, sku: skuParam, nombre: nombreParam });
-      setDialogOpen(true);
-      router.replace("/modelos");
+      router.replace(`/modelos/${editId}`);
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialLoading, modelos]);
+    if (searchParams.get("nuevo") === "1") {
+      const nombre = searchParams.get("nombre") || "";
+      router.replace("/modelos");
+      setTimeout(() => setNuevo({ nombre, serie: "" }), 0);
+    }
+  }, [searchParams, router]);
 
   if (initialLoading) return <TableSkeleton cols={8} />;
 
@@ -404,6 +248,8 @@ export default function ModelosPage() {
         filterCategoriaIds.length === 0 ||
         m.categorias.some(({ categoria }) => filterCategoriaIds.includes(categoria.id));
       const matchEstado =
+        filterEstado === "insumos" ? !!m.esInsumo :
+        m.esInsumo ? false :
         filterEstado === "todos" ? true :
         filterEstado === "activos" ? m.activo :
         !m.activo;
@@ -429,131 +275,24 @@ export default function ModelosPage() {
       }
     });
 
-  /* ─── CRUD ────────────────────────────────────────── */
+  /* ─── Alta ───────────────────────────────────────── */
 
-  const openCreate = () => {
-    setEditingId(null);
-    setForm(emptyForm);
-    setDialogOpen(true);
-  };
-
-  const openEdit = (m: Modelo) => {
-    setEditingId(m.id);
-    setForm({
-      nombre: m.nombre,
-      sku: m.sku || "",
-      serie: m.serie || "",
-      pesoGr: m.pesoGr?.toString() || "",
-      costoFab: m.costoFab.toString(),
-      costoInsumos: (m.costoInsumos ?? 0).toString(),
-      precioVenta: m.precioVenta.toString(),
-      precioCreditoPorc: m.precioCreditoPorc.toString(),
-      precioMayorista: m.precioMayorista?.toString() || "",
-      precioPromo: m.precioPromo?.toString() || "",
-      notas: m.notas || "",
-      archivo3mfUrl: m.archivo3mfUrl || "",
-      imagenUrl: m.imagenUrl || "",
-      imagenesUrls: [
-        ...(m.imagenUrl ? [m.imagenUrl] : []),
-        ...((m.imagenesUrls || []).filter((u: string) => u !== m.imagenUrl)),
-      ],
-      activo: m.activo,
-      categoriaIds: m.categorias.map(({ categoria }) => categoria.id),
-      variantes: m.variantes?.map((v: Variante) => ({
-        nombre: v.nombre,
-        precioAdicional: v.precioAdicional || 0,
-        costoFabAdicional: v.costoFabAdicional || 0,
-        notas: v.notas || "",
-      })) || [],
-    });
-    setDialogOpen(true);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    const url = editingId ? `/api/modelos/${editingId}` : "/api/modelos";
-    const method = editingId ? "PUT" : "POST";
-    await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...form,
-        imagenUrl: form.imagenesUrls[0] || "",
-        imagenesUrls: form.imagenesUrls,
-        // parsePrice y no parseFloat: "7.500" es siete mil quinientos, no 7,5
-        pesoGr: form.pesoGr ? parsePrice(form.pesoGr) : null,
-        costoFab: parsePrice(form.costoFab),
-        costoInsumos: parsePrice(form.costoInsumos),
-        precioVenta: parsePrice(form.precioVenta),
-        precioCreditoPorc: parseFloat(form.precioCreditoPorc) || 10, // porcentaje, no lleva miles
-        precioMayorista: form.precioMayorista ? parsePrice(form.precioMayorista) : null,
-        precioPromo: form.precioPromo ? parsePrice(form.precioPromo) : null,
-      }),
-    });
-    setDialogOpen(false);
-    setLoading(false);
-    toast.success(editingId ? "Modelo actualizado" : "Modelo creado");
-    fetchModelos();
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm("¿Eliminar este modelo?")) return;
-    await fetch(`/api/modelos/${id}`, { method: "DELETE" });
-    toast.success("Modelo eliminado");
-    fetchModelos();
-  };
-
-  const openConsolidar = (m: Modelo) => {
-    setDestinoConsolidacion("");
-    setConsolidarDialog({ open: true, modelo: m });
-  };
-
-  const handleConsolidar = async () => {
-    if (!consolidarDialog.modelo || !destinoConsolidacion) return;
-    const res = await fetch(`/api/modelos/${consolidarDialog.modelo.id}/consolidar`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ destinoId: destinoConsolidacion }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      toast.error(err.error || "Error al consolidar");
-      return;
-    }
-    toast.success("Modelo consolidado");
-    setConsolidarDialog({ open: false, modelo: null });
-    fetchModelos();
-  };
-
-  const handleRevertirConsolidacion = async (id: string) => {
-    if (!confirm("¿Revertir consolidación? El modelo volverá al catálogo activo.")) return;
-    const res = await fetch(`/api/modelos/${id}/consolidar`, { method: "DELETE" });
-    if (!res.ok) {
-      toast.error("Error al revertir");
-      return;
-    }
-    toast.success("Consolidación revertida");
-    fetchModelos();
-  };
-
-  const updateField = (field: string, value: string | boolean | string[] | Variante[]) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  /**
-   * Pide al servidor el próximo SKU. El inventario es la fuente de verdad: el
-   * código se genera acá y después se copia a Mercado Libre y al Shop.
-   */
-  const sugerirSkuModelo = async () => {
-    const categoria = categorias.find((c) => form.categoriaIds.includes(c.id))?.nombre ?? "";
-    const params = new URLSearchParams({ serie: form.serie || "", categoria });
-    const res = await fetch(`/api/modelos/skus?${params}`);
-    const data = await res.json();
-    if (data.sku) {
-      updateField("sku", data.sku);
-    } else {
-      toast.error(`Para generar el SKU falta cargar: ${data.falta}`);
+  const crearProducto = async () => {
+    if (!nuevo?.nombre.trim()) return;
+    setCreando(true);
+    try {
+      const res = await fetch("/api/modelos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre: nuevo.nombre.trim(), serie: nuevo.serie.trim() || null }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "No se pudo crear");
+      toast.success("Producto creado");
+      router.push(`/modelos/${data.id}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo crear");
+      setCreando(false);
     }
   };
 
@@ -563,10 +302,10 @@ export default function ModelosPage() {
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Modelos</h1>
-        <Button onClick={openCreate}>
+        <h1 className="text-2xl font-bold">Productos</h1>
+        <Button onClick={() => setNuevo({ nombre: "", serie: "" })}>
           <Plus className="mr-2 h-4 w-4" />
-          Nuevo Modelo
+          Nuevo producto
         </Button>
       </div>
 
@@ -577,7 +316,7 @@ export default function ModelosPage() {
           <div className="relative flex-1 min-w-[180px]">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Buscar modelo o serie..."
+              placeholder="Buscar producto o serie..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
@@ -604,7 +343,7 @@ export default function ModelosPage() {
 
           {/* Estado filter */}
           <div className="inline-flex rounded-md border text-sm overflow-hidden">
-            {(["todos", "activos", "inactivos"] as const).map((e) => (
+            {(["todos", "activos", "inactivos", "insumos"] as const).map((e) => (
               <button
                 key={e}
                 type="button"
@@ -627,7 +366,7 @@ export default function ModelosPage() {
             className="gap-1.5 h-9"
             onClick={() => setMostrarConsolidados(!mostrarConsolidados)}
             type="button"
-            title="Mostrar modelos que fueron consolidados en otro"
+            title="Mostrar productos que fueron consolidados en otro"
           >
             <Combine className="h-3.5 w-3.5" />
             {mostrarConsolidados ? "Ocultar consolidados" : "Mostrar consolidados"}
@@ -730,8 +469,8 @@ export default function ModelosPage() {
               ))}
             </div>
             {(() => {
-              const total = modelos.filter((m) => m.activo && !m.consolidadoEnId).length;
-              const conSku = modelos.filter((m) => m.activo && !m.consolidadoEnId && m.sku).length;
+              const total = modelos.filter((m) => m.activo && !m.consolidadoEnId && !m.esInsumo).length;
+              const conSku = modelos.filter((m) => m.activo && !m.consolidadoEnId && !m.esInsumo && m.sku).length;
               const sinSku = total - conSku;
               return (
                 <button
@@ -740,7 +479,7 @@ export default function ModelosPage() {
                   className={`text-xs hover:underline decoration-dotted underline-offset-4 ${
                     sinSku > 0 ? "text-amber-500" : "text-muted-foreground"
                   }`}
-                  title={sinSku > 0 ? "Click para ver los que faltan" : "Todos los modelos tienen SKU"}
+                  title={sinSku > 0 ? "Click para ver los que faltan" : "Todos los productos tienen SKU"}
                 >
                   {conSku}/{total} con SKU
                 </button>
@@ -750,26 +489,29 @@ export default function ModelosPage() {
 
           {/* Results count */}
           <span className="text-xs text-muted-foreground ml-auto">
-            {filtered.length} modelo{filtered.length !== 1 ? "s" : ""}
+            {filtered.length} producto{filtered.length !== 1 ? "s" : ""}
           </span>
         </div>
       </div>
+
+      {/* Piezas de Bodega que no entraron solas (docs/sdd/004, spec 005) */}
+      <PiezasNuevas onCambio={fetchModelos} />
 
       {/* Content */}
       {filtered.length === 0 ? (
         modelos.length === 0 ? (
           <EmptyState
             icon={Box}
-            title="Sin modelos registrados"
-            description="Agrega tus modelos 3D para gestionar catálogo, precios y variantes."
-            actionLabel="Nuevo Modelo"
-            onAction={openCreate}
+            title="Sin productos registrados"
+            description="Creá la pieza en Bodega y aparece acá sola, o creá el producto a mano."
+            actionLabel="Nuevo producto"
+            onAction={() => setNuevo({ nombre: "", serie: "" })}
           />
         ) : (
           <EmptyState
             icon={Search}
             title="Sin resultados"
-            description="No se encontraron modelos con esos filtros."
+            description="No se encontraron productos con esos filtros."
           />
         )
       ) : viewMode === "cards" ? (
@@ -807,7 +549,7 @@ export default function ModelosPage() {
                   <h3 className="font-semibold truncate" title={m.nombre}>
                     {m.nombre}
                   </h3>
-                  {!m.sku && !m.consolidadoEn && (
+                  {!m.sku && !m.consolidadoEn && !m.esInsumo && (
                     <Badge variant="outline" className="border-amber-500/40 text-amber-500 text-[10px] py-0 px-1.5 shrink-0">
                       Sin SKU
                     </Badge>
@@ -839,7 +581,6 @@ export default function ModelosPage() {
                 <TableHead className="text-right">Precio Venta</TableHead>
                 <TableHead className="text-right">Precio Crédito</TableHead>
                 <TableHead>Estado</TableHead>
-                <TableHead className="w-[100px]">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -868,7 +609,7 @@ export default function ModelosPage() {
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium">{m.nombre}</span>
-                          {!m.sku && !m.consolidadoEn && (
+                          {!m.sku && !m.consolidadoEn && !m.esInsumo && (
                             <Badge variant="outline" className="border-amber-500/40 text-amber-500 text-[10px] py-0 px-1.5">
                               Sin SKU
                             </Badge>
@@ -905,58 +646,6 @@ export default function ModelosPage() {
                         {m.activo ? "Activo" : "Inactivo"}
                       </Badge>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => { e.stopPropagation(); openEdit(m); }}
-                          title="Editar"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        {m.archivo3mfUrl && (
-                          <a
-                            href={m.archivo3mfUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            title="Descargar 3MF"
-                          >
-                            <Button variant="ghost" size="icon">
-                              <Download className="h-4 w-4" />
-                            </Button>
-                          </a>
-                        )}
-                        {m.consolidadoEnId ? (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => { e.stopPropagation(); handleRevertirConsolidacion(m.id); }}
-                            title="Revertir consolidación"
-                          >
-                            <Undo2 className="h-4 w-4 text-amber-500" />
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => { e.stopPropagation(); openConsolidar(m); }}
-                            title="Consolidar en otro modelo"
-                          >
-                            <Combine className="h-4 w-4 text-blue-400" />
-                          </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => { e.stopPropagation(); handleDelete(m.id); }}
-                          title="Eliminar"
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
                   </TableRow>
                 );
               })}
@@ -986,7 +675,7 @@ export default function ModelosPage() {
               <div className="p-3 space-y-1">
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="font-medium text-sm truncate">{m.nombre}</h3>
-                  {!m.sku && !m.consolidadoEn && (
+                  {!m.sku && !m.consolidadoEn && !m.esInsumo && (
                     <Badge variant="outline" className="border-amber-500/40 text-amber-500 text-[10px] py-0 px-1 shrink-0">
                       Sin SKU
                     </Badge>
@@ -1006,429 +695,39 @@ export default function ModelosPage() {
         </div>
       )}
 
-      {/* ─── Create / Edit Dialog ───────────────────── */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden p-0">
-          <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
-            <DialogTitle>{editingId ? "Editar Modelo" : "Nuevo Modelo"}</DialogTitle>
+      {/* ─── Nuevo producto ─────────────────────────── */}
+      <Dialog open={!!nuevo} onOpenChange={(o) => !o && setNuevo(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Nuevo producto</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-4">
-            {/* Nombre */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="nombre">Nombre *</Label>
-                <Input
-                  id="nombre"
-                  value={form.nombre}
-                  onChange={(e) => updateField("nombre", e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="sku">
-                  SKU
-                  <span className="ml-1 text-xs text-muted-foreground">
-                    (lo genera el inventario; se copia a ML y al Shop)
-                  </span>
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="sku"
-                    value={form.sku}
-                    onChange={(e) => updateField("sku", e.target.value)}
-                    placeholder="Ej: SS-BTS-LLA-044"
-                  />
-                  <Button type="button" variant="outline" onClick={sugerirSkuModelo}>
-                    Sugerir
-                  </Button>
-                </div>
-              </div>
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              crearProducto();
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="np-nombre">Nombre</Label>
+              <Input id="np-nombre" autoFocus value={nuevo?.nombre ?? ""} onChange={(e) => setNuevo((n) => (n ? { ...n, nombre: e.target.value } : n))} />
             </div>
-
-            {/* Serie + Peso */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="serie">Serie / Franquicia</Label>
-                <Input
-                  id="serie"
-                  value={form.serie}
-                  onChange={(e) => updateField("serie", e.target.value)}
-                  placeholder="Ej: One Piece, Naruto..."
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="pesoGr">Peso (g)</Label>
-                <Input
-                  id="pesoGr"
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="300"
-                  value={form.pesoGr}
-                  onChange={(e) => updateField("pesoGr", e.target.value)}
-                />
-              </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="np-serie">Serie <span className="text-xs text-muted-foreground font-normal">(opcional)</span></Label>
+              <Input id="np-serie" value={nuevo?.serie ?? ""} placeholder="Demon Slayer, One Piece…" onChange={(e) => setNuevo((n) => (n ? { ...n, serie: e.target.value } : n))} />
             </div>
-
-            {/* Costo (imprimir + insumos) + Precio Venta */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="costoFab">Costo Fabricación *</Label>
-                <Input
-                  id="costoFab"
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="7.500"
-                  value={form.costoFab}
-                  onChange={(e) => updateField("costoFab", e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="costoInsumos">Costo Insumos</Label>
-                <Input
-                  id="costoInsumos"
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="5.349"
-                  title="Lo que se le agrega después de imprimir: cuerda, imanes, pintura, la caja"
-                  value={form.costoInsumos}
-                  onChange={(e) => updateField("costoInsumos", e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="precioVenta">Precio Venta *</Label>
-                <Input
-                  id="precioVenta"
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="23.000"
-                  value={form.precioVenta}
-                  onChange={(e) => updateField("precioVenta", e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-
-            {/* Crédito % + Mayorista */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="precioCreditoPorc">Recargo Crédito (%)</Label>
-                <Input
-                  id="precioCreditoPorc"
-                  type="number"
-                  step="0.1"
-                  value={form.precioCreditoPorc}
-                  onChange={(e) => updateField("precioCreditoPorc", e.target.value)}
-                  placeholder="10"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="precioMayorista">Precio Mayorista</Label>
-                <Input
-                  id="precioMayorista"
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="18.000"
-                  value={form.precioMayorista}
-                  onChange={(e) => updateField("precioMayorista", e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Precio Promo */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="precioPromo">Precio Promo</Label>
-                <Input
-                  id="precioPromo"
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="20.000"
-                  value={form.precioPromo}
-                  onChange={(e) => updateField("precioPromo", e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Categorías */}
-            <div className="space-y-2">
-              <Label>Categorías</Label>
-              <CategoryMultiSelect
-                categorias={categorias}
-                selected={form.categoriaIds}
-                onChange={(ids) => updateField("categoriaIds", ids)}
-              />
-            </div>
-
-            {/* Variantes */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Variantes</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => updateField("variantes", [...(form.variantes || []), { nombre: "", precioAdicional: 0, costoFabAdicional: 0, costoInsumosAdicional: 0, notas: "" }])}
-                >
-                  <Plus className="mr-1 h-3 w-3" /> Agregar
-                </Button>
-              </div>
-              {form.variantes && form.variantes.length > 0 ? (
-                <div className="space-y-2">
-                  {form.variantes.map((v: Variante, idx: number) => (
-                    <div key={idx} className="rounded-md border bg-muted/30 p-2 space-y-2">
-                      {/* Nombre + delete */}
-                      <div className="flex items-center gap-2">
-                        <Input
-                          placeholder="Nombre de la variante (ej: 65cm, Con Funda)"
-                          value={v.nombre}
-                          onChange={(e) => {
-                            const updated = [...form.variantes];
-                            updated[idx] = { ...updated[idx], nombre: e.target.value };
-                            updateField("variantes", updated);
-                          }}
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-9 w-9 shrink-0"
-                          onClick={() => {
-                            const updated = form.variantes.filter((_: Variante, i: number) => i !== idx);
-                            updateField("variantes", updated);
-                          }}
-                          title="Eliminar variante"
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                      {/* Precio + costo */}
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">+$ venta</Label>
-                          <Input
-                            type="text"
-                            inputMode="decimal"
-                            placeholder="0"
-                            title="Precio adicional de venta"
-                            value={v.precioAdicional || ""}
-                            onChange={(e) => {
-                              const updated = [...form.variantes];
-                              updated[idx] = { ...updated[idx], precioAdicional: parsePrice(e.target.value) };
-                              updateField("variantes", updated);
-                            }}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">+$ costo</Label>
-                          <Input
-                            type="text"
-                            inputMode="decimal"
-                            placeholder="0"
-                            title="Costo de fabricación adicional"
-                            value={v.costoFabAdicional || ""}
-                            onChange={(e) => {
-                              const updated = [...form.variantes];
-                              updated[idx] = { ...updated[idx], costoFabAdicional: parsePrice(e.target.value) };
-                              updateField("variantes", updated);
-                            }}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">+$ insumos</Label>
-                          <Input
-                            type="text"
-                            inputMode="decimal"
-                            placeholder="0"
-                            title="Insumos adicionales (la funda, por ejemplo)"
-                            value={v.costoInsumosAdicional || ""}
-                            onChange={(e) => {
-                              const updated = [...form.variantes];
-                              updated[idx] = { ...updated[idx], costoInsumosAdicional: parsePrice(e.target.value) };
-                              updateField("variantes", updated);
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">Sin variantes. Las variantes permiten agregar opciones como &quot;con llavero&quot;, &quot;reforzado&quot;, etc.</p>
-              )}
-            </div>
-
-            {/* Notas */}
-            <div className="space-y-2">
-              <Label htmlFor="notas">Notas</Label>
-              <Textarea
-                id="notas"
-                value={form.notas}
-                onChange={(e) => updateField("notas", e.target.value)}
-                rows={2}
-              />
-            </div>
-
-            {/* File uploads */}
-            <div className="space-y-4">
-              {/* 3MF */}
-              <div className="space-y-2">
-                <Label>Archivo 3MF</Label>
-                <FileUpload
-                  bucket="modelos-3d"
-                  accept=".3mf"
-                  currentUrl={form.archivo3mfUrl || null}
-                  onUploaded={(url) => updateField("archivo3mfUrl", url)}
-                  onRemoved={() => updateField("archivo3mfUrl", "")}
-                  label="Subir .3mf"
-                />
-              </div>
-
-              {/* Multi-image up to 5 */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>
-                    Imágenes{" "}
-                    <span className="text-muted-foreground font-normal">
-                      ({form.imagenesUrls.length}/5) — la primera es la principal
-                    </span>
-                  </Label>
-                </div>
-                <div className="grid grid-cols-5 gap-2">
-                  {Array.from({ length: 5 }).map((_, idx) => {
-                    const url = form.imagenesUrls[idx];
-                    return url ? (
-                      /* Slot con imagen */
-                      <div key={idx} className="relative group aspect-square rounded-lg overflow-hidden border bg-muted">
-                        <img src={url} alt="" className="w-full h-full object-cover" />
-                        {idx === 0 && (
-                          <div className="absolute top-1 left-1 bg-primary text-primary-foreground text-[9px] px-1 rounded font-medium leading-4">
-                            Principal
-                          </div>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const updated = form.imagenesUrls.filter((_, i) => i !== idx);
-                            updateField("imagenesUrls", updated);
-                          }}
-                          className="absolute top-1 right-1 h-5 w-5 rounded-full bg-destructive text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ) : form.imagenesUrls.length === idx ? (
-                      /* Slot de upload (solo el siguiente disponible) */
-                      <div key={idx} className="aspect-square">
-                        <FileUpload
-                          bucket="imagenes"
-                          accept=".jpg,.jpeg,.png,.webp"
-                          currentUrl={null}
-                          onUploaded={(url) => {
-                            const updated = [...form.imagenesUrls, url];
-                            updateField("imagenesUrls", updated);
-                          }}
-                          label={idx === 0 ? "Principal" : `Foto ${idx + 1}`}
-                          compact={false}
-                          squareCompact
-                        />
-                      </div>
-                    ) : (
-                      /* Slot vacío bloqueado */
-                      <div key={idx} className="aspect-square rounded-lg border-2 border-dashed border-muted flex items-center justify-center opacity-30">
-                        <ImagePlus className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Activo toggle */}
-            <label className="flex items-center gap-3 cursor-pointer select-none">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={form.activo}
-                onClick={() => updateField("activo", !form.activo)}
-                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 border-transparent transition-colors ${
-                  form.activo ? "bg-primary" : "bg-muted-foreground/30"
-                }`}
-              >
-                <span
-                  className={`pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform ${
-                    form.activo ? "translate-x-5" : "translate-x-0"
-                  }`}
-                />
-              </button>
-              <span className="text-sm font-medium">Activo</span>
-            </label>
-
-            </div>
-            {/* Actions — fixed at bottom */}
-            <div className="flex justify-end gap-2 px-6 py-4 border-t shrink-0 bg-background">
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+            <p className="text-xs text-muted-foreground">
+              Lo demás (precio, fotos, variantes, pieza de Bodega) se completa en su página. Si la pieza ya está en Bodega, no hace falta: el producto aparece solo.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setNuevo(null)}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={loading || !form.nombre || !form.costoFab || !form.precioVenta}>
-                {loading ? "Guardando..." : "Guardar"}
+              <Button type="submit" disabled={creando || !nuevo?.nombre.trim()}>
+                {creando ? "Creando…" : "Crear y abrir"}
               </Button>
             </div>
           </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog: Consolidar modelo */}
-      <Dialog
-        open={consolidarDialog.open}
-        onOpenChange={(o) => setConsolidarDialog({ open: o, modelo: o ? consolidarDialog.modelo : null })}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Consolidar modelo</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <p className="text-sm text-muted-foreground">
-              Vas a marcar <span className="font-semibold text-foreground">{consolidarDialog.modelo?.nombre}</span> como consolidado en otro modelo. El modelo se ocultará del catálogo activo y de los selectores, pero <span className="font-semibold">los pedidos viejos seguirán funcionando intactos</span>.
-            </p>
-            <div className="space-y-2">
-              <Label htmlFor="destino-consolidacion">Modelo destino</Label>
-              <select
-                id="destino-consolidacion"
-                value={destinoConsolidacion}
-                onChange={(e) => setDestinoConsolidacion(e.target.value)}
-                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="">— Elegí el modelo —</option>
-                {modelos
-                  .filter((m) => m.id !== consolidarDialog.modelo?.id && !m.consolidadoEnId)
-                  .sort((a, b) => a.nombre.localeCompare(b.nombre))
-                  .map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.nombre}
-                      {m.sku ? ` — ${m.sku}` : ""}
-                    </option>
-                  ))}
-              </select>
-              <p className="text-xs text-muted-foreground">
-                Tip: si el modelo destino todavía no existe, creálo primero con sus variantes.
-              </p>
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button
-                variant="outline"
-                onClick={() => setConsolidarDialog({ open: false, modelo: null })}
-                type="button"
-              >
-                Cancelar
-              </Button>
-              <Button onClick={handleConsolidar} disabled={!destinoConsolidacion} type="button">
-                Consolidar
-              </Button>
-            </div>
-          </div>
         </DialogContent>
       </Dialog>
     </div>

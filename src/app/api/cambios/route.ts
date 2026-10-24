@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { altasAutomaticas } from "@/lib/altas-bodega";
+import { aplicarCostosSiCambio } from "@/lib/sincronizar-costos";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextResponse } from "next/server";
@@ -29,6 +30,12 @@ export async function GET() {
       await altasAutomaticas(tenantId);
     } catch (err) {
       console.error("[api/cambios] no se pudieron dar de alta modelos de Bodega:", err);
+    }
+    // Lo mismo con los costos: una consulta, y sólo trabaja si Bodega cambió algo.
+    try {
+      await aplicarCostosSiCambio(tenantId);
+    } catch (err) {
+      console.error("[api/cambios] no se pudieron aplicar los costos de Bodega:", err);
     }
 
     const [pedidos, stock, reservas] = await Promise.all([

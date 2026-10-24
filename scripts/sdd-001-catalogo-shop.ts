@@ -40,7 +40,7 @@ const SKUS: Array<{ modelo: string; de: string; a: string }> = [
  * resuelva sola. Nacen sin costo: lo trae Bodega cuando la pieza se cree allá con el
  * mismo nombre (el alta automática engancha la fila de stock suelta).
  */
-const NUEVOS: Array<{ nombre: string; sku: string; serie: string; variantes?: string[] }> = [
+const NUEVOS: Array<{ nombre: string; sku: string; serie: string; grupo?: string; variantes?: string[] }> = [
   { nombre: "Hacha Prime", sku: "SS-VAL-ESP-045", serie: "Valorant" },
   { nombre: "Lucero de Alba", sku: "SS-RE:-ARM-038", serie: "Re:Zero" },
   // El pack no es una variante: lo da el mapeo como unidades (spec 004, RN-8).
@@ -49,12 +49,14 @@ const NUEVOS: Array<{ nombre: string; sku: string; serie: string; variantes?: st
     nombre: "Llavero BT21",
     sku: "SS-BTS-LLA-044",
     serie: "BTS",
+    grupo: "Personaje",
     variantes: ["Tata", "Chimmy", "Cooky", "Mang", "Rj", "Shooky", "Koya", "Van"],
   },
   {
     nombre: "Jabonera minimalista",
     sku: "SS-MIN-DEC-040",
     serie: "Minimalista",
+    grupo: "Diseño",
     variantes: [
       "Amanecer", "Duna", "Brisa", "Horizonte", "Fluir", "Viento", "Equilibrio", "Capas",
       "Fases", "Cairn", "Órbita", "Símbolo", "Bambú", "Nexo", "Espiral",
@@ -62,7 +64,35 @@ const NUEVOS: Array<{ nombre: string; sku: string; serie: string; variantes?: st
   },
 ];
 
+/**
+ * B2 (2026-10-24): la MiniKatana de Tanjiro roja es "Tanjiro V2 20cm", otra pieza de Bodega. En
+ * el ERP estaba desactivada y consolidada en "Tanjiro MiniKatana" (la negra), como si fueran la
+ * misma. Se deshace (consolidar sólo marca, no mueve nada) y lleva el SKU que tiene en el Shop.
+ */
+const REACTIVAR: Array<{ id: string; nombre: string; sku: string }> = [
+  { id: "cmmsg5e57001gjp04cz62hy11", nombre: "Tanjiro v2 20cm", sku: "SS-DEM-MIN-017" },
+];
+
 async function preparar(real: boolean) {
+  for (const r of REACTIVAR) {
+    const m = await prisma.modelo.findFirst({ where: { id: r.id, tenantId: T, nombre: r.nombre } });
+    if (!m) {
+      console.log(`!! no encontré "${r.nombre}"`);
+      continue;
+    }
+    if (m.activo && !m.consolidadoEnId && m.sku === r.sku) {
+      console.log(`ya activo: ${r.nombre} (${r.sku})`);
+      continue;
+    }
+    console.log(`reactivar: ${r.nombre}, sin consolidar, SKU ${r.sku}`);
+    if (!real) continue;
+    await prisma.modelo.update({ where: { id: m.id }, data: { activo: true, consolidadoEnId: null, sku: r.sku } });
+    // Lo mismo que PUT /api/modelos/[id] al reactivar: su fila de stock y su combinación.
+    await asegurarFilasDeStock(T, m.id);
+    await sembrarCombinacionesDeModelo(prisma, T, m.id);
+    await prisma.combinacion.updateMany({ where: { tenantId: T, clave: claveDe(m.id, []), sku: null }, data: { sku: r.sku } });
+  }
+
   for (const s of SKUS) {
     const m = await prisma.modelo.findFirst({ where: { tenantId: T, nombre: s.modelo, sku: s.de, activo: true } });
     if (!m) {
@@ -100,7 +130,7 @@ async function preparar(real: boolean) {
         serie: n.serie,
         activo: true,
         // Cada diseño es una pieza distinta: tiene su propia fila de stock.
-        variantes: n.variantes ? { create: n.variantes.map((v) => ({ nombre: v, afectaStock: true })) } : undefined,
+        variantes: n.variantes ? { create: n.variantes.map((v) => ({ nombre: v, afectaStock: true, tipo: "pieza", grupo: n.grupo ?? "Variante" })) } : undefined,
       },
     });
     await asegurarFilasDeStock(T, m.id);
@@ -145,6 +175,8 @@ const PARES: Record<string, (e: Elegidas) => Destino> = {
   "Porta Latas Kpop K4os": () => ({ modelo: "Porta Latas K4os" }),
   // B1: la roja es la nueva.
   "Katana de Tanjiro Kamado (Roja)": (e) => ({ modelo: `Tanjiro Katana nueva ${tam(e)}`, variantes: [funda(e)] }),
+  // B2: y su minikatana es la V2 de 20 cm.
+  "MiniKatana de Tanjiro Kamado (Roja)": () => ({ modelo: "Tanjiro v2 20cm" }),
   // B3: la de 65 no existe; esas dos claves quedan en la cola. Desde el 2026-10-24 el Shop
   // ya no ofrece tamaño: sin tamaño es la de 95.
   "Katana de Tengen Uzui": (e) =>

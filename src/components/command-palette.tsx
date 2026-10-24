@@ -22,7 +22,7 @@ const pages: PageEntry[] = [
   { name: "Pedidos", href: "/pedidos", icon: ShoppingCart, keywords: "pedidos ordenes ventas" },
   { name: "Produccion", href: "/produccion", icon: Factory, keywords: "produccion cola impresion fabricar" },
   { name: "Categorias", href: "/categorias", icon: Tag, keywords: "categorias productos tipos" },
-  { name: "Modelos", href: "/modelos", icon: Box, keywords: "modelos 3d stl diseños" },
+  { name: "Productos", href: "/modelos", icon: Box, keywords: "productos modelos variantes insumos fundas" },
   { name: "Filamentos", href: "/filamentos", icon: Palette, keywords: "filamentos material pla abs petg" },
   { name: "Clientes", href: "/clientes", icon: Users, keywords: "clientes contactos personas" },
   { name: "Tendencias", href: "/tendencias", icon: Radar, keywords: "tendencias eventos radar viral" },

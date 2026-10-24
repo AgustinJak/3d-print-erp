@@ -4,6 +4,7 @@ export const maxDuration = 60;
 import { prisma } from "@/lib/prisma";
 import { esBaseCaida, MENSAJE_BASE_CAIDA } from "@/lib/base-caida";
 import { altasAutomaticas } from "@/lib/altas-bodega";
+import { aplicarCostosSiCambio } from "@/lib/sincronizar-costos";
 import { actualizarLiquidaciones, sincronizarOrdenes } from "@/lib/ml-lote";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -78,6 +79,10 @@ export async function GET(request: NextRequest) {
       const altas = await altasAutomaticas(tenantId).catch((e) => {
         console.error("[cron/ml] altas de Bodega:", e);
         return null;
+      });
+      // Y los costos de Bodega, sin aprobación (docs/sdd/004, spec 007).
+      await aplicarCostosSiCambio(tenantId).catch((e) => {
+        console.error("[cron/ml] costos de Bodega:", e);
       });
 
       resultados.push({

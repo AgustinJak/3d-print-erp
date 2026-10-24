@@ -45,6 +45,11 @@ export interface Receta {
   segundos: number;
   /** `null` = el modelo nunca se costeó, así que no se sabe. No es lo mismo que 0. */
   insumos: number | null;
+  /**
+   * El precio por kilo del material de la pieza (Bodega 2.34, docs/sdd/004 spec 007). `null` =
+   * no tiene material, y se usa el de los parámetros, que es el del material por defecto.
+   */
+  precioKg: number | null;
 }
 
 export interface CostoDeFila {
@@ -106,24 +111,39 @@ export async function leerParametros(): Promise<ParametrosCosto> {
 /** Las recetas completas, por id de modelo de Bodega. */
 export async function leerRecetas(): Promise<Map<string, Receta>> {
   const filas = await prisma.$queryRaw<
-    Array<{ id: string; name: string; filament_grams: number | null; print_time_seconds: number | null; insumos: unknown }>
-  >`SELECT id, name, filament_grams, print_time_seconds, insumos
-      FROM bodega.models
-     WHERE filament_grams IS NOT NULL AND print_time_seconds IS NOT NULL`;
+    Array<{
+      id: string;
+      name: string;
+      filament_grams: number | null;
+      print_time_seconds: number | null;
+      insumos: unknown;
+      precio_kg: unknown;
+    }>
+  >`SELECT m.id, m.name, m.filament_grams, m.print_time_seconds, m.insumos, mat.precio_kg
+      FROM bodega.models m
+      LEFT JOIN bodega.materials mat ON mat.id = m.material_id
+     WHERE m.filament_grams IS NOT NULL AND m.print_time_seconds IS NOT NULL`;
 
   const out = new Map<string, Receta>();
   for (const f of filas) {
     if (f.filament_grams == null || f.print_time_seconds == null) continue;
     const ins = f.insumos == null ? null : Number(f.insumos);
+    const kg = f.precio_kg == null ? null : Number(f.precio_kg);
     out.set(f.id, {
       bodegaModelId: f.id,
       nombre: f.name,
       gramos: f.filament_grams,
       segundos: f.print_time_seconds,
       insumos: Number.isFinite(ins as number) ? (ins as number) : null,
+      precioKg: Number.isFinite(kg as number) && (kg as number) > 0 ? (kg as number) : null,
     });
   }
   return out;
+}
+
+/** La fabricación de una pieza con el precio por kilo de su material, si lo tiene. */
+export function fabricacionDePieza(p: ParametrosCosto, r: Receta): number {
+  return fabricacionDeReceta(r.precioKg != null ? { ...p, precioKg: r.precioKg } : p, r.gramos, r.segundos);
 }
 
 /**
@@ -147,7 +167,7 @@ export async function costosPorFilaDeStock(tenantId: string): Promise<Map<string
   for (const f of filas) {
     const receta = f.bodegaModelId ? recetas.get(f.bodegaModelId) : undefined;
     if (!receta) continue;
-    const fab = fabricacionDeReceta(parametros, receta.gramos, receta.segundos);
+    const fab = fabricacionDePieza(parametros, receta);
     const insumos = receta.insumos ?? 0;
     out.set(f.id, {
       stockId: f.id,

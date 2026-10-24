@@ -4,6 +4,7 @@ export const maxDuration = 60;
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { altasAutomaticas } from "@/lib/altas-bodega";
+import { aplicarCostosSiCambio } from "@/lib/sincronizar-costos";
 import { costoModelo, costoVariante } from "@/lib/costos";
 import {
   coberturaDePedidos,
@@ -48,6 +49,11 @@ export async function GET() {
       await altasAutomaticas(tenantId);
     } catch (err) {
       console.error("[api/stock] no se pudieron dar de alta modelos de Bodega:", err);
+    }
+    try {
+      await aplicarCostosSiCambio(tenantId);
+    } catch (err) {
+      console.error("[api/stock] no se pudieron aplicar los costos de Bodega:", err);
     }
 
     const desde = new Date();

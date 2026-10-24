@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/prisma";
 import { asegurarFilasDeStock } from "@/lib/stock-filas";
 import { sembrarCombinacionesDeModelo } from "@/lib/combinaciones";
+import { grupoDeVariante, tipoDeVariante } from "@/lib/catalogo";
 import { parsePrice } from "@/lib/utils";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
@@ -76,6 +77,9 @@ export async function POST(request: NextRequest) {
         variantes: body.variantes?.length > 0
           ? { create: body.variantes.map((v: { nombre: string; precioAdicional?: number; costoFabAdicional?: number; costoInsumosAdicional?: number; notas?: string }) => ({
               nombre: v.nombre,
+              // Sin grupo elegido: el que le toca por nombre (docs/sdd/004, spec 003).
+              grupo: grupoDeVariante({ nombre: v.nombre, afectaStock: false, grupo: null }),
+              tipo: tipoDeVariante({ nombre: v.nombre, afectaStock: false, tipo: null }),
               precioAdicional: parsePrice(v.precioAdicional),
               costoFabAdicional: parsePrice(v.costoFabAdicional),
               costoInsumosAdicional: parsePrice(v.costoInsumosAdicional),

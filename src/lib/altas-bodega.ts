@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { sembrarCombinacionesDeModelo } from "@/lib/combinaciones";
-import { fabricacionDeReceta, leerParametros, leerRecetas } from "@/lib/costos-bodega";
+import { agregarOpciones, crearGrupo, gruposDe, tipoDeVariante } from "@/lib/catalogo";
+import { asegurarFilasDeStock } from "@/lib/stock-filas";
+import { fabricacionDePieza, leerParametros, leerRecetas } from "@/lib/costos-bodega";
 
 /**
  * Un modelo nuevo en Bodega aparece solo en el inventario.
@@ -46,8 +48,14 @@ export interface CandidatoBodega {
   /**
    * Qué se haría con este modelo. Decidirlo acá y no al escribir es lo que
    * permite mostrarlo en pantalla antes de tocar nada.
+   *
+   * Desde docs/sdd/004 (spec 005): `opcion` = la pieza es la opción de un producto
+   * ("Producto · Opción"); `insumo` = está en la categoría Insumos de Bodega.
    */
-  accion: "crear" | "enlazar" | "conflicto";
+  accion: "crear" | "enlazar" | "conflicto" | "opcion" | "insumo";
+  /** Con `opcion`: el producto (exista o no todavía) y la opción. */
+  producto?: { nombre: string; id: string | null };
+  opcion?: { nombre: string; filaLibreId: string | null };
   /** Si ya hay un modelo del ERP con ese nombre, se enlaza en vez de duplicar. */
   modeloExistenteId: string | null;
   modeloExistenteNombre: string | null;
@@ -99,13 +107,27 @@ export async function candidatosDeBodega(
     `,
     leerRecetas(),
     leerParametros(),
-    prisma.stock.findMany({ where: { tenantId }, select: { id: true, bodegaModelId: true, modeloId: true } }),
-    prisma.modelo.findMany({ where: { tenantId }, select: { id: true, nombre: true } }),
+    prisma.stock.findMany({ where: { tenantId }, select: { id: true, bodegaModelId: true, modeloId: true, variantes: true } }),
+    prisma.modelo.findMany({
+      where: { tenantId },
+      select: {
+        id: true,
+        nombre: true,
+        activo: true,
+        consolidadoEnId: true,
+        esInsumo: true,
+        variantes: { where: { activo: true }, select: { id: true, nombre: true, afectaStock: true, grupo: true, tipo: true } },
+      },
+    }),
     leerSinTraer(tenantId),
   ]);
 
   const mapeados = new Set(filas.map((f) => f.bodegaModelId).filter(Boolean) as string[]);
   const porNombre = new Map(modelos.map((m) => [m.nombre.trim().toLowerCase(), m]));
+  // Los productos a los que una pieza "Producto · Opción" se puede sumar (spec 005, RN-2).
+  const vigentes = new Map(
+    modelos.filter((m) => m.activo && !m.consolidadoEnId && !m.esInsumo).map((m) => [normalizar(m.nombre), m])
+  );
   const filasPorModelo = new Map<string, typeof filas>();
   for (const f of filas) {
     const a = filasPorModelo.get(f.modeloId) ?? [];
@@ -135,15 +157,12 @@ export async function candidatosDeBodega(
       nombre: b.name,
       categoria: b.category,
       tieneReceta: !!r,
-      costoFab: r ? Math.round(fabricacionDeReceta(parametros, r.gramos, r.segundos)) : 0,
+      costoFab: r ? Math.round(fabricacionDePieza(parametros, r)) : 0,
       costoInsumos: r?.insumos ?? 0,
     };
 
     const existente = porNombre.get(b.name.trim().toLowerCase());
-    if (!existente) {
-      return { ...base, accion: "crear", modeloExistenteId: null, modeloExistenteNombre: null,
-               filaLibreId: null, motivo: null };
-    }
+    if (!existente) return destinoNuevo(b, base);
 
     const suyas = filasPorModelo.get(existente.id) ?? [];
     const libre = suyas.find((f) => !f.bodegaModelId);
@@ -164,6 +183,43 @@ export async function candidatosDeBodega(
       motivo: `ya existe "${existente.nombre}" y todas sus filas de stock están enlazadas a otra pieza de Bodega`,
     };
   };
+
+  /**
+   * Una pieza cuyo nombre no es el de ningún modelo del ERP (docs/sdd/004, spec 005): un insumo
+   * si está en la categoría Insumos de Bodega; la opción de un producto si se llama "Producto ·
+   * Opción"; si no, un producto simple, como siempre.
+   */
+  function destinoNuevo(
+    b: { id: string; name: string; category: string | null },
+    base: Pick<CandidatoBodega, "bodegaModelId" | "nombre" | "categoria" | "tieneReceta" | "costoFab" | "costoInsumos">
+  ): CandidatoBodega {
+    const nada = { modeloExistenteId: null, modeloExistenteNombre: null, filaLibreId: null, motivo: null };
+    if (b.category && CATEGORIA_INSUMOS.test(b.category.trim())) return { ...base, ...nada, accion: "insumo" };
+
+    const partes = separarOpcion(b.name);
+    if (!partes) return { ...base, ...nada, accion: "crear" };
+
+    const conflicto = (motivo: string): CandidatoBodega => ({ ...base, ...nada, accion: "conflicto", motivo });
+    const prod = vigentes.get(normalizar(partes.producto));
+    if (!prod) {
+      if (porNombre.get(partes.producto.trim().toLowerCase())) {
+        return conflicto(`"${partes.producto}" existe pero está inactivo, consolidado o es un insumo`);
+      }
+      return { ...base, ...nada, accion: "opcion", producto: { nombre: partes.producto, id: null }, opcion: { nombre: partes.opcion, filaLibreId: null } };
+    }
+
+    const enProducto = { modeloExistenteId: prod.id, modeloExistenteNombre: prod.nombre };
+    const ya = prod.variantes.find((v) => normalizar(v.nombre) === normalizar(partes.opcion));
+    if (!ya) {
+      return { ...base, ...nada, ...enProducto, accion: "opcion", producto: { nombre: prod.nombre, id: prod.id }, opcion: { nombre: partes.opcion, filaLibreId: null } };
+    }
+    if (tipoDeVariante(ya) !== "pieza") {
+      return conflicto(`"${ya.nombre}" de "${prod.nombre}" no es una pieza: es ${tipoDeVariante(ya) === "insumo" ? "un insumo" : "una decoración"}`);
+    }
+    const fila = filas.find((f) => f.modeloId === prod.id && f.variantes.length === 1 && f.variantes[0] === ya.id);
+    if (fila?.bodegaModelId) return conflicto(`"${prod.nombre} · ${ya.nombre}" ya está enganchada a otra pieza de Bodega`);
+    return { ...base, ...nada, ...enProducto, accion: "opcion", producto: { nombre: prod.nombre, id: prod.id }, opcion: { nombre: ya.nombre, filaLibreId: fila?.id ?? null } };
+  }
 
   const pendientes = bodega.filter((b) => !mapeados.has(b.id)).map(armar);
   if (ignorados == null) return { nuevos: [], sinTraer: pendientes, inicializado: false };
@@ -213,6 +269,19 @@ export async function crearDesdeBodega(tenantId: string, ids: string[]): Promise
         nombre: c.nombre,
         motivo: "otra pieza de Bodega con el mismo nombre se quedó con ese modelo del inventario",
       });
+      continue;
+    }
+
+    // Las dos entradas de docs/sdd/004 (spec 005): opción de un producto, o insumo.
+    if (c.accion === "opcion" || c.accion === "insumo") {
+      try {
+        const hecho = c.accion === "opcion" ? await altaComoOpcion(tenantId, c) : await altaComoInsumo(tenantId, c);
+        nombresTomados.add(nombre);
+        if (hecho.creado) out.creados.push({ nombre: c.nombre, modeloId: hecho.modeloId, stockId: hecho.stockId, costoFab: c.costoFab });
+        else out.mapeados.push({ nombre: c.nombre, modeloId: hecho.modeloId, stockId: hecho.stockId });
+      } catch (e) {
+        out.omitidos.push({ nombre: c.nombre, motivo: e instanceof Error ? e.message : String(e) });
+      }
       continue;
     }
 
@@ -287,6 +356,108 @@ export async function crearDesdeBodega(tenantId: string, ids: string[]): Promise
   await guardarSinTraer(tenantId, quedan);
 
   return out;
+}
+
+/** Nombres comparables: sin mayúsculas ni espacios de más. */
+function normalizar(s: string): string {
+  return s.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** La categoría de Bodega que marca un insumo (spec 005, RN-4). */
+const CATEGORIA_INSUMOS = /^insumos?$/i;
+
+/**
+ * "Bola de JOJOS · Verde común" → producto "Bola de JOJOS", opción "Verde común" (spec 005,
+ * RN-1). Se toma el último punto medio: "Katana · Edición · Roja" es la opción "Roja".
+ */
+export function separarOpcion(nombre: string): { producto: string; opcion: string } | null {
+  const i = nombre.lastIndexOf("·");
+  if (i < 0) return null;
+  const producto = nombre.slice(0, i).trim().replace(/\s+/g, " ");
+  const opcion = nombre.slice(i + 1).trim().replace(/\s+/g, " ");
+  return producto && opcion ? { producto, opcion } : null;
+}
+
+/**
+ * Una pieza "Producto · Opción": la opción del grupo de piezas del producto, creando lo que falte
+ * (el producto, el grupo "Variante", la opción) y enganchando su fila a la pieza.
+ */
+async function altaComoOpcion(tenantId: string, c: CandidatoBodega): Promise<{ modeloId: string; stockId: string; creado: boolean }> {
+  if (!c.producto || !c.opcion) throw new Error("falta el producto o la opción");
+  let modeloId = c.producto.id;
+  let creado = false;
+  if (!modeloId) {
+    // El plan se armó una vez al principio: si dos piezas del mismo producto nuevo vienen juntas
+    // ("Bola · Rojo" y "Bola · Azul"), la primera ya lo creó y la segunda se suma a ese.
+    const yaCreado = await prisma.modelo.findFirst({
+      where: { tenantId, activo: true, consolidadoEnId: null, esInsumo: false, nombre: { equals: c.producto.nombre, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (yaCreado) modeloId = yaCreado.id;
+    else {
+      modeloId = (await prisma.modelo.create({ data: { tenantId, nombre: c.producto.nombre, activo: true }, select: { id: true } })).id;
+      creado = true;
+    }
+  }
+
+  if (c.opcion.filaLibreId) {
+    await prisma.stock.update({ where: { id: c.opcion.filaLibreId }, data: { bodegaModelId: c.bodegaModelId } });
+    return { modeloId, stockId: c.opcion.filaLibreId, creado };
+  }
+
+  const variantes = await prisma.varianteModelo.findMany({
+    where: { modeloId, activo: true },
+    select: { id: true, nombre: true, afectaStock: true, grupo: true, tipo: true },
+  });
+  const ya = variantes.find((v) => normalizar(v.nombre) === normalizar(c.opcion!.nombre));
+  if (!ya) {
+    const grupoPiezas = gruposDe(variantes).find((g) => g.tipo === "pieza");
+    if (grupoPiezas) await agregarOpciones(tenantId, modeloId, grupoPiezas.nombre, [c.opcion.nombre]);
+    else await crearGrupo(tenantId, modeloId, { nombre: "Variante", tipo: "pieza", opciones: [c.opcion.nombre] });
+  } else {
+    // Ya era una pieza sin fila (pasa si se borró a mano): que la tenga.
+    await asegurarFilasDeStock(tenantId, modeloId);
+  }
+
+  const v = await prisma.varianteModelo.findFirst({
+    where: { modeloId, activo: true, nombre: { equals: ya?.nombre ?? c.opcion.nombre, mode: "insensitive" } },
+    select: { id: true },
+  });
+  const fila = v ? await prisma.stock.findFirst({ where: { tenantId, modeloId, variantes: { equals: [v.id] } }, select: { id: true } }) : null;
+  if (!fila) throw new Error(`no quedó la fila de stock de "${c.opcion.nombre}"`);
+  await prisma.stock.update({ where: { id: fila.id }, data: { bodegaModelId: c.bodegaModelId } });
+  await sembrarCombinacionesDeModelo(prisma, tenantId, modeloId);
+  return { modeloId, stockId: fila.id, creado };
+}
+
+/**
+ * Una pieza de la categoría Insumos: un modelo marcado como insumo, inactivo como producto (no se
+ * vende solo), en la categoría Insumos del ERP si existe, con su fila enganchada a la pieza.
+ */
+async function altaComoInsumo(tenantId: string, c: CandidatoBodega): Promise<{ modeloId: string; stockId: string; creado: boolean }> {
+  const categoria = await prisma.categoria.findFirst({
+    where: { tenantId, nombre: { equals: "Insumos", mode: "insensitive" } },
+    select: { id: true },
+  });
+  return prisma.$transaction(async (tx) => {
+    const m = await tx.modelo.create({
+      data: {
+        tenantId,
+        nombre: c.nombre,
+        activo: false,
+        esInsumo: true,
+        costoFab: c.costoFab,
+        costoInsumos: c.costoInsumos,
+        categorias: categoria ? { create: [{ categoriaId: categoria.id }] } : undefined,
+      },
+      select: { id: true },
+    });
+    const fila = await tx.stock.create({
+      data: { tenantId, modeloId: m.id, clave: `${m.id}|`, etiqueta: c.nombre, variantes: [], cantidad: 0, minimo: 0, bodegaModelId: c.bodegaModelId },
+      select: { id: true },
+    });
+    return { modeloId: m.id, stockId: fila.id, creado: true };
+  });
 }
 
 /** Marca modelos de Bodega para que el alta automática no los traiga nunca. */
