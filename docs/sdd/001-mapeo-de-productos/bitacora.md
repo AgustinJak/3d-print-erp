@@ -221,3 +221,51 @@ commitear ni desplegar al cerrar esta entrada.
 - TASK-018 está a medias: se actualizaron `INV - Flujos`, `Flujos del ecosistema`, `Mapeo de
   productos` e `INV - Changelog`; faltan `INV - Integración Mercado Libre`, `INV - Integración
   Sendero Shop`, `INV - Modelos`, `INV - Decisiones`, `Convención de SKU` y `Stock unificado`.
+
+## 2026-10-23/24 · Claude (sesión del inventario) — catálogo del Shop y su siembra
+
+**Tareas:** TASK-016, TASK-022 y TASK-013 (→ completed).
+
+**Qué pasó**
+- TASK-016 verificada con los pedidos SS-00137 a SS-00143: cuatro claves por ids, las cuatro
+  resueltas solas.
+- Respuestas de Agustín al catálogo (en el chat): la Tanjiro roja es la "nueva"; la Tengen de 65 no
+  existe; la Knight Killer no se vende más; el exhibidor de la Kitetsu no se lleva; el SKU cruzado
+  del porta bálsamo, "elegí vos"; los cinco productos que faltaban, "crealos". La Caja Guarda del
+  Shop ($13.000) se mapeó a la Caja chica, como la "Caja Guarda" sin Premium de ML.
+- `scripts/sdd-001-catalogo-shop.ts`, en tres fases:
+  - `preparar`: los SKU del porta bálsamo (`SS-K4O-LLA-051`) y del porta latas
+    (`SS-K4O-MER-053`), alineados con el Shop, con la combinación de cada uno. En ML ninguna de las
+    publicaciones revisadas tiene SKU. Más los cinco modelos nuevos con el SKU del Shop: Hacha
+    Prime, Lucero de Alba, Llavero Ballena 52 Hz, Llavero BT21 (8 personajes) y Jabonera
+    minimalista (15 diseños), con variantes que afectan stock.
+  - `mapear`: los pares que la siembra no deduce sola, como `manual`.
+  - `lineas`: las dos líneas viejas sin modelo (SS-00133, la bola de demolición, $2.297; SS-00136,
+    Tanjiro nueva 95 con funda, $18.802). Pedidos completados: no se toca el stock.
+- Siembra (`sdd-001-sembrar-shop.ts --real`) desde el catálogo exportado con SQL de sólo lectura:
+  147 claves, 95 resueltas solas; `mapear` cargó 47 más.
+- Agustín cambió el Shop en el medio: borró la Daga Knight Killer, le sacó el grupo Tamaño a la
+  Tengen y el Exhibidor a la Kitetsu. Se sembraron las 6 claves nuevas (4 solas, 2 manuales) y se
+  borraron de la cola las 4 que ya no pueden llegar (Knight Killer y Tengen 65). Las claves viejas
+  ya mapeadas quedan, por si entra un pedido rezagado.
+- **Cola del Shop: una sola clave**, la MiniKatana de Tanjiro roja (¿es la "Tanjiro V2 20cm" de
+  Bodega? Pregunta abierta).
+- Las 26 piezas de los productos nuevos se crearon **en Bodega**, a pedido de Agustín, como las
+  "creadas desde el ERP" del 2026-08-28: sin archivo (`filePath` vacío), en su base local con la
+  app cerrada y con copia antes. Cada fila de stock del ERP quedó enganchada a su pieza en el mismo
+  paso, para que el alta automática no les cree un modelo aparte. Bodega las sube en su próxima
+  sincronización; Agustín les carga el `.3mf` con "Agregar archivo 3D".
+- Integraciones › SKUs (antes "Mapeo SKUs") ya no lista "SKUs huérfanos": los sacaba de los
+  últimos 200 avisos del Shop, que no cambian, así que una venta resuelta seguía apareciendo para
+  siempre (la bola de demolición). Lo que no se reconoce está en la cola de Mapeo.
+
+**Encontrado de paso**
+- El editor de variantes (el lápiz de /modelos) no tiene cómo marcar que una variante es **otra
+  pieza** (`afectaStock`): toda variante nueva nace como accesorio, sin fila de stock propia. Hoy
+  sólo se puede por script. Anotado en `INV - Backlog`.
+
+**Para el que sigue**
+- TASK-019: con todas las claves de katanas del Shop mapeadas, el parche de tamaño ya se puede
+  retirar.
+- TASK-018: faltan `INV - Integración Mercado Libre`, `INV - Modelos`, `INV - Decisiones`,
+  `Convención de SKU` y `Stock unificado`.
