@@ -16,8 +16,10 @@ import { getMlAccount, mlFetch } from "@/lib/mercadolibre";
  *   `GET /pricing-automation/users/{id}/items`; hoy la cuenta no tiene ninguna.
  * - ML va a sacar `price` de `/items`: el precio se lee de `/items/{id}/prices` (el standard, el
  *   que pone el vendedor) y lo que paga el cliente de `/items/{id}/sale_price`.
- * - Con una promoción activa, bajar el precio por debajo de la oferta la elimina; subirlo la deja
- *   activa. Hasta probar qué hace con las campañas de porcentaje no se toca (RN-3).
+ * - En una campaña del vendedor el precio cambia, pero el cliente sigue pagando el de la oferta
+ *   hasta que la campaña termina o se saca la publicación (Agustín, 2026-10-24; probado con el
+ *   Carrete: a $3.900 siguió pagando $3.610). Bajar el precio por debajo de la oferta la elimina,
+ *   y la app no puede volver a meterla: la API de promociones le da 403.
  */
 
 export interface LecturaMl {
@@ -25,7 +27,8 @@ export interface LecturaMl {
   subEstado: string[];
   /** Lo que paga el cliente hoy: el de la promoción si hay una. */
   paga: number | null;
-  promo: { id: string; tipo: string | null; campania: string | null } | null;
+  /** `fin`: hasta cuándo el cliente paga el precio de la oferta (null si ML no lo dice). */
+  promo: { id: string; tipo: string | null; campania: string | null; fin: string | null } | null;
   /** null = no se pudo averiguar, y entonces no se escribe. */
   automatizada: boolean | null;
   variaciones: number;
@@ -42,7 +45,7 @@ interface ItemMl {
 }
 
 interface PreciosMl {
-  prices?: Array<{ type: string; amount: number; conditions?: { context_restrictions?: string[] } }>;
+  prices?: Array<{ type: string; amount: number; conditions?: { context_restrictions?: string[]; end_time?: string | null } }>;
 }
 
 interface SalePriceMl {
@@ -74,14 +77,17 @@ async function automatizadas(tenantId: string): Promise<Set<string> | null> {
   }
 }
 
-/** El precio standard: el que puso el vendedor y el que cambia el ERP. */
-async function precioStandard(tenantId: string, mla: string): Promise<number | null> {
+const delMarketplace = (p: NonNullable<PreciosMl["prices"]>[number]) =>
+  !p.conditions?.context_restrictions?.length || p.conditions.context_restrictions.includes("channel_marketplace");
+
+/** El precio standard (el que puso el vendedor y el que cambia el ERP) y las promociones vigentes. */
+async function preciosDe(tenantId: string, mla: string): Promise<{ standard: number | null; promos: NonNullable<PreciosMl["prices"]> }> {
   const r = await mlFetch<PreciosMl>(tenantId, `/items/${mla}/prices`);
-  const std = r.prices?.find(
-    (p) => p.type === "standard" && (!p.conditions?.context_restrictions?.length || p.conditions.context_restrictions.includes("channel_marketplace"))
-  );
-  return std ? std.amount : null;
+  const std = r.prices?.find((p) => p.type === "standard" && delMarketplace(p));
+  return { standard: std ? std.amount : null, promos: (r.prices ?? []).filter((p) => p.type === "promotion" && delMarketplace(p)) };
 }
+
+const precioStandard = async (tenantId: string, mla: string) => (await preciosDe(tenantId, mla)).standard;
 
 async function enTandas<T, R>(xs: T[], n: number, f: (x: T) => Promise<R>): Promise<R[]> {
   const out: R[] = [];
@@ -118,12 +124,19 @@ export async function leerPreciosMl(tenantId: string): Promise<{ leidas: number;
       return null;
     }
     try {
-      const [standard, venta] = await Promise.all([
-        precioStandard(tenantId, mla),
+      const [{ standard, promos }, venta] = await Promise.all([
+        preciosDe(tenantId, mla),
         mlFetch<SalePriceMl>(tenantId, `/items/${mla}/sale_price?context=channel_marketplace`).catch(() => null),
       ]);
+      // La promoción que gana es la del precio que paga el cliente.
+      const ganadora = promos.find((p) => venta && Math.abs(p.amount - venta.amount) < 0.01) ?? promos[0];
       const promo = venta?.metadata?.promotion_id
-        ? { id: venta.metadata.promotion_id, tipo: venta.metadata.promotion_type ?? null, campania: venta.metadata.campaign_id ?? null }
+        ? {
+            id: venta.metadata.promotion_id,
+            tipo: venta.metadata.promotion_type ?? null,
+            campania: venta.metadata.campaign_id ?? null,
+            fin: ganadora?.conditions?.end_time ?? null,
+          }
         : null;
       const lectura: LecturaMl = {
         estado: item.status,
@@ -166,8 +179,24 @@ export function motivoMl(lectura: LecturaMl | null, leidoEn: Date | null, ahora 
   if (lectura.automatizada) return "tiene automatización de precios: ML no deja cambiarlo";
   // Mandar `variations` en el PUT borra las que no van: no se escribe hasta tener una de prueba.
   if (lectura.variaciones > 0) return "publicación con variaciones: todavía no se escribe";
-  if (lectura.promo) return "promoción activa: no se toca hasta probar qué hace ML con ella";
   return null;
+}
+
+const fecha = (iso: string) => new Date(iso).toLocaleDateString("es-AR", { day: "numeric", month: "numeric", timeZone: "America/Argentina/Buenos_Aires" });
+
+/**
+ * Lo que hay que saber antes de aplicar en una publicación en campaña. `sacaPromo` = el precio
+ * nuevo queda por debajo del de la oferta: ML la elimina y el ERP no la puede volver a poner, así
+ * que pide la confirmación aparte.
+ */
+export function avisoMl(lectura: LecturaMl | null, propuesto: number | null): { aviso: string; sacaPromo: boolean } | null {
+  if (!lectura?.promo || propuesto == null) return null;
+  const hasta = lectura.promo.fin ? ` hasta el ${fecha(lectura.promo.fin)}` : " hasta que termine la campaña";
+  const paga = lectura.paga ?? 0;
+  if (propuesto < paga) {
+    return { aviso: `queda por debajo del precio de campaña ($${Math.round(paga).toLocaleString("es-AR")}): ML saca la promoción`, sacaPromo: true };
+  }
+  return { aviso: `en campaña: el cliente sigue pagando $${Math.round(paga).toLocaleString("es-AR")}${hasta}`, sacaPromo: false };
 }
 
 /**

@@ -13,8 +13,9 @@
  * - CA-4: un cambio de más de 30 % no se aplica sin la confirmación aparte.
  * - RN-5 / spec 003 RN-4: aplicar en el ERP escribe el precio de venta y los adicionales, con
  *   historial; aplicar dos veces no cambia nada; un precio que ya no es el propuesto no se manda.
- * - spec 005 RN-3: cerrada, en revisión, automatizada, con variaciones, en promoción o con una
- *   lectura vieja no se escribe.
+ * - spec 005 RN-3: cerrada, en revisión, automatizada, con variaciones o con una
+ *   lectura vieja no se escribe. En campaña sí, con aviso; si el precio nuevo queda debajo del de
+ *   la oferta (ML la saca), pide la confirmación aparte.
  */
 import { prisma } from "@/lib/prisma";
 import { crearGrupo } from "@/lib/catalogo";
@@ -106,7 +107,9 @@ async function main() {
     data: [
       // CA-1: se puede aplicar (no se aplica: es una publicación de mentira).
       { tenantId: T, canal: "mercadolibre", clave: "MLA-PRUEBA-1|", combinacionId: con.id, precioPublicado: publicadoCa1, precioLeidoEn: ahora, precioLectura: lectura() as object },
-      { tenantId: T, canal: "mercadolibre", clave: "MLA-PRUEBA-2|", combinacionId: sin.id, precioPublicado: 1000, precioLeidoEn: ahora, precioLectura: lectura({ promo: { id: "OFFER-X", tipo: "custom", campania: "C-X" } }) as object },
+      // En campaña: una que sube (aviso) y una que queda debajo de la oferta (ML la saca).
+      { tenantId: T, canal: "mercadolibre", clave: "MLA-PRUEBA-2|", combinacionId: sin.id, precioPublicado: 1000, precioLeidoEn: ahora, precioLectura: lectura({ paga: 950, promo: { id: "OFFER-X", tipo: "custom", campania: "C-X", fin: "2026-11-08T02:59:59Z" } }) as object },
+      { tenantId: T, canal: "mercadolibre", clave: "MLA-PRUEBA-7|", combinacionId: sin.id, precioPublicado: 200000, precioLeidoEn: ahora, precioLectura: lectura({ paga: 190000, promo: { id: "OFFER-Y", tipo: "custom", campania: "C-Y", fin: null } }) as object },
       { tenantId: T, canal: "mercadolibre", clave: "MLA-PRUEBA-3|", combinacionId: sin.id, precioPublicado: 1000, precioLeidoEn: vieja, precioLectura: lectura() as object },
       { tenantId: T, canal: "mercadolibre", clave: "MLA-PRUEBA-4|", combinacionId: null, precioPublicado: 1000, precioLeidoEn: ahora, precioLectura: lectura() as object },
       { tenantId: T, canal: "mercadolibre", clave: "MLA-PRUEBA-5|", combinacionId: comboSinReceta.id, precioPublicado: 1000, precioLeidoEn: ahora, precioLectura: lectura() as object },
@@ -123,7 +126,10 @@ async function main() {
   const f1 = fila("MLA-PRUEBA-1|");
   ok(f1.motivo === null && f1.publicado === publicadoCa1 && f1.propuesto === mlCon, `CA-1: ${f1.publicado} → ${f1.propuesto}`, f1);
   ok(Math.abs(f1.pct! - 8.3) < 0.1 && f1.diferencia === mlCon - publicadoCa1, `CA-1: diferencia ${f1.diferencia} (${f1.pct?.toFixed(1)} %)`);
-  ok(fila("MLA-PRUEBA-2|").motivo?.startsWith("promoción activa") === true, "en promoción no se puede aplicar (spec 005, RN-3)");
+  const f2 = fila("MLA-PRUEBA-2|");
+  ok(f2.motivo === null && f2.aviso === "en campaña: el cliente sigue pagando $950 hasta el 7/11" && f2.aparte === "cambia más de 30 %", `en campaña se puede, con aviso: "${f2.aviso}"`, f2);
+  const f7 = fila("MLA-PRUEBA-7|");
+  ok(f7.motivo === null && f7.aparte === "ML saca la promoción" && f7.aviso?.includes("ML saca la promoción") === true, `debajo de la oferta pide confirmarlo aparte: "${f7.aviso}"`, f7);
   ok(fila("MLA-PRUEBA-3|").motivo?.startsWith("lectura de más de una hora") === true, "una lectura vieja no se puede aplicar (RN-2)");
   ok(fila("MLA-PRUEBA-4|").motivo === "falta mapear", "sin combinación: falta mapear");
   const f5 = fila("MLA-PRUEBA-5|");
@@ -169,10 +175,15 @@ async function main() {
     T,
     "prueba",
     "mercadolibre",
-    ["MLA-PRUEBA-2|", "MLA-PRUEBA-3|", "MLA-PRUEBA-4|", "MLA-PRUEBA-5|", "MLA-PRUEBA-6|111"].map((clave) => ({ clave, precio: 1 })),
+    ["MLA-PRUEBA-3|", "MLA-PRUEBA-4|", "MLA-PRUEBA-5|", "MLA-PRUEBA-6|111"].map((clave) => ({ clave, precio: 1 })),
     true
   );
-  ok(r.every((x) => x.estado === "rechazado"), `las cinco rechazadas sin llamar a ML: ${r.map((x) => x.mensaje?.slice(0, 30)).join(" | ")}`);
+  ok(r.every((x) => x.estado === "rechazado"), `las cuatro rechazadas sin llamar a ML: ${r.map((x) => x.mensaje?.slice(0, 30)).join(" | ")}`);
+  // En campaña, sin la confirmación aparte, tampoco se manda nada.
+  r = await aplicarPrecios(T, "prueba", "mercadolibre", [{ clave: "MLA-PRUEBA-7|", precio: f7.propuesto! }], false);
+  ok(r[0].estado === "rechazado" && r[0].mensaje === "ML saca la promoción: hay que confirmarlo aparte", `debajo de la oferta sin confirmar: "${r[0].mensaje}"`);
+  r = await aplicarPrecios(T, "prueba", "mercadolibre", [{ clave: "MLA-PRUEBA-2|", precio: f2.propuesto! }], false);
+  ok(r[0].estado === "rechazado" && r[0].mensaje!.includes("confirmarlo aparte"), `en campaña y más de 30 % sin confirmar: "${r[0].mensaje}"`);
   ok((await prisma.cambioPrecio.count({ where: { tenantId: T, canal: "mercadolibre" } })) === 0, "y no dejan historial de escritura");
   let err: unknown = null;
   await aplicarPrecios(T, "prueba", "shop", [{ clave: "prod-prueba|", precio: 1 }], true).catch((x) => (err = x));

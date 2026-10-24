@@ -324,7 +324,7 @@
       "title": "ML: probar qué hace una campaña de porcentaje al cambiar el precio",
       "description": "83 de 100 publicaciones están en campañas del vendedor (C-MLA1749392 al 10 %, C-MLA1710245 al 5 %) y RN-3 las bloquea. La documentación dice que bajar el precio por debajo de la oferta elimina la promoción y que subirlo la deja activa; en una publicación de la campaña del 10 % el precio de la oferta seguía al standard × 0,9. Probar con una publicación elegida por Agustín: cambiar el precio, ver si la oferta acompaña, y volver. Según lo que pase, levantar el bloqueo o dejarlo.",
       "component": "integration",
-      "status": "blocked",
+      "status": "completed",
       "origin": "discovered",
       "dependencies": [
         "TASK-012"
@@ -334,11 +334,14 @@
       ],
       "acceptanceCriteria": [],
       "files": [
-        "src/lib/precios-ml.ts"
+        "src/lib/precios-ml.ts",
+        "src/lib/precios-propuesta.ts",
+        "src/app/(app)/precios/page.tsx",
+        "scripts/sdd-003-probar-pantalla.ts"
       ],
-      "blockedReason": "Necesita que Agustín elija la publicación en campaña para probar.",
-      "completedAt": null,
-      "notes": null
+      "blockedReason": null,
+      "completedAt": "2026-10-24",
+      "notes": "2026-10-24, con el Carrete plástico (MLA3189980034, campaña C-MLA1710245 del 5 %, elegido por Agustín): de $3.800 a $3.900 y vuelta. ML aceptó los dos cambios, no tocó ningún otro campo, la promoción siguió activa y el cliente siguió pagando $3.610: la oferta no acompañó al precio en 15 segundos. Pero en una publicación de la campaña del 10 % la oferta es exactamente standard × 0,9 con un regular viejo, así que ML puede recalcularla más tarde. Falta saber si la recalcula y cuándo. Agustín lo aclaró: el precio cambia pero el cliente paga el de la campaña hasta que termina o se saca la publicación. Se levantó el bloqueo (spec 005, RN-6): las publicaciones en campaña se aplican con un aviso con la fecha de fin, y las que quedarían debajo de la oferta (ML la saca) piden la confirmación aparte. 34 de 34 en sdd-003-probar-pantalla.ts. Con los datos de hoy, 44 publicaciones se pueden aplicar (antes 4): 30 piden la confirmación aparte, 13 de ellas porque sacarían la promoción."
     },
     {
       "id": "TASK-013",

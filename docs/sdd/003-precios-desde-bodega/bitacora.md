@@ -197,3 +197,18 @@ completada: la absorbió la TASK-007 del SDD 004.
 - La web espera el endpoint del Shop: TASK-011 y después TASK-013.
 - El cerebro sigue frenado ("por ahora no toques el cerebro"). Cuando se destrabe, TASK-015 tiene
   que sumar a `INV - Flujos` la página `/precios` y los cuatro endpoints.
+
+## 2026-10-24 · Claude (sesión del inventario) — prueba de una publicación en campaña
+
+**Tareas:** TASK-016 (blocked → in-progress).
+
+- Con el Carrete plástico (MLA3189980034, campaña del 5 %, elegido por Agustín): de $3.800 a $3.900 y vuelta a $3.800.
+- ML aceptó los dos cambios y no tocó ningún otro campo. La promoción siguió activa.
+- El cliente siguió pagando $3.610: la oferta no acompañó al precio, al menos en 15 segundos.
+- En una publicación de la campaña del 10 % la oferta es exactamente el precio actual × 0,9 con un precio tachado viejo. Puede que ML la recalcule más tarde: falta saberlo.
+- Quedó como estaba. Los dos cambios están en el historial.
+- Agustín lo aclaró después: el precio cambia, pero el cliente paga el de la campaña hasta que la campaña termina o se saca la publicación.
+- Se levantó el bloqueo (spec 005, RN-6): en campaña se puede aplicar, con un aviso con la fecha de fin.
+- Si el precio nuevo queda por debajo de la oferta, ML saca la promoción: el ERP pide la confirmación aparte.
+- Con los datos de hoy se pueden aplicar 44 publicaciones (antes 4). 30 piden la confirmación aparte, 13 porque sacarían la promoción.
+- TASK-016 completada. `sdd-003-probar-pantalla.ts` da 34 de 34.

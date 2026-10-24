@@ -44,6 +44,8 @@ interface Aplicable {
   antes: number | null;
   despues: number;
   pct: number | null;
+  /** Por qué pide la confirmación aparte; null = no la pide. */
+  aparte: string | null;
 }
 
 const REDONDEO: Record<string, string> = {
@@ -210,8 +212,15 @@ function PantallaPrecios() {
       return s;
     });
 
-  const aplicableDeCanal = (f: FilaDeCanal): Aplicable => ({ clave: f.clave, nombre: f.combinacion ?? f.clave, antes: f.publicado, despues: f.propuesto!, pct: f.pct });
-  const aplicableDeErp = (f: FilaErp): Aplicable => ({ clave: f.modeloId, nombre: f.modelo, antes: f.actual, despues: f.propuesto!, pct: f.pct });
+  const aplicableDeCanal = (f: FilaDeCanal): Aplicable => ({ clave: f.clave, nombre: f.combinacion ?? f.clave, antes: f.publicado, despues: f.propuesto!, pct: f.pct, aparte: f.aparte });
+  const aplicableDeErp = (f: FilaErp): Aplicable => ({
+    clave: f.modeloId,
+    nombre: f.modelo,
+    antes: f.actual,
+    despues: f.propuesto!,
+    pct: f.pct,
+    aparte: esGrande(f.pct) ? `cambia más de ${CAMBIO_GRANDE_PCT} %` : null,
+  });
 
   const cuenta = (filas: Array<{ motivo: string | null; diferencia: number | null }>) => filas.filter((f) => !f.motivo && conDiferencia(f)).length;
 
@@ -330,23 +339,24 @@ function PantallaPrecios() {
               </DialogHeader>
               <div className="max-h-64 overflow-y-auto divide-y text-sm">
                 {confirmar.filas.map((f) => (
-                  <div key={f.clave} className={`flex justify-between gap-3 py-1.5 ${esGrande(f.pct) ? "text-destructive" : ""}`}>
-                    <span className="truncate">{f.nombre}</span>
+                  <div key={f.clave} className={`flex justify-between gap-3 py-1.5 ${f.aparte ? "text-destructive" : ""}`}>
+                    <span className="truncate">
+                      {f.nombre}
+                      {f.aparte && <span className="block text-xs">{f.aparte}</span>}
+                    </span>
                     <span className="shrink-0 tabular-nums">
                       {f.antes != null ? pesos(f.antes) : "—"} → {pesos(f.despues)} <span className="text-xs">{pct(f.pct)}</span>
                     </span>
                   </div>
                 ))}
               </div>
-              {confirmar.filas.some((f) => esGrande(f.pct)) && (
+              {confirmar.filas.some((f) => f.aparte) && (
                 <label className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-sm">
                   <input type="checkbox" className="mt-0.5" checked={grandesOk} onChange={(e) => setGrandesOk(e.target.checked)} />
                   <span>
                     <AlertTriangle className="inline h-3.5 w-3.5 mr-1 text-destructive" />
-                    {confirmar.filas.filter((f) => esGrande(f.pct)).length === 1
-                      ? `Uno cambia más de ${CAMBIO_GRANDE_PCT} %. Confirmo que lo revisé`
-                      : `${confirmar.filas.filter((f) => esGrande(f.pct)).length} cambian más de ${CAMBIO_GRANDE_PCT} %. Confirmo que los revisé`}
-                    : un costo mal cargado en Bodega publica un precio malo.
+                    {confirmar.filas.filter((f) => f.aparte).length === 1 ? "El marcado en rojo" : `Los ${confirmar.filas.filter((f) => f.aparte).length} marcados en rojo`} cambia
+                    {confirmar.filas.filter((f) => f.aparte).length === 1 ? "" : "n"} mucho o le saca la promoción. Confirmo que lo revisé: un costo mal cargado en Bodega publica un precio malo.
                   </span>
                 </label>
               )}
@@ -354,7 +364,7 @@ function PantallaPrecios() {
                 <Button variant="ghost" onClick={() => setConfirmar(null)} disabled={aplicando}>
                   Cancelar
                 </Button>
-                <Button onClick={aplicar} disabled={aplicando || (confirmar.filas.some((f) => esGrande(f.pct)) && !grandesOk)}>
+                <Button onClick={aplicar} disabled={aplicando || (confirmar.filas.some((f) => f.aparte) && !grandesOk)}>
                   {aplicando && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
                   Aplicar {confirmar.filas.length}
                 </Button>
@@ -555,11 +565,12 @@ function TablaCanal({
                 </td>
                 <td className="p-2 text-xs text-muted-foreground max-w-[280px]">
                   {f.motivo ?? (conDiferencia(f) ? "se puede aplicar" : "al día")}
+                  {!f.motivo && f.aviso && <div className={f.aparte ? "text-destructive" : "text-amber-600 dark:text-amber-400"}>{f.aviso}</div>}
                   <Resultado r={resultados.get(f.clave)} />
                 </td>
                 <td className="p-2 text-right">
                   {puede && (
-                    <Button size="sm" variant={esGrande(f.pct) ? "destructive" : "outline"} onClick={() => onAplicar([f])}>
+                    <Button size="sm" variant={f.aparte ? "destructive" : "outline"} onClick={() => onAplicar([f])}>
                       Aplicar
                     </Button>
                   )}

@@ -30,9 +30,13 @@ siguen sin tocarse.
 - **RN-2** — Una publicación con variaciones lleva el **mismo precio en todas**: es una regla de
   ML. Si sus variaciones están mapeadas a combinaciones con precios distintos, no se escribe y se
   informa "precios distintos en una publicación con variaciones".
-- **RN-3** — No se escribe si la publicación está cerrada o en revisión, si tiene una
-  **automatización de precios** activa (un cambio manual la apaga), o si tiene una **promoción
-  activa** (hasta verificar qué hace ML con ella; ver el SDD técnico).
+- **RN-3** — No se escribe si la publicación está cerrada o en revisión, o si tiene una
+  **automatización de precios** activa (ML rechaza el cambio).
+- **RN-6** — Una publicación en **campaña** sí se escribe (2026-10-24, TASK-016): el precio cambia,
+  pero el cliente sigue pagando el de la oferta hasta que la campaña termina o se saca la
+  publicación, y la pantalla lo avisa con la fecha. Si el precio nuevo queda **por debajo** del de la
+  oferta, ML elimina la promoción y el ERP no la puede volver a poner: pide la confirmación aparte,
+  como un cambio de más de 30 %.
 - **RN-4** — Sólo el campo de precio. Ningún otro campo de la publicación viaja en la escritura.
 - **RN-5** — De a una publicación, con pausa entre cada una, y se corta todo ante un error de
   autorización.
@@ -61,10 +65,9 @@ siguen sin tocarse.
 - Stock, Flex o tiempo de disponibilidad: es la feature 002.
 
 ## Preguntas abiertas
-Ninguna. Lo técnico se verificó el 2026-10-24 (TASK-012): el cambio de marzo de 2026 sólo bloquea
-las publicaciones con automatización de precios, y la primera escritura real salió bien. Queda una
-prueba pendiente, la de una publicación en campaña (TASK-016): hasta hacerla, RN-3 no las toca, y
-hoy son 83 de las 100 mapeadas.
+Ninguna. Lo técnico se verificó el 2026-10-24 (TASK-012 y TASK-016): el cambio de marzo de 2026
+sólo bloquea las publicaciones con automatización de precios, y las campañas se resolvieron con
+RN-6.
 
 ## Referencias
 - `inventario_sendero3d/src/lib/mercadolibre.ts:210` (`mlFetch`).

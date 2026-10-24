@@ -167,6 +167,8 @@ alter table public.cambios_precio enable row level security;
     ninguna mapeada tiene.
   - ML recalcula solo el envío gratis obligatorio según el precio y renueva el vencimiento con
     cualquier `PUT`: se informa aparte y no cuenta como "otro campo tocado".
+  - En campaña, el cliente sigue pagando la oferta hasta que termina (spec 005, RN-6). El fin se lee
+    de la promoción ganadora en `/prices` (`conditions.end_time`) y queda en `precio_lectura`.
 - **Shop:** el endpoint de la spec 006. Variables nuevas en el ERP: `SHOP_API_URL` (base del Shop).
   La firma usa `SHOP_WEBHOOK_SECRET`, el mismo secreto del contrato 1.
 - **Bodega:** nada en vivo; todo pasa por las tablas `bodega.*`.

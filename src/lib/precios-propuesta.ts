@@ -11,6 +11,7 @@ import {
   esErrorDeAutorizacion,
   escribirPrecioMl,
   motivoMl,
+  avisoMl,
   pausaEntreEscrituras,
   type LecturaMl,
 } from "@/lib/precios-ml";
@@ -43,6 +44,10 @@ export interface FilaDeCanal {
   pct: number | null;
   /** Por qué no se puede aplicar; null = se puede. */
   motivo: string | null;
+  /** Algo para saber antes de aplicar (una campaña), que no lo impide. */
+  aviso: string | null;
+  /** Por qué pide la confirmación aparte: cambia más de 30 % o ML sacaría la promoción. */
+  aparte: string | null;
   etiquetas: string[];
 }
 
@@ -120,9 +125,11 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
       const etiquetas: string[] = [];
       if (lectura?.estado === "paused") etiquetas.push("pausada");
       if (lectura?.catalogo) etiquetas.push("catálogo");
-      if (lectura?.promo) etiquetas.push("en promoción");
+      if (lectura?.promo) etiquetas.push("en campaña");
       if (m.unidades > 1) etiquetas.push(`pack de ${m.unidades}`);
 
+      const dif = diferencia(m.precioPublicado, propuesto);
+      const campana = canal === "mercadolibre" ? avisoMl(lectura, propuesto) : null;
       return {
         canal,
         clave: m.clave,
@@ -136,8 +143,10 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
         paga: lectura?.paga ?? null,
         leidoEn: m.precioLeidoEn?.toISOString() ?? null,
         propuesto,
-        ...diferencia(m.precioPublicado, propuesto),
+        ...dif,
         motivo,
+        aviso: campana?.aviso ?? null,
+        aparte: campana?.sacaPromo ? "ML saca la promoción" : esGrande(dif.pct) ? `cambia más de ${CAMBIO_GRANDE_PCT} %` : null,
         etiquetas,
       };
     });
@@ -225,7 +234,7 @@ export async function aplicarPrecios(
 }
 
 function revisar(
-  f: { propuesto: number | null; pct: number | null; motivo: string | null } | undefined,
+  f: { propuesto: number | null; pct: number | null; motivo: string | null; aparte?: string | null } | undefined,
   precio: number,
   confirmadoGrandes: boolean
 ): string | null {
@@ -233,7 +242,8 @@ function revisar(
   if (f.motivo) return f.motivo;
   if (f.propuesto == null) return "sin precio propuesto";
   if (Math.abs(f.propuesto - precio) >= 1) return `la propuesta cambió a $${Math.round(f.propuesto)}: recargá la pantalla`;
-  if (esGrande(f.pct) && !confirmadoGrandes) return `cambia más de ${CAMBIO_GRANDE_PCT} %: hay que confirmarlo aparte`;
+  const aparte = f.aparte !== undefined ? f.aparte : esGrande(f.pct) ? `cambia más de ${CAMBIO_GRANDE_PCT} %` : null;
+  if (aparte && !confirmadoGrandes) return `${aparte}: hay que confirmarlo aparte`;
   return null;
 }
 
