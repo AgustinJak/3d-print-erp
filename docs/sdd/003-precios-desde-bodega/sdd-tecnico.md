@@ -169,8 +169,10 @@ alter table public.cambios_precio enable row level security;
     cualquier `PUT`: se informa aparte y no cuenta como "otro campo tocado".
   - En campaña, el cliente sigue pagando la oferta hasta que termina (spec 005, RN-6). El fin se lee
     de la promoción ganadora en `/prices` (`conditions.end_time`) y queda en `precio_lectura`.
-- **Shop:** el endpoint de la spec 006. Variables nuevas en el ERP: `SHOP_API_URL` (base del Shop).
-  La firma usa `SHOP_WEBHOOK_SECRET`, el mismo secreto del contrato 1.
+- **Shop:** el endpoint de la spec 006, `POST /api/inventario/precios` (docs/sdd/018 del Shop).
+  `SHOP_API_URL` (base del Shop) es opcional: por defecto `https://sendero3d.com`. La firma usa
+  `SHOP_WEBHOOK_SECRET`, el mismo secreto del contrato 1, que el ERP ya tiene en Vercel. Se lee
+  simulando con los propuestos y se aplica cada producto entero (`src/lib/precios-shop.ts`).
 - **Bodega:** nada en vivo; todo pasa por las tablas `bodega.*`.
 
 ## 7. Seguridad
@@ -205,10 +207,10 @@ alter table public.cambios_precio enable row level security;
 | Bodega de otra PC con versión vieja pisa las columnas nuevas | Las columnas nuevas son nullables y la versión vieja no las manda: PostgREST no las toca |
 
 ## 10. Documentación a actualizar
-- [ ] `01 - Inventario/INV - Flujos.md`: la pantalla Precios, los endpoints y el flujo 3.1.
-- [ ] `03 - Bodega/BOD - Flujos.md`: IPC nuevos, Materiales, la calculadora y la sincronización.
-- [ ] `Flujos del ecosistema.md`: contrato nuevo ERP → Shop (precios), ERP → ML (escritura de
+- [x] `01 - Inventario/INV - Flujos.md`: la pantalla Precios, los endpoints y el flujo 3.1.
+- [x] `03 - Bodega/BOD - Flujos.md`: IPC nuevos, Materiales, la calculadora y la sincronización.
+- [x] `Flujos del ecosistema.md`: contrato nuevo ERP → Shop (precios), ERP → ML (escritura de
   precio) y lo que suma el contrato 3 (Bodega → ERP).
-- [ ] `INV - Decisiones`: ML deja de ser sólo lectura para el precio.
-- [ ] `Bodega/Bodega3D-App/docs/sdd/README.md`: el pendiente de materiales se mueve acá.
-- [ ] Avisar a la sesión del Shop que la spec 006 es suya.
+- [x] `INV - Decisiones`: ML deja de ser sólo lectura para el precio.
+- [x] `Bodega/Bodega3D-App/docs/sdd/README.md`: el pendiente de materiales se mueve acá.
+- [x] Avisar a la sesión del Shop que la spec 006 es suya: lo hizo Agustín y el Shop la implementó (su docs/sdd/018).

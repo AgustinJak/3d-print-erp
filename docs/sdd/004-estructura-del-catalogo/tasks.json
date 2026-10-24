@@ -430,7 +430,7 @@
       "title": "Actualizar el cerebro",
       "description": "INV - Flujos (rutas y endpoints nuevos, pestañas que se van), BOD - Flujos (sin el mapeador), Flujos del ecosistema (alta desde Bodega), Mapeo de productos, INV - Modelos y los changelogs. Validar los mermaid.",
       "component": "docs",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-012",
@@ -439,9 +439,9 @@
       "specs": [],
       "acceptanceCriteria": [],
       "files": [],
-      "blockedReason": "Agustín pidió no tocar el cerebro por ahora (2026-10-24).",
-      "completedAt": null,
-      "notes": null
+      "blockedReason": null,
+      "completedAt": "2026-10-24",
+      "notes": "2026-10-24, con el ok de Agustín (junto con la TASK-015 del SDD 003): INV - Flujos (navegación, 4.1 con los grupos, sección 10 Precios, anexo de endpoints regenerado del código: 82), BOD - Flujos, Flujos del ecosistema (contratos 6 y 7, alta desde Bodega), Mapeo de productos, INV - Modelos (reescrita), INV - Integración Mercado Libre, BOD - Stock en el ERP, Inicio, INV - Decisiones, INV - Changelog, INV - Backlog, BOD - Changelog (2.35.0) y el README de SDD de Bodega. 32 bloques mermaid validados con mermaid 11.4.1 + jsdom. Hallazgo: el reemplazo de un insumo en todas las recetas tiene endpoint pero ningún botón (anotado en INV - Backlog)."
     }
   ]
 }

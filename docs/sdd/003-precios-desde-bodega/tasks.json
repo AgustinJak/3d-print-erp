@@ -276,7 +276,7 @@
       "title": "Pasarle la spec 006 a la sesión del Shop",
       "description": "El Shop implementa el endpoint de precios firmado. Acá se entrega y se prueba con simular contra producción.",
       "component": "docs",
-      "status": "in-progress",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [],
       "specs": [
@@ -289,8 +289,8 @@
         "docs/sdd/003-precios-desde-bodega/para-el-shop.md"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": "2026-10-24: texto listo para pegar en para-el-shop.md (propone POST /api/inventario/precios, la firma con headers x-inventario-*, la respuesta por producto). Agustín se lo pasa a mano a la sesión del Shop. Se cierra cuando el Shop lo tenga y el ERP lo pruebe con simular."
+      "completedAt": "2026-10-24",
+      "notes": "2026-10-24: texto listo para pegar en para-el-shop.md (propone POST /api/inventario/precios, la firma con headers x-inventario-*, la respuesta por producto). Agustín se lo pasa a mano a la sesión del Shop. Se cierra cuando el Shop lo tenga y el ERP lo pruebe con simular. Hecho por la sesión del Shop (su docs/sdd/018, commit 40f7ffb): POST /api/inventario/precios. Agregó al contrato: base = la combinación más barata, ignoradas, cambio_concurrente, simular booleano estricto y topes (200 productos, 500 combinaciones, 1 MB)."
     },
     {
       "id": "TASK-012",
@@ -348,7 +348,7 @@
       "title": "Web: leer y aplicar precios por el endpoint del Shop",
       "description": "src/lib/precios-shop.ts firma y llama al endpoint de la spec 006: simular para leer, sin simular para aplicar. Agrupa las claves del Shop por producto y manda todas sus combinaciones.",
       "component": "integration",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-010",
@@ -363,12 +363,14 @@
       ],
       "files": [
         "src/lib/precios-shop.ts",
+        "src/lib/precios-propuesta.ts",
         "src/app/api/precios/leer/route.ts",
-        "src/app/api/precios/aplicar/route.ts"
+        "src/app/(app)/precios/page.tsx",
+        "scripts/sdd-003-probar-pantalla.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": "Necesita la siembra del mapeo del Shop (SDD 001, TASK-013), que espera las respuestas de TASK-022 de la 001."
+      "completedAt": "2026-10-24",
+      "notes": "2026-10-24. Leer: simula cada producto con los propuestos (1 donde no hay propuesta) y guarda el actual. Aplicar: el producto entero, todas sus combinaciones; una sin precio frena a las demás, una ignorada por el Shop no. Probado contra la base de producción con el Shop en local y un secreto de prueba en los dos lados: firma mala 401, 51 productos en 2 s, la Tanjiro (Negra) 23.000/33.000/33.000/53.000. 39 de 39 en sdd-003-probar-pantalla.ts. La primera escritura real queda para un producto que elija Agustín. 10 claves (Tengen y Kitetsu) apuntan a opciones que ya no existen."
     },
     {
       "id": "TASK-014",
@@ -398,7 +400,7 @@
       "title": "Actualizar el cerebro",
       "description": "INV - Flujos, BOD - Flujos, Flujos del ecosistema (contratos nuevos ERP → Shop y ERP → ML, y lo que suma el contrato 3), INV - Decisiones y el README de SDD de Bodega. Validar los mermaid.",
       "component": "docs",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-014"
@@ -407,8 +409,8 @@
       "acceptanceCriteria": [],
       "files": [],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-24",
+      "notes": "2026-10-24, con el ok de Agustín: INV - Flujos (navegación, 4.1 con los grupos, sección 10 Precios, anexo de endpoints regenerado del código: 82), BOD - Flujos, Flujos del ecosistema (contratos 6 y 7, alta desde Bodega), Mapeo de productos, INV - Modelos (reescrita), INV - Integración Mercado Libre, BOD - Stock en el ERP, Inicio, INV - Decisiones, INV - Changelog, INV - Backlog, BOD - Changelog (2.35.0) y el README de SDD de Bodega. 32 bloques mermaid validados con mermaid 11.4.1 + jsdom. Queda anotar el lado del Shop del contrato 7 cuando esté."
     }
   ]
 }

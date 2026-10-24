@@ -125,3 +125,11 @@ sus datos.
 **Para el que sigue**
 - TASK-014 (borrar lo que quedó sin uso) y TASK-016 (limpieza) después de que Agustín use la
   página unos días. TASK-017 (cerebro) cuando lo habilite.
+
+## 2026-10-24 · Claude (sesión del inventario) — el cerebro
+
+**Tareas:** TASK-017 (blocked → completed).
+
+- Con el ok de Agustín, junto con la TASK-015 del SDD 003. Ver la bitácora del 003 para la lista de notas.
+- Hallazgo: el reemplazo de un insumo en todas las recetas tiene endpoint pero ningún botón en la página del insumo. Quedó en INV - Backlog.
+- `components/combinaciones-modelo.tsx` ya no lo importa nadie. Va con la TASK-014, junto con `/api/modelos/[id]/accesorios`, `/api/costos/bodega` y `/api/integraciones/skus-audit`.

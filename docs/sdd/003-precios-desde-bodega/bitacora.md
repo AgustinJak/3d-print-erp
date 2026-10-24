@@ -212,3 +212,41 @@ completada: la absorbió la TASK-007 del SDD 004.
 - Si el precio nuevo queda por debajo de la oferta, ML saca la promoción: el ERP pide la confirmación aparte.
 - Con los datos de hoy se pueden aplicar 44 publicaciones (antes 4). 30 piden la confirmación aparte, 13 porque sacarían la promoción.
 - TASK-016 completada. `sdd-003-probar-pantalla.ts` da 34 de 34.
+
+## 2026-10-24 · Claude (sesión del inventario) — el cerebro
+
+**Tareas:** TASK-015 (pending → completed).
+
+- Con el ok de Agustín se actualizaron las notas de flujos: INV - Flujos (con la sección 10, Precios), BOD - Flujos y Flujos del ecosistema (contratos 6 y 7).
+- También Mapeo de productos, INV - Modelos, INV - Integración Mercado Libre, BOD - Stock en el ERP, Inicio, INV - Decisiones, los changelogs y el backlog.
+- Los 32 bloques mermaid parsean (validados con mermaid 11.4.1 y jsdom).
+- El anexo de endpoints de INV - Flujos se regeneró del código: 82 endpoints.
+- Queda el lado del Shop del contrato 7, cuando su sesión haga el endpoint.
+
+## 2026-10-24 · Claude (sesión del inventario) — la web, conectada al Shop
+
+**Tareas:** TASK-011 (in-progress → completed, la hizo la sesión del Shop: su docs/sdd/018) y TASK-013 (pending → completed).
+
+**Qué se hizo**
+
+- **`src/lib/precios-shop.ts`**: firma y llama a `POST /api/inventario/precios` del Shop. `SHOP_API_URL` es opcional (por defecto `https://sendero3d.com`). El secreto es `SHOP_WEBHOOK_SECRET`, el que el ERP ya tiene en Vercel.
+- **Leer la web**: simula cada producto con los precios propuestos. Donde no hay propuesta manda 1, sólo para que el Shop devuelva el actual.
+- **Aplicar en la web**: el producto entero. Una combinación sin precio frena a las demás; una ignorada por el Shop, no. La pantalla completa la selección con el resto del producto y la muestra en la confirmación.
+- La pantalla suma "Leer precios de la web" con su "hace cuánto".
+
+**Pruebas**
+
+- 39 de 39 en `sdd-003-probar-pantalla.ts`.
+- Contra la base de producción, sólo con `simular`: el Shop en local con un secreto de prueba en los dos lados (nunca el real).
+- Firma mala: 401. Los 51 productos se leyeron en 2 s.
+- La Tanjiro (Negra) da 23.000, 33.000, 33.000 y 53.000, igual que lo que reportó el Shop.
+- Hoy se pueden aplicar 15 productos; 14 tienen diferencia.
+
+**Problemas y cómo se resolvieron**
+
+- *La sección 7 de Flujos del ecosistema la había escrito la sesión del Shop* (su diagrama, lo que define el Shop, `precios_cambios`). Al conectarlo la pisé sin querer. Se restauró su texto tal cual desde el respaldo y se agregó abajo el lado del ERP.
+
+**Para el que sigue**
+
+- La primera escritura real en la web va con un producto que elija Agustín.
+- 10 claves (2 de la Tengen y 8 de la Kitetsu) apuntan a opciones que ya no existen en el Shop: la Kitetsu pasó de tres grupos a dos. Hay que remapearlas (está en INV - Backlog).
