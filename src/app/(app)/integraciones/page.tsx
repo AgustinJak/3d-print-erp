@@ -63,7 +63,6 @@ interface SkusAudit {
     conSku: number;
     sinSku: number;
     consolidados: number;
-    huerfanos: number;
   };
   modelosSinSku: Array<{
     id: string;
@@ -71,12 +70,6 @@ interface SkusAudit {
     serie: string | null;
     imagenUrl: string | null;
     categorias: Array<{ categoria: { nombre: string; color: string | null } }>;
-  }>;
-  orphans: Array<{
-    sku: string | null;
-    nombre_producto: string;
-    count: number;
-    ultimo_pedido: { externoId: string | null; fecha: string };
   }>;
 }
 
@@ -600,10 +593,10 @@ function IntegracionesContent() {
           })()}
         </TabBtn>
         <TabBtn active={tab === "skus"} onClick={() => setTab("skus")}>
-          <Tags className="h-4 w-4 mr-1.5" /> Mapeo SKUs
-          {skusAudit && (skusAudit.stats.sinSku > 0 || skusAudit.stats.huerfanos > 0) && (
+          <Tags className="h-4 w-4 mr-1.5" /> SKUs
+          {skusAudit && skusAudit.stats.sinSku > 0 && (
             <Badge className="ml-1.5 h-5 px-1.5 bg-amber-500/20 text-amber-500 border-amber-500/30 hover:bg-amber-500/20">
-              {skusAudit.stats.sinSku + skusAudit.stats.huerfanos}
+              {skusAudit.stats.sinSku}
             </Badge>
           )}
         </TabBtn>
@@ -1144,11 +1137,11 @@ function IntegracionesContent() {
         </div>
       )}
 
-      {/* Tab: Mapeo SKUs */}
+      {/* Tab: SKUs */}
       {tab === "skus" && skusAudit && (
         <div className="space-y-4">
           {/* Stats cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <StatCard
               icon={Tags}
               label="Con SKU"
@@ -1169,12 +1162,6 @@ function IntegracionesContent() {
               value={skusAudit.stats.consolidados}
               color="muted"
             />
-            <StatCard
-              icon={FileWarning}
-              label="SKUs huérfanos"
-              value={skusAudit.stats.huerfanos}
-              color={skusAudit.stats.huerfanos > 0 ? "red" : "muted"}
-            />
           </div>
 
           {/* Modelos sin SKU */}
@@ -1188,8 +1175,9 @@ function IntegracionesContent() {
                 </span>
               </h2>
               <p className="text-xs text-muted-foreground mt-1">
-                Modelos activos del catálogo que todavía no tienen SKU asignado.
-                Cargá el SKU correspondiente del shop para que el webhook los matchee automáticamente.
+                Modelos activos del catálogo que todavía no tienen SKU asignado. No hace falta
+                para vender: las ventas se reconocen por la pestaña Mapeo. Sirve para
+                identificarlos, y con el mismo SKU en el Shop la primera venta se resuelve sola.
               </p>
             </div>
             {skusAudit.modelosSinSku.length === 0 ? (
@@ -1247,71 +1235,6 @@ function IntegracionesContent() {
             )}
           </Card>
 
-          {/* SKUs huérfanos */}
-          <Card className="overflow-hidden">
-            <div className="p-4 border-b">
-              <h2 className="font-semibold flex items-center gap-2">
-                <FileWarning className="h-4 w-4 text-red-500" />
-                SKUs huérfanos
-                <span className="text-xs text-muted-foreground font-normal">
-                  ({skusAudit.orphans.length})
-                </span>
-              </h2>
-              <p className="text-xs text-muted-foreground mt-1">
-                Productos que aparecieron en pedidos del shop pero NO existen en el inventario.
-                Probablemente sean modelos que falta crear, o que tienen otro SKU asignado por error.
-              </p>
-            </div>
-            {skusAudit.orphans.length === 0 ? (
-              <div className="p-6 text-center text-sm text-muted-foreground">
-                <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-emerald-500" />
-                Todos los productos del shop matchean con modelos del inventario.
-              </div>
-            ) : (
-              <div className="divide-y">
-                {skusAudit.orphans.map((o, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center gap-3 p-3 hover:bg-muted/30 transition-colors"
-                  >
-                    <div className="h-10 w-10 rounded bg-red-500/10 border border-red-500/20 shrink-0 flex items-center justify-center">
-                      <FileWarning className="h-4 w-4 text-red-500" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{o.nombre_producto}</p>
-                      <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
-                        {o.sku && (
-                          <code className="font-mono bg-muted px-1.5 py-0.5 rounded text-[10px]">
-                            {o.sku}
-                          </code>
-                        )}
-                        <span>{o.count} {o.count === 1 ? "vez" : "veces"}</span>
-                        {o.ultimo_pedido.externoId && (
-                          <span>· último: {o.ultimo_pedido.externoId}</span>
-                        )}
-                      </div>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        // Pre-cargar SKU + nombre en URL hash para autocompletar el form
-                        const params = new URLSearchParams();
-                        params.set("nuevo", "1");
-                        params.set("nombre", o.nombre_producto);
-                        if (o.sku) params.set("sku", o.sku);
-                        router.push(`/modelos?${params.toString()}`);
-                      }}
-                      title="Crear modelo nuevo con este SKU"
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-1.5" />
-                      Crear modelo
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
         </div>
       )}
 
