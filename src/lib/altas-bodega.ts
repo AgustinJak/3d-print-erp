@@ -26,6 +26,8 @@ import { fabricacionDePieza, leerParametros, leerRecetas } from "@/lib/costos-bo
  */
 
 const CLAVE = "bodegaSinTraer";
+/** Las que Agustín descartó a mano: no se traen y tampoco se muestran para revisar. */
+const DESCARTADAS = "bodegaDescartadas";
 
 /**
  * Bodega es de un solo negocio.
@@ -71,9 +73,9 @@ export interface ResultadoAltas {
   omitidos: Array<{ nombre: string; motivo: string }>;
 }
 
-async function leerSinTraer(tenantId: string): Promise<Set<string> | null> {
+async function leerLista(tenantId: string, clave: string): Promise<Set<string> | null> {
   const filas = await prisma.$queryRaw<Array<{ ids: string[] | null }>>`
-    SELECT data->${CLAVE} AS ids FROM public.config_tenant WHERE tenant_id = ${tenantId}
+    SELECT data->${clave} AS ids FROM public.config_tenant WHERE tenant_id = ${tenantId}
   `.catch(() => [] as Array<{ ids: string[] | null }>);
   const v = filas[0]?.ids;
   // `null` (nunca se inicializó) no es lo mismo que lista vacía: la primera vez
@@ -82,15 +84,18 @@ async function leerSinTraer(tenantId: string): Promise<Set<string> | null> {
   return new Set(Array.isArray(v) ? v : []);
 }
 
-async function guardarSinTraer(tenantId: string, ids: string[]): Promise<void> {
+async function guardarLista(tenantId: string, clave: string, ids: string[]): Promise<void> {
   const json = JSON.stringify([...new Set(ids)]);
   await prisma.$executeRaw`
     INSERT INTO public.config_tenant (id, tenant_id, data)
-    VALUES (gen_random_uuid()::text, ${tenantId}, jsonb_build_object('bodegaSinTraer', ${json}::jsonb))
+    VALUES (gen_random_uuid()::text, ${tenantId}, jsonb_build_object(${clave}::text, ${json}::jsonb))
     ON CONFLICT (tenant_id) DO UPDATE
-      SET data = config_tenant.data || jsonb_build_object('bodegaSinTraer', ${json}::jsonb)
+      SET data = config_tenant.data || jsonb_build_object(${clave}::text, ${json}::jsonb)
   `;
 }
+
+const leerSinTraer = (tenantId: string) => leerLista(tenantId, CLAVE);
+const guardarSinTraer = (tenantId: string, ids: string[]) => guardarLista(tenantId, CLAVE, ids);
 
 /** Los modelos de Bodega que todavía no tienen fila de stock en el ERP. */
 export async function candidatosDeBodega(
@@ -98,7 +103,7 @@ export async function candidatosDeBodega(
 ): Promise<{ nuevos: CandidatoBodega[]; sinTraer: CandidatoBodega[]; inicializado: boolean }> {
   if (!esDeBodega(tenantId)) return { nuevos: [], sinTraer: [], inicializado: true };
 
-  const [bodega, recetas, parametros, filas, modelos, ignorados] = await Promise.all([
+  const [bodega, recetas, parametros, filas, modelos, ignorados, descartadas] = await Promise.all([
     // El orden importa cuando dos piezas de Bodega se llaman igual: como una de
     // las dos suele ser un fantasma —Bodega sube pero nunca borra—, va primero
     // la sincronizada más recientemente, que es la que está viva en el taller.
@@ -120,9 +125,11 @@ export async function candidatosDeBodega(
       },
     }),
     leerSinTraer(tenantId),
+    leerLista(tenantId, DESCARTADAS),
   ]);
 
   const mapeados = new Set(filas.map((f) => f.bodegaModelId).filter(Boolean) as string[]);
+  const fuera = descartadas ?? new Set<string>();
   const porNombre = new Map(modelos.map((m) => [m.nombre.trim().toLowerCase(), m]));
   // Los productos a los que una pieza "Producto · Opción" se puede sumar (spec 005, RN-2).
   const vigentes = new Map(
@@ -221,7 +228,7 @@ export async function candidatosDeBodega(
     return { ...base, ...nada, ...enProducto, accion: "opcion", producto: { nombre: prod.nombre, id: prod.id }, opcion: { nombre: ya.nombre, filaLibreId: fila?.id ?? null } };
   }
 
-  const pendientes = bodega.filter((b) => !mapeados.has(b.id)).map(armar);
+  const pendientes = bodega.filter((b) => !mapeados.has(b.id) && !fuera.has(b.id)).map(armar);
   if (ignorados == null) return { nuevos: [], sinTraer: pendientes, inicializado: false };
 
   return {
@@ -465,6 +472,21 @@ export async function marcarSinTraer(tenantId: string, ids: string[]): Promise<v
   const ignorados = (await leerSinTraer(tenantId)) ?? new Set<string>();
   for (const id of ids) ignorados.add(id);
   await guardarSinTraer(tenantId, [...ignorados]);
+}
+
+/**
+ * Lo que Agustín descarta en la lista de revisión: no se trae nunca y deja de aparecer.
+ *
+ * "No traer" solo no alcanza: es también la lista de lo que ya estaba cuando se encendió el alta
+ * automática, y la pantalla la muestra entera para revisarla. Hasta el 2026-10-25 descartar
+ * anotaba sólo ahí, y como las 17 piezas ya estaban, no desaparecía ninguna. Sirve también para
+ * las que se borraron en Bodega: Bodega sube pero nunca borra, así que siguen arriba.
+ */
+export async function descartarDeBodega(tenantId: string, ids: string[]): Promise<void> {
+  await marcarSinTraer(tenantId, ids);
+  const previas = (await leerLista(tenantId, DESCARTADAS)) ?? new Set<string>();
+  for (const id of ids) previas.add(id);
+  await guardarLista(tenantId, DESCARTADAS, [...previas]);
 }
 
 /**

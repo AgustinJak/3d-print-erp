@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 
-import { candidatosDeBodega, crearDesdeBodega, marcarSinTraer } from "@/lib/altas-bodega";
+import { candidatosDeBodega, crearDesdeBodega, descartarDeBodega } from "@/lib/altas-bodega";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (body?.accion === "ignorar") {
-      await marcarSinTraer(tenantId, ids);
+      await descartarDeBodega(tenantId, ids);
       return NextResponse.json({ ok: true, ignorados: ids.length });
     }
 

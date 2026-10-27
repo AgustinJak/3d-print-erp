@@ -49,7 +49,6 @@ export function PiezasNuevas({ onCambio }: { onCambio: () => void }) {
   }, [version]);
 
   if (!piezas || piezas.length === 0) return null;
-  const elegibles = piezas.filter((c) => c.accion !== "conflicto");
 
   async function hacer(accion: "crear" | "ignorar") {
     setOcupado(true);
@@ -91,15 +90,15 @@ export function PiezasNuevas({ onCambio }: { onCambio: () => void }) {
           <ul className="divide-y border-t">
             {piezas.map((c) => {
               const d = destino(c);
+              // Una trabada no se puede traer (lo frena el servidor), pero sí descartar.
               const trabada = c.accion === "conflicto";
               return (
                 <li key={c.bodegaModelId} className="px-3 py-2">
-                  <label className={`flex items-start gap-3 ${trabada ? "opacity-70" : "cursor-pointer"}`}>
+                  <label className={`flex items-start gap-3 cursor-pointer ${trabada ? "opacity-70" : ""}`}>
                     <input
                       type="checkbox"
                       className="h-4 w-4 mt-0.5 accent-sky-500 shrink-0"
                       checked={elegidas.has(c.bodegaModelId)}
-                      disabled={trabada}
                       onChange={() =>
                         setElegidas((prev) => {
                           const s = new Set(prev);
@@ -138,9 +137,9 @@ export function PiezasNuevas({ onCambio }: { onCambio: () => void }) {
             <button
               type="button"
               className="text-xs text-muted-foreground underline underline-offset-2"
-              onClick={() => setElegidas(elegidas.size === elegibles.length ? new Set() : new Set(elegibles.map((c) => c.bodegaModelId)))}
+              onClick={() => setElegidas(elegidas.size === piezas.length ? new Set() : new Set(piezas.map((c) => c.bodegaModelId)))}
             >
-              {elegidas.size === elegibles.length ? "no elegir ninguna" : "elegir todas"}
+              {elegidas.size === piezas.length ? "no elegir ninguna" : "elegir todas"}
             </button>
           </div>
         </>

@@ -133,3 +133,21 @@ sus datos.
 - Con el ok de Agustín, junto con la TASK-015 del SDD 003. Ver la bitácora del 003 para la lista de notas.
 - Hallazgo: el reemplazo de un insumo en todas las recetas tiene endpoint pero ningún botón en la página del insumo. Quedó en INV - Backlog.
 - `components/combinaciones-modelo.tsx` ya no lo importa nadie. Va con la TASK-014, junto con `/api/modelos/[id]/accesorios`, `/api/costos/bodega` y `/api/integraciones/skus-audit`.
+
+## 2026-10-25 · Claude (sesión del inventario) — descartar no descartaba
+
+**Tareas:** TASK-016 (sigue pending: la limpieza la decide Agustín).
+
+- Síntoma: Agustín vio las 17 piezas de Bodega sin fila y dijo que casi ninguna se trae y que
+  algunas ni existen en Bodega.
+- Causa 1: "Descartar" anotaba en `bodegaSinTraer`, que es también la lista de lo que ya estaba al
+  encender el alta automática, y la tarjeta muestra esa lista entera. Las 17 ya estaban ahí, así
+  que descartar no sacaba ninguna. Arreglo (local, sin commitear): lista aparte
+  `bodegaDescartadas` en `config_tenant.data`. Descartar anota en las dos y `candidatosDeBodega`
+  saca las descartadas de todo. Las trabadas (conflicto) ahora se pueden elegir para descartar;
+  traerlas lo sigue frenando el servidor. "Elegir todas" incluye las trabadas.
+- Causa 2: Bodega sube pero nunca borra (`src/main/sync.ts` sólo hace upsert en
+  `bodega_models`). De las 17, 6 ya no están en la base local de Bodega (revisado sobre una copia):
+  Asesino de Caballeros 42cm, Collar K4os, katana enma, llavero K4OS, Porta balsamo k4os y
+  yamato 95. Con el arreglo se descartan como las demás. Que Bodega avise lo que borra queda como
+  propuesta: la cola tiene FK a `bodega_models`, así que no alcanza con borrar la fila.
