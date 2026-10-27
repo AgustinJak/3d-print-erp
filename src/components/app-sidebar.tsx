@@ -19,6 +19,7 @@ import {
   Home,
   Store,
   BadgeDollarSign,
+  Megaphone,
 } from "lucide-react";
 import {
   Sidebar,
@@ -56,6 +57,7 @@ const navNegocio = [
   { title: "Clientes", href: "/clientes", icon: Users },
   { title: "Tendencias", href: "/tendencias", icon: Radar },
   { title: "Finanzas", href: "/finanzas", icon: DollarSign },
+  { title: "Publicidad", href: "/publicidad", icon: Megaphone },
   { title: "Gastos", href: "/gastos", icon: Receipt },
   { title: "Historial", href: "/historial", icon: History },
   { title: "Shay Juguetes", href: "/shay", icon: Store },
@@ -126,7 +128,7 @@ export function AppSidebar() {
       <SidebarContent>
         {renderGroup("Principal", navPrincipal)}
         {renderGroup("Catálogo", isDemo ? navCatalogo.filter((i) => i.href !== "/precios") : navCatalogo)}
-        {renderGroup("Negocio", navNegocio)}
+        {renderGroup("Negocio", isDemo ? navNegocio.filter((i) => i.href !== "/publicidad") : navNegocio)}
         {!isDemo && renderGroup("Sistema", navSistema)}
         {!isDemo && renderGroup("Personal", navPersonal)}
       </SidebarContent>

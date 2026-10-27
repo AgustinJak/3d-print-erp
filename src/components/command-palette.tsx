@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Command } from "cmdk";
 import {
   LayoutDashboard, Tag, Box, ShoppingCart, Factory, Users, Palette,
-  DollarSign, Receipt, History, Radar, Search, Plug, BadgeDollarSign,
+  DollarSign, Receipt, History, Radar, Search, Plug, BadgeDollarSign, Megaphone,
 } from "lucide-react";
 import { useIsDemoTenant } from "@/components/current-user-provider";
 
@@ -28,6 +28,7 @@ const pages: PageEntry[] = [
   { name: "Clientes", href: "/clientes", icon: Users, keywords: "clientes contactos personas" },
   { name: "Tendencias", href: "/tendencias", icon: Radar, keywords: "tendencias eventos radar viral" },
   { name: "Finanzas", href: "/finanzas", icon: DollarSign, keywords: "finanzas dinero ingresos ganancia" },
+  { name: "Publicidad", href: "/publicidad", icon: Megaphone, keywords: "publicidad product ads campañas mercado libre roas anuncios", hideOnDemo: true },
   { name: "Gastos", href: "/gastos", icon: Receipt, keywords: "gastos costos compras" },
   { name: "Historial", href: "/historial", icon: History, keywords: "historial completados archivo" },
   { name: "Integraciones", href: "/integraciones", icon: Plug, keywords: "integraciones webhook shop sendero api logs", hideOnDemo: true },

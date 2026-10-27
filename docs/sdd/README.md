@@ -60,5 +60,6 @@ propia (`NNN-cambios-en-el-shop.md`) y lo implementa la sesión de ese sistema.
 | 002 | disponibilidad-en-canales | planned (después de la 001) | — |
 | 003 | [precios-desde-bodega](003-precios-desde-bodega/sdd-funcional.md) | in-progress (Bodega publicada en la 2.34.0; el ERP sigue después) | `master` |
 | 004 | [estructura-del-catalogo](004-estructura-del-catalogo/sdd-funcional.md) | validated (2026-10-24) | `master` |
+| 005 | [publicidad-ml](005-publicidad-ml/sdd-funcional.md) | in-progress (validado el 2026-10-26) | `master` |
 
 `planned` = pedida y descrita en el SDD funcional de la 001 (sección 8), todavía sin carpeta.

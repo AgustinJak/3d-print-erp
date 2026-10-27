@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "publicidad-ml": {
+      "command": "node",
+      "args": ["--import", "tsx", "--env-file=.env", "scripts/mcp-publicidad.ts"]
+    }
+  }
+}

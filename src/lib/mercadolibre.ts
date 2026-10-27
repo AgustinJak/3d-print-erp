@@ -198,19 +198,45 @@ export async function getValidAccessToken(tenantId: string): Promise<string> {
   }
 
   // Token expirado o por expirar → refrescar
-  const nuevo = await refreshTokens(cuenta.refreshToken);
-  await saveTokens(tenantId, nuevo);
-  return nuevo.access_token;
+  return refrescar(tenantId, cuenta);
+}
+
+/**
+ * Refresca el token, sabiendo que no somos los únicos que lo usan.
+ *
+ * El ERP desplegado y los procesos locales (scripts, el MCP de publicidad de docs/sdd/005)
+ * comparten la misma cuenta. ML gasta el refresh token en cada uso: si dos procesos refrescan a
+ * la vez, el segundo falla con `invalid_grant`. Para ese momento el primero ya guardó un token
+ * nuevo, así que se relee la cuenta y, si cambió, se usa ese.
+ */
+async function refrescar(
+  tenantId: string,
+  cuenta: { accessToken: string; refreshToken: string }
+): Promise<string> {
+  try {
+    const nuevo = await refreshTokens(cuenta.refreshToken);
+    await saveTokens(tenantId, nuevo);
+    return nuevo.access_token;
+  } catch (e) {
+    const actual = await prisma.cuentaMercadolibre.findUnique({ where: { tenantId } });
+    if (actual && actual.refreshToken !== cuenta.refreshToken) return actual.accessToken;
+    throw e;
+  }
 }
 
 /**
  * Fetch autenticado contra la API de ML. Reintenta una vez ante 401
  * forzando refresh del token.
+ *
+ * `antesDeLeer` toca el texto de la respuesta antes del `JSON.parse`. Existe por los ids que ML
+ * manda como números más grandes de lo que JavaScript representa sin redondear (el `family_id`
+ * de una publicación): hay que pasarlos a texto antes de que el parse los rompa.
  */
 export async function mlFetch<T = unknown>(
   tenantId: string,
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  antesDeLeer?: (texto: string) => string
 ): Promise<T> {
   const doFetch = async (token: string) => {
     return fetch(`${ML_API}${path}`, {
@@ -230,14 +256,18 @@ export async function mlFetch<T = unknown>(
     // Forzar refresh aunque la DB creyera que el token era válido
     const cuenta = await prisma.cuentaMercadolibre.findUnique({ where: { tenantId } });
     if (cuenta) {
-      const nuevo = await refreshTokens(cuenta.refreshToken);
-      await saveTokens(tenantId, nuevo);
-      token = nuevo.access_token;
+      token = await refrescar(tenantId, cuenta);
       res = await doFetch(token);
     }
   }
 
-  const json = await res.json().catch(() => null);
+  const texto = await res.text().catch(() => "");
+  let json: unknown = null;
+  try {
+    json = texto ? JSON.parse(antesDeLeer ? antesDeLeer(texto) : texto) : null;
+  } catch {
+    json = null;
+  }
   if (!res.ok) {
     throw new Error(
       `ML API ${res.status} en ${path}: ${json ? JSON.stringify(json).slice(0, 300) : "sin cuerpo"}`

@@ -711,3 +711,22 @@ model CambioPrecio {
   @@index([tenantId, canal, clave, creadoEn])
   @@map("cambios_precio")
 }
+
+/// Cada cambio en Product Ads de ML, desde la página o desde Claude (docs/sdd/005, spec 002, REQ-4).
+model CambioPublicidad {
+  id         String   @id @default(cuid())
+  tenantId   String   @default("sendero3d") @map("tenant_id")
+  tipo       String // "campana" | "anuncio"
+  objetivoId String   @map("objetivo_id")
+  nombre     String?
+  antes      Json?
+  despues    Json
+  estado     String // "aplicado" | "error"
+  respuesta  Json?
+  origen     String // "pantalla" | "claude"
+  usuario    String?
+  creadoEn   DateTime @default(now()) @map("creado_en")
+
+  @@index([tenantId, tipo, objetivoId, creadoEn])
+  @@map("cambios_publicidad")
+}

@@ -1,0 +1,231 @@
+{
+  "$schema": "../_plantillas/tasks.schema.json",
+  "featureId": "005-publicidad-ml",
+  "epic": "ninguna",
+  "version": "1.0.0",
+  "status": "in-progress",
+  "branch": "master",
+  "baseBranch": "master",
+  "pullRequest": null,
+  "validation": {
+    "approved": true,
+    "approvedBy": "Agustín",
+    "approvedAt": "2026-10-26",
+    "notes": "Pidió arrancar en cuanto estuviera el SDD."
+  },
+  "updatedAt": "2026-10-26",
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Tabla cambios_publicidad",
+      "description": "SQL en prisma/sql/publicidad-ml.sql, modelo en schema.prisma, aplicado en la base.",
+      "component": "database",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [
+        "002-cambiar-la-publicidad"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "prisma/sql/publicidad-ml.sql",
+        "prisma/schema.prisma"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-26",
+      "notes": "Aplicado en la base con apply_migration (aditivo)."
+    },
+    {
+      "id": "TASK-002",
+      "title": "Cliente de la API de Product Ads",
+      "description": "Anunciante, campañas, detalle con impression share, ad groups paginados, publicaciones (family_id) y las dos escrituras.",
+      "component": "integration",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [
+        "001-ver-la-publicidad",
+        "002-cambiar-la-publicidad"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/publicidad-ml-api.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-26",
+      "notes": null
+    },
+    {
+      "id": "TASK-003",
+      "title": "Reglas puras: margen, ROAS mínimo, validación de cambios",
+      "description": "Sin base ni red, con pruebas node --test.",
+      "component": "api",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [
+        "001-ver-la-publicidad",
+        "002-cambiar-la-publicidad"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/publicidad-reglas.ts",
+        "scripts/sdd-005-probar-publicidad.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-26",
+      "notes": "30 de 30 en scripts/sdd-005-probar-publicidad.ts (sin node --test: el ERP prueba con scripts, como los SDD 003 y 004)."
+    },
+    {
+      "id": "TASK-004",
+      "title": "Resumen y cambios con registro",
+      "description": "resumenPublicidad, prepararCambio, aplicarCambio, historial. Lo usan la página y el MCP.",
+      "component": "api",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-001",
+        "TASK-002",
+        "TASK-003"
+      ],
+      "specs": [
+        "001-ver-la-publicidad",
+        "002-cambiar-la-publicidad"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/publicidad-ml.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-26",
+      "notes": null
+    },
+    {
+      "id": "TASK-005",
+      "title": "Endpoints",
+      "description": "GET /api/publicidad, POST /api/publicidad/cambios, GET /api/publicidad/historial.",
+      "component": "api",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-004"
+      ],
+      "specs": [
+        "001-ver-la-publicidad",
+        "002-cambiar-la-publicidad"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/app/api/publicidad"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-26",
+      "notes": null
+    },
+    {
+      "id": "TASK-006",
+      "title": "Página Publicidad",
+      "description": "Tarjetas, campañas que se abren, anuncios, alertas, edición con vista previa, historial. Menú y paleta.",
+      "component": "ui",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-005"
+      ],
+      "specs": [
+        "001-ver-la-publicidad",
+        "002-cambiar-la-publicidad"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/app/(app)/publicidad/page.tsx",
+        "src/components/app-sidebar.tsx",
+        "src/components/command-palette.tsx",
+        "src/components/publicidad/confirmar-cambio.tsx",
+        "src/components/publicidad/grafico-diario.tsx"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-26",
+      "notes": "Verificada con una vista temporal sin sesión y fetch simulado (escritorio, celular 375 px, claro y oscuro); la vista se borró."
+    },
+    {
+      "id": "TASK-007",
+      "title": "Servidor MCP local",
+      "description": "scripts/mcp-publicidad.ts con lectura y escritura con vista previa; .mcp.json; skill publicidad-ml.",
+      "component": "integration",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-004"
+      ],
+      "specs": [
+        "003-claude-por-mcp"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "scripts/mcp-publicidad.ts",
+        ".mcp.json",
+        ".claude/skills/publicidad-ml/SKILL.md"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-26",
+      "notes": "Probado con un cliente MCP real: 6 herramientas, resumen real, vista previa y validación. Registrado también en D:/Gestion Sendero 3D/.mcp.json."
+    },
+    {
+      "id": "TASK-008",
+      "title": "Refresh del token compartido",
+      "description": "mlFetch relee la cuenta y reintenta si el refresh falla porque otro proceso ya lo renovó.",
+      "component": "integration",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [
+        "003-claude-por-mcp"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/mercadolibre.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-26",
+      "notes": null
+    },
+    {
+      "id": "TASK-009",
+      "title": "Cerebro",
+      "description": "INV - Flujos (página, endpoints, MCP) e INV - Backlog.",
+      "component": "docs",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-006",
+        "TASK-007"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": "2026-10-26",
+      "notes": "INV - Flujos (sección 11, mapa, índice), Flujos del ecosistema (contrato 6b) e INV - Backlog. 24 bloques mermaid parsean."
+    },
+    {
+      "id": "TASK-010",
+      "title": "Primera escritura real",
+      "description": "Un cambio que elija Agustín, verificado en ML y en el historial.",
+      "component": "test",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-006"
+      ],
+      "specs": [
+        "002-cambiar-la-publicidad"
+      ],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    }
+  ]
+}
