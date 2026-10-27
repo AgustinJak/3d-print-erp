@@ -65,3 +65,14 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
 - Commit y deploy sólo cuando Agustín lo pida.
 - TASK-010: la primera escritura real, con una campaña que elija él; mirar el historial y el panel
   de ML después. Si ML rechaza el PUT del ad group por el header, probar con `api-version: 2`.
+
+## 2026-10-27 · Claude (sesión del inventario) — en producción
+
+- Con el pedido de Agustín ("dale subilo"): commits `3f89e28` (descartar en Bodega, SDD 004),
+  `3ca90a9` (esta feature) y `7bfd1e6` (bitácora 003), a `master`. Vercel: READY en
+  producción.
+- La publicidad la va a manejar una sesión aparte, con su sección `06 - Publicidad` (prefijo
+  `PUB -`) en el cerebro. El prompt con el que arranca está en
+  `D:\Gestion Sendero 3D\Prompt - Sesión Publicidad ML.md`. Esa sesión no toca el código: lo que
+  necesite del MCP lo pide por su backlog y lo implementa esta sesión.
+- Sigue pendiente TASK-010, la primera escritura real.
