@@ -249,4 +249,5 @@ completada: la absorbió la TASK-007 del SDD 004.
 **Para el que sigue**
 
 - La primera escritura real en la web va con un producto que elija Agustín.
-- 10 claves (2 de la Tengen y 8 de la Kitetsu) apuntan a opciones que ya no existen en el Shop: la Kitetsu pasó de tres grupos a dos. Hay que remapearlas (está en INV - Backlog).
+- 10 claves (2 de la Tengen y 8 de la Kitetsu) apuntan a opciones que ya no existen en el Shop: la Kitetsu pasó de tres grupos a dos. No hay que remapear nada: son las claves viejas que la siembra del SDD 001 dejó por si entraba un pedido rezagado, y las 6 combinaciones de hoy ya tienen su clave. Se borraron el mismo día con el OK de Agustín: sin ventas ni historial, y ninguna tabla las referencia. Si entra un pedido rezagado con esas opciones, el webhook vuelve a crear la clave.
+- La Yamato de 95 no aparecía para aplicar en la web. Primero, sus combinaciones de 65 del Shop apuntaban a la Yamato Katana 65cm del ERP, que está desactivada, y como la web va por producto entero eso frenaba también la 95. Después Agustín le borró el grupo Tamaño en el Shop: las combinaciones pasaron a ser sólo Sin Funda y Con Funda, sin clave en el ERP ("faltan 2 de 2"). Se crearon las dos claves a mano. Las 4 viejas, con Tamaño, quedan ignoradas.
