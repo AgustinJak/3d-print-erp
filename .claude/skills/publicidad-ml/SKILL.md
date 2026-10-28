@@ -23,19 +23,28 @@ queda en el mismo historial, marcado como hecho por Claude.
 
 ## Cómo revisar
 
-1. `resumen_publicidad` con `30d` para la tendencia y `7d` para lo reciente.
-2. Por cada campaña de Sendero, en este orden:
+1. `que_conviene_hacer`: las recomendaciones de la página (30 días), con el valor exacto. Son el
+   punto de partida, no la respuesta: verificalas con lo que sigue.
+2. `resumen_publicidad` con `30d` para la tendencia y `7d` para lo reciente.
+3. Por cada campaña de Sendero, en este orden:
    - **Gasta sin vender** o **roas < roas_minimo**: pierde plata. Abrí `anuncios_de_campana` y
      buscá qué anuncios la arrastran. Opciones, de menor a mayor: pausar esos anuncios, subir el
      ROAS objetivo por encima del mínimo, bajar el presupuesto, pausar la campaña.
    - **Rinde (roas ≥ roas_minimo con margen) y perdido_por_presupuesto alto**: candidata a más
      presupuesto, de a pasos de 20 a 30 %.
    - Un ROAS objetivo por debajo del roas_minimo le permite a ML vender a pérdida: proponé subirlo.
-3. `publicaciones_sin_campana`: las que tienen buen margen (roas_minimo bajo) se pueden sumar a la
+4. `publicaciones_sin_campana`: las que tienen buen margen (roas_minimo bajo) se pueden sumar a la
    campaña de su rubro con `cambiar_anuncio` y `campana_id`.
-4. Con pocos datos (menos de ~10 clics o un par de días) no hay conclusión: decilo y esperá.
+5. Con pocos datos (menos de ~10 clics o un par de días) no hay conclusión: decilo y esperá.
 
 ## Cómo cambiar
+
+> [!warning] Hoy Mercado Libre no deja escribir (desde el 2026-10-28)
+> Devuelve 401 a todo cambio de publicidad hecho desde una aplicación; se pidió la habilitación
+> por ticket. Mientras tanto (`ESCRITURA_EN_ML = false` en `src/lib/publicidad-reglas.ts`), las
+> herramientas de cambio sólo dan la vista previa: usala para decirle a Agustín qué tocar en
+> Mercado Libre › Mi perfil › Publicidad (campaña, campo, valor de ahora → valor nuevo). Lo de
+> abajo vale cuando se habilite.
 
 - **Primero la vista previa**: `cambiar_campana` o `cambiar_anuncio` sin `aplicar`. Mostrale a
   Agustín una tabla corta (qué, antes → después, por qué, qué esperás que pase).

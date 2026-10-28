@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { AlertTriangle, ArrowRight, Info, Loader2 } from "lucide-react";
+import { AlertTriangle, ArrowRight, ExternalLink, Info, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DialogFooter } from "@/components/ui/dialog";
 import { json, pedir, pesos } from "@/components/producto/seccion";
-import { decimal } from "@/lib/publicidad-reglas";
+import { decimal, ESCRITURA_EN_ML, PANEL_DE_ML } from "@/lib/publicidad-reglas";
 import type { PedidoDeCambio, ResultadoCambio, VistaPrevia } from "@/lib/publicidad-ml";
 
 /**
@@ -15,6 +15,9 @@ import type { PedidoDeCambio, ResultadoCambio, VistaPrevia } from "@/lib/publici
  * Lo que se compara viene de ML en este momento, no de lo que tenía cargado la pantalla. Lo que
  * pide confirmación aparte (un presupuesto que cambia mucho, una campaña de Shay) no se puede
  * mandar sin tildarlo.
+ *
+ * Mientras ML no habilite la escritura (`ESCRITURA_EN_ML`), no hay botón para mandar: la misma
+ * vista previa dice qué tocar en el panel de ML.
  */
 
 function valor(campo: string, v: string | number | null): string {
@@ -111,28 +114,60 @@ export function ConfirmarCambio({
             </p>
           ))}
 
-          {aparte.length > 0 && (
-            <label className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm cursor-pointer">
-              <input type="checkbox" className="mt-0.5" checked={aparteOk} onChange={(e) => setAparteOk(e.target.checked)} />
-              <span>
-                <AlertTriangle className="inline h-3.5 w-3.5 mr-1 text-destructive" />
-                {aparte.map((a) => a.texto).join(" ")} Lo revisé y quiero aplicarlo igual.
-              </span>
-            </label>
-          )}
+          {aparte.length > 0 &&
+            (ESCRITURA_EN_ML ? (
+              <label className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm cursor-pointer">
+                <input type="checkbox" className="mt-0.5" checked={aparteOk} onChange={(e) => setAparteOk(e.target.checked)} />
+                <span>
+                  <AlertTriangle className="inline h-3.5 w-3.5 mr-1 text-destructive" />
+                  {aparte.map((a) => a.texto).join(" ")} Lo revisé y quiero aplicarlo igual.
+                </span>
+              </label>
+            ) : (
+              <p className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-destructive" /> {aparte.map((a) => a.texto).join(" ")}
+              </p>
+            ))}
 
-          <p className="text-xs text-muted-foreground">Se manda a Mercado Libre en el momento y queda en el historial.</p>
+          {ESCRITURA_EN_ML ? (
+            <p className="text-xs text-muted-foreground">Se manda a Mercado Libre en el momento y queda en el historial.</p>
+          ) : (
+            !vista.errores.length && (
+              <div className="rounded-lg bg-primary/5 border border-primary/20 px-3 py-2.5 text-sm space-y-1">
+                <p className="font-medium flex items-center gap-1.5">
+                  <ExternalLink className="h-3.5 w-3.5" /> Hacelo en {PANEL_DE_ML}
+                </p>
+                <p className="text-muted-foreground">
+                  Abrí {vista.tipo === "campana" ? "la campaña" : "la campaña donde está el anuncio"} «{vista.nombre}» y cambiá lo de arriba. Mercado Libre
+                  todavía no deja hacerlo desde el ERP: se pidió la habilitación.
+                </p>
+              </div>
+            )
+          )}
         </>
       )}
 
       <DialogFooter>
-        <Button variant="ghost" onClick={onVolver ?? onCerrar} disabled={aplicando}>
-          {onVolver ? "Volver" : "Cancelar"}
-        </Button>
-        <Button onClick={aplicar} disabled={!puede || aplicando}>
-          {aplicando && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
-          Aplicar en Mercado Libre
-        </Button>
+        {ESCRITURA_EN_ML ? (
+          <>
+            <Button variant="ghost" onClick={onVolver ?? onCerrar} disabled={aplicando}>
+              {onVolver ? "Volver" : "Cancelar"}
+            </Button>
+            <Button onClick={aplicar} disabled={!puede || aplicando}>
+              {aplicando && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+              Aplicar en Mercado Libre
+            </Button>
+          </>
+        ) : (
+          <>
+            {onVolver && (
+              <Button variant="ghost" onClick={onVolver}>
+                Volver
+              </Button>
+            )}
+            <Button onClick={onCerrar}>Entendido</Button>
+          </>
+        )}
       </DialogFooter>
     </div>
   );

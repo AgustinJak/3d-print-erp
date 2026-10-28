@@ -15,12 +15,15 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { aplicarCambio, historialPublicidad, resumenPublicidad, vistaPreviaDeCambio, type FilaAnuncio, type PedidoDeCambio, type ResumenPublicidad } from "@/lib/publicidad-ml";
-import { rangoDe, type Periodo } from "@/lib/publicidad-reglas";
+import { PERIODO_RECOMENDACIONES } from "@/lib/publicidad-recomendaciones";
+import { ESCRITURA_EN_ML, PANEL_DE_ML, rangoDe, type Periodo } from "@/lib/publicidad-reglas";
 
 // Bodega y la publicidad son de un solo negocio: como en `altas-bodega.ts`.
 const TENANT = "sendero3d";
 
 const INSTRUCCIONES = `Publicidad de Mercado Libre (Product Ads) de Sendero 3D, con el costo real de cada producto del ERP.
+
+Por dónde empezar: que_conviene_hacer da las recomendaciones de la página (últimos 30 días). Tomalas como punto de partida y verificalas con resumen_publicidad y anuncios_de_campana antes de proponer.
 
 Cómo leer los números:
 - roas = ventas atribuidas / gasto. roas_minimo = el ROAS de equilibrio: debajo, cada venta por publicidad pierde plata. Sale del precio, el costo de Bodega y los gastos de venta de ML (comisión, cuotas, IIBB, cargo fijo, envío).
@@ -29,6 +32,7 @@ Cómo leer los números:
 - Las campañas con es_shay=true son de otro negocio (Shay Juguetes) que comparte la cuenta: no tienen costo en el ERP. No las toques salvo que Agustín lo pida.
 
 Cómo cambiar:
+- HOY MERCADO LIBRE NO DEJA ESCRIBIR (401 desde el 2026-10-28; se pidió la habilitación). Usá cambiar_campana y cambiar_anuncio sólo como vista previa: te devuelven el antes y el después con los valores reales de ML, y con eso le decís a Agustín exactamente qué tocar en Mercado Libre › Mi perfil › Publicidad. Con aplicar=true contestan que no se puede.
 - cambiar_campana y cambiar_anuncio sin aplicar=true devuelven la vista previa y no tocan nada. Mostrásela a Agustín y aplicá sólo con su OK.
 - Cada cambio de campaña la vuelve a poner en aprendizaje unos días (fuente no oficial): proponé pocos cambios y mirá ultimo_cambio antes.
 - Un presupuesto que cambia más de 50 % o una campaña de Shay piden confirmado_aparte=true, también con su OK.
@@ -123,6 +127,30 @@ servidor.registerTool(
 );
 
 servidor.registerTool(
+  "que_conviene_hacer",
+  {
+    title: "Qué conviene hacer",
+    description:
+      "Las recomendaciones de la página Publicidad: acciones concretas con el valor exacto (pausar un anuncio, subir el ROAS objetivo, bajar o subir presupuesto, revisar un precio, sumar publicaciones), lo grave primero. Siempre con los últimos 30 días. Es el punto de partida; tu criterio va encima.",
+    inputSchema: {},
+    annotations: { readOnlyHint: true, openWorldHint: true },
+  },
+  async () => {
+    const r = await resumen(PERIODO_RECOMENDACIONES);
+    if (!r.disponible) return error(r.motivo);
+    return texto(
+      r.recomendaciones.map((x) => ({
+        grave: x.grave,
+        accion: x.titulo,
+        porque: x.porque,
+        cambio: x.pedido ? { tipo: x.pedido.tipo, id: x.pedido.id, ...x.pedido.cambios } : null,
+        ir: x.ir ? ("href" in x.ir ? `https://3d-print-erp.vercel.app${x.ir.href}` : "pestaña Sin campaña de /publicidad") : null,
+      }))
+    );
+  }
+);
+
+servidor.registerTool(
   "anuncios_de_campana",
   {
     title: "Anuncios de una campaña",
@@ -168,7 +196,12 @@ servidor.registerTool(
 async function cambiar(pedido: PedidoDeCambio, aplicar: boolean | undefined, confirmadoAparte: boolean | undefined) {
   if (!aplicar) {
     const v = await vistaPreviaDeCambio(TENANT, pedido);
-    return texto({ vista_previa: v, nota: "No se cambió nada. Para aplicarlo, la misma llamada con aplicar=true, con el OK de Agustín." });
+    return texto({
+      vista_previa: v,
+      nota: ESCRITURA_EN_ML
+        ? "No se cambió nada. Para aplicarlo, la misma llamada con aplicar=true, con el OK de Agustín."
+        : `No se cambió nada. Mercado Libre todavía no deja escribir: Agustín lo hace a mano en ${PANEL_DE_ML}, abriendo «${v.nombre}».`,
+    });
   }
   const r = await aplicarCambio(TENANT, pedido, { origen: "claude", usuario: "claude (MCP local)", confirmadoAparte: !!confirmadoAparte });
   guardado.clear();

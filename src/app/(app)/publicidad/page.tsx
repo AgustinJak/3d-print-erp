@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   AlertTriangle,
   ChevronDown,
   ExternalLink,
   History,
+  Lightbulb,
   Loader2,
   Megaphone,
   MoreHorizontal,
@@ -17,7 +19,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,8 +40,10 @@ import { ConfirmarCambio } from "@/components/publicidad/confirmar-cambio";
 import { GraficoDiario } from "@/components/publicidad/grafico-diario";
 import {
   decimal,
+  ESCRITURA_EN_ML,
   ESTRATEGIAS,
   esEstrategia,
+  PANEL_DE_ML,
   PERIODOS,
   ROAS_OBJETIVO_MAX,
   ROAS_OBJETIVO_MIN,
@@ -49,6 +53,7 @@ import {
   type Periodo,
 } from "@/lib/publicidad-reglas";
 import type { CambioRegistrado, FilaAnuncio, FilaCampana, PedidoDeCambio, ResumenPublicidad } from "@/lib/publicidad-ml";
+import type { Recomendacion } from "@/lib/publicidad-recomendaciones";
 
 /**
  * Publicidad (docs/sdd/005): qué deja cada campaña de Product Ads con el costo real de cada
@@ -149,6 +154,78 @@ function Punto({ estado }: { estado: string }) {
       className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${s === "active" ? "bg-emerald-500" : s === "paused" ? "bg-muted-foreground/40" : "bg-amber-500"}`}
       title={textoEstado(estado)}
     />
+  );
+}
+
+/* ───────────────────────── Qué conviene hacer (spec 004) ───────────────────────── */
+
+function QueConvieneHacer({
+  recs,
+  onCambiar,
+  onIrA,
+}: {
+  recs: Recomendacion[];
+  onCambiar: (p: PedidoDeCambio, titulo: string) => void;
+  onIrA: (pestana: "sin-campana") => void;
+}) {
+  const [todas, setTodas] = useState(false);
+  const visibles = todas ? recs : recs.slice(0, 5);
+  const accion = (r: Recomendacion) =>
+    r.pedido ? (
+      <Button variant="outline" size="sm" onClick={() => onCambiar(r.pedido!, r.titulo)}>
+        Cómo hacerlo
+      </Button>
+    ) : r.ir && "href" in r.ir ? (
+      <Link href={r.ir.href} className={buttonVariants({ variant: "outline", size: "sm" })}>
+        {r.ir.texto}
+      </Link>
+    ) : r.ir ? (
+      <Button variant="outline" size="sm" onClick={() => onIrA("sin-campana")}>
+        {r.ir.texto}
+      </Button>
+    ) : null;
+  return (
+    <Card>
+      <CardContent className="pt-4 pb-2 px-4">
+        <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+          <p className="text-sm font-medium flex items-center gap-1.5">
+            <Lightbulb className="h-4 w-4 text-primary" /> Qué conviene hacer
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Con los últimos 30 días · los cambios se hacen en {PANEL_DE_ML}
+          </p>
+        </div>
+        {recs.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-3">Nada urgente: las campañas de Sendero rinden por encima de su mínimo.</p>
+        ) : (
+          <div className="divide-y">
+            {visibles.map((r) => (
+              <div key={r.clave} className="flex items-start gap-3 py-3">
+                <span
+                  className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+                    r.grave ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  }`}
+                >
+                  {r.grave ? <AlertTriangle className="h-3.5 w-3.5" /> : <TrendingUp className="h-3.5 w-3.5" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium leading-snug">{r.titulo}</p>
+                  <p className="text-xs text-muted-foreground leading-snug mt-0.5">{r.porque}</p>
+                  {/* En el celular el botón va abajo: al costado le come medio renglón al texto. */}
+                  <div className="mt-2 sm:hidden">{accion(r)}</div>
+                </div>
+                <div className="hidden sm:block shrink-0">{accion(r)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        {recs.length > 5 && (
+          <button type="button" onClick={() => setTodas(!todas)} className="text-xs text-muted-foreground underline underline-offset-2 pb-2">
+            {todas ? "Ver menos" : `Ver las ${recs.length}`}
+          </button>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -289,7 +366,7 @@ function TarjetaCampana({
           </div>
           <div className="flex items-center gap-1 self-end lg:self-center" onClick={(e) => e.stopPropagation()}>
             <Button variant="outline" size="sm" onClick={onEditar}>
-              <Pencil className="h-3.5 w-3.5 mr-1.5" /> Editar
+              <Pencil className="h-3.5 w-3.5 mr-1.5" /> {ESCRITURA_EN_ML ? "Editar" : "Planear cambio"}
             </Button>
             <Button variant="ghost" size="icon" onClick={onAlternar} aria-expanded={abierta} aria-label={abierta ? "Cerrar anuncios" : "Ver anuncios"}>
               <ChevronDown className={`h-4 w-4 transition-transform ${abierta ? "rotate-180" : ""}`} />
@@ -400,7 +477,7 @@ function EditarCampana({ c, onCerrar, onAplicado }: { c: FilaCampana; onCerrar: 
         <Button variant="ghost" onClick={onCerrar}>
           Cancelar
         </Button>
-        <Button onClick={revisar}>Revisar el cambio</Button>
+        <Button onClick={revisar}>{ESCRITURA_EN_ML ? "Revisar el cambio" : "Ver qué cambiar en ML"}</Button>
       </div>
     </div>
   );
@@ -643,6 +720,15 @@ export default function PaginaPublicidad() {
             </div>
           )}
 
+          <QueConvieneHacer
+            recs={d.recomendaciones}
+            onCambiar={(pedido, titulo) => setCambio({ pedido, titulo })}
+            onIrA={(p) => {
+              setPestana(p);
+              document.getElementById("pestanas-publicidad")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          />
+
           {d.dias.length > 1 && (
             <Card>
               <CardContent className="pt-4 pb-3 px-4">
@@ -652,7 +738,7 @@ export default function PaginaPublicidad() {
             </Card>
           )}
 
-          <div className="flex rounded-md border overflow-hidden text-sm w-fit">
+          <div id="pestanas-publicidad" className="flex rounded-md border overflow-hidden text-sm w-fit scroll-mt-4">
             {(
               [
                 ["campanas", `Campañas (${d.campanas.length})`],
@@ -746,7 +832,7 @@ export default function PaginaPublicidad() {
             <>
               <DialogHeader>
                 <DialogTitle>{cambio.titulo}</DialogTitle>
-                <DialogDescription>Revisá el cambio antes de mandarlo.</DialogDescription>
+                <DialogDescription>{ESCRITURA_EN_ML ? "Revisá el cambio antes de mandarlo." : "Qué cambiar en el panel de Mercado Libre."}</DialogDescription>
               </DialogHeader>
               <ConfirmarCambio pedido={cambio.pedido} onCerrar={() => setCambio(null)} onAplicado={aplicado} />
             </>

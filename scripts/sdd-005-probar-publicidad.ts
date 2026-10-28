@@ -3,10 +3,12 @@
  *
  *   npx tsx scripts/sdd-005-probar-publicidad.ts
  *
- * Sólo las funciones puras: margen, ROAS mínimo, períodos, alertas y la revisión de cambios. No
- * toca la base ni Mercado Libre.
+ * Sólo las funciones puras: margen, ROAS mínimo, períodos, alertas, la revisión de cambios y las
+ * recomendaciones (spec 004). No toca la base ni Mercado Libre.
  */
 import { GASTOS_MEDIDOS } from "@/lib/precios-bodega";
+import type { FilaAnuncio, FilaCampana } from "@/lib/publicidad-ml";
+import { recomendaciones } from "@/lib/publicidad-recomendaciones";
 import {
   alertasDe,
   gananciaAntesDePublicidad,
@@ -93,6 +95,51 @@ ra = revisarCambioAnuncio({ status: "ACTIVE", campaign_id: 1 }, { campaign_id: 7
 ok(ra.errores.length === 1, "campaña que no existe no pasa");
 ra = revisarCambioAnuncio({ status: "ACTIVE", campaign_id: 1 }, { status: "paused" }, { campanas });
 ok(ra.envio.status === "paused" && ra.envio.campaign_id === undefined, "pausar un anuncio");
+
+// Recomendaciones (spec 004).
+const anuncio = (o: Partial<FilaAnuncio>): FilaAnuncio => ({
+  id: 1, campanaId: 10, titulo: "Anuncio", foto: null, estado: "ACTIVE", tipo: "FAMILY", publicaciones: [{ mla: "MLA1", enlace: null, precio: 20000 }],
+  gasto: 0, ventas: 0, unidades: 0, clics: 0, impresiones: 0, roas: null,
+  costo: { precio: 20000, costo: 4000, ganancia: 10000, roasMinimo: 2, fuente: "bodega", modeloId: "m1" },
+  gananciaEstimada: null, alertas: [], ...o,
+});
+const campana = (o: Partial<FilaCampana>): FilaCampana => ({
+  id: 10, nombre: "Campaña", estado: "active", estrategia: "profitability", roasObjetivo: 3, presupuesto: 2000, esShay: false,
+  gasto: 20000, ventas: 80000, unidades: 4, clics: 200, impresiones: 50000, roas: 4, roasMinimo: 2, gananciaEstimada: 20000,
+  cobertura: 1, perdidoPorPresupuesto: 0, perdidoPorRanking: 0, ultimoCambio: null, modificadaEnMl: null, alertas: [], anuncios: [], ...o,
+});
+const claves = (r: ReturnType<typeof recomendaciones>) => r.map((x) => x.clave.replace(/-[0-9]+$/, "")).join(",");
+
+let rr = recomendaciones([campana({ anuncios: [anuncio({ gasto: 8000, clics: 40, ventas: 0 })] })], []);
+ok(claves(rr) === "pausar-anuncio" && rr[0].pedido?.tipo === "anuncio", "anuncio que gasta sin vender se pausa", rr);
+rr = recomendaciones([campana({ anuncios: [anuncio({ gasto: 8000, clics: 5, ventas: 0 })] })], []);
+ok(claves(rr) === "", "con 5 clics no hay conclusión", rr);
+rr = recomendaciones([campana({ anuncios: [anuncio({ gasto: 8000, clics: 40, ventas: 10000, roas: 1.25, gananciaEstimada: -3000 })] })], []);
+ok(claves(rr) === "pausar-anuncio", "anuncio que vende a pérdida clara se pausa", rr);
+rr = recomendaciones([campana({ estado: "paused", anuncios: [anuncio({ gasto: 8000, clics: 40 })] })], []);
+ok(claves(rr) === "", "en una campaña pausada no se recomienda nada", rr);
+rr = recomendaciones([campana({ esShay: true, roasObjetivo: 1, anuncios: [anuncio({ gasto: 8000, clics: 40 })] })], []);
+ok(claves(rr) === "", "las de Shay no se tocan", rr);
+rr = recomendaciones([campana({ roasObjetivo: 1.5, roasMinimo: 2 })], []);
+ok(claves(rr) === "roas-objetivo" && rr[0].pedido?.tipo === "campana" && (rr[0].pedido.cambios as { roas_target: number }).roas_target === 2.5, "ROAS objetivo debajo del mínimo: subirlo a mínimo × 1,25", rr);
+rr = recomendaciones([campana({ roasObjetivo: 1.5, roasMinimo: 2, ultimoCambio: new Date().toISOString() })], []);
+ok(claves(rr) === "", "cambiada hace poco: se espera", rr);
+rr = recomendaciones([campana({ roas: 1.5, roasMinimo: 2, roasObjetivo: 2.5 })], []);
+ok(claves(rr) === "bajar-presupuesto" && (rr[0].pedido?.cambios as { budget: number }).budget === 1400, "pierde con buen objetivo: −30 % de presupuesto", rr);
+rr = recomendaciones([campana({ roas: 0, ventas: 0, roasMinimo: 2, roasObjetivo: 2.5 })], []);
+ok(claves(rr) === "pausar-campana", "gastó sin vender: pausar la campaña", rr);
+rr = recomendaciones([campana({ perdidoPorPresupuesto: 0.3 })], []);
+ok(claves(rr) === "subir-presupuesto" && (rr[0].pedido?.cambios as { budget: number }).budget === 2500, "rinde y le falta presupuesto: +25 %", rr);
+rr = recomendaciones([campana({ perdidoPorPresupuesto: 0.3, roas: 2.2 })], []);
+ok(claves(rr) === "", "sin holgura sobre el mínimo no se sube", rr);
+rr = recomendaciones([campana({ gasto: 3000, perdidoPorPresupuesto: 0.3 })], []);
+ok(claves(rr) === "", "con poco gasto no se concluye", rr);
+rr = recomendaciones([], [anuncio({ campanaId: 0, costo: { precio: 10000, costo: 9000, ganancia: -500, roasMinimo: null, fuente: "bodega", modeloId: "m9" } })]);
+ok(claves(rr) === "precio" && rr[0].ir != null && "href" in rr[0].ir && rr[0].ir.href === "/precios?modelo=m9", "precio que no cierra va a Precios", rr);
+rr = recomendaciones([], [anuncio({ campanaId: 0 }), anuncio({ id: 2, campanaId: 0, costo: null })]);
+ok(claves(rr) === "sumar-publicaciones" && rr[0].titulo.includes("1 publicación"), "sin campaña con buen margen: sumarlas", rr);
+rr = recomendaciones([campana({ perdidoPorPresupuesto: 0.3, anuncios: [anuncio({ gasto: 8000, clics: 40 })] })], []);
+ok(rr[0].grave && !rr[1].grave, "lo grave va primero", rr.map((x) => x.clave));
 
 console.log(`${pruebas - fallas} de ${pruebas}`);
 process.exitCode = fallas ? 1 : 0;

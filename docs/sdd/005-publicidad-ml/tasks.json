@@ -13,7 +13,7 @@
     "approvedAt": "2026-10-26",
     "notes": "Pidió arrancar en cuanto estuviera el SDD."
   },
-  "updatedAt": "2026-10-26",
+  "updatedAt": "2026-10-28",
   "tasks": [
     {
       "id": "TASK-001",
@@ -213,7 +213,7 @@
       "title": "Primera escritura real",
       "description": "Un cambio que elija Agustín, verificado en ML y en el historial.",
       "component": "test",
-      "status": "pending",
+      "status": "blocked",
       "origin": "plan",
       "dependencies": [
         "TASK-006"
@@ -223,9 +223,53 @@
       ],
       "acceptanceCriteria": [],
       "files": [],
-      "blockedReason": null,
+      "blockedReason": "ML rechaza las escrituras de Product Ads con 401 \"User does not have permission to write.\" (2026-10-27), con el permiso de lectura y escritura en el token. Falta que ML confirme si lo habilita para un vendedor de MLA.",
       "completedAt": null,
       "notes": null
+    },
+    {
+      "id": "TASK-011",
+      "title": "Modo lectura",
+      "description": "ESCRITURA_EN_ML = false: aplicarCambio rechaza antes de llamar a ML, la página y el MCP dicen qué tocar en el panel.",
+      "component": "api",
+      "status": "completed",
+      "origin": "review",
+      "dependencies": [],
+      "specs": [
+        "002-cambiar-la-publicidad"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/publicidad-reglas.ts",
+        "src/lib/publicidad-ml.ts",
+        "src/components/publicidad/confirmar-cambio.tsx",
+        "scripts/mcp-publicidad.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-28",
+      "notes": "Para volver a escribir, la constante en true."
+    },
+    {
+      "id": "TASK-012",
+      "title": "Qué conviene hacer",
+      "description": "Recomendaciones puras con el valor exacto, siempre con 30 días, en la página y en el MCP.",
+      "component": "ui",
+      "status": "completed",
+      "origin": "review",
+      "dependencies": [],
+      "specs": [
+        "004-que-conviene-hacer"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/publicidad-recomendaciones.ts",
+        "src/app/api/publicidad/route.ts",
+        "src/app/(app)/publicidad/page.tsx",
+        "scripts/mcp-publicidad.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-28",
+      "notes": "45 de 45 en el script de pruebas. Vista con datos reales: escritorio y celular."
     }
   ]
 }

@@ -2,9 +2,12 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma";
 import { cargarContextoDePrecios, leerGastosDeVenta, preciosDeCombinaciones } from "@/lib/precios-combinacion";
 import * as ml from "@/lib/publicidad-ml-api";
+import { recomendaciones, type Recomendacion } from "@/lib/publicidad-recomendaciones";
 import {
   alertasDe,
+  ESCRITURA_EN_ML,
   gananciaAntesDePublicidad,
+  PANEL_DE_ML,
   revisarCambioAnuncio,
   revisarCambioCampana,
   roasMinimo,
@@ -32,6 +35,8 @@ export interface CostoDeAnuncio {
   ganancia: number;
   roasMinimo: number | null;
   fuente: "bodega" | "ventas";
+  /** El producto del ERP de la primera publicación con costo, para ir a Precios. */
+  modeloId: string | null;
 }
 
 export interface FilaAnuncio {
@@ -75,6 +80,8 @@ export interface FilaCampana {
   perdidoPorPresupuesto: number | null;
   perdidoPorRanking: number | null;
   ultimoCambio: string | null;
+  /** `last_updated` de ML: incluye los cambios a mano en el panel, y también algunos que hace ML solo. */
+  modificadaEnMl: string | null;
   alertas: Alerta[];
   anuncios: FilaAnuncio[];
 }
@@ -97,6 +104,8 @@ export type ResumenPublicidad =
       campanas: FilaCampana[];
       /** Publicaciones con anuncio posible que no están en ninguna campaña (ML les pone campaña 0). */
       sinCampana: FilaAnuncio[];
+      /** Qué conviene hacer (spec 004), lo más grave primero. */
+      recomendaciones: Recomendacion[];
       dias: ml.DiaMl[];
       roasQueAsumeElPrecio: number | null;
       leidoEn: string;
@@ -154,7 +163,7 @@ async function publicacionesConRecuerdo(tenantId: string, mlas: string[]): Promi
  * El costo de una venta de cada publicación que conoce el ERP (RN-4): por Bodega, con la clave de
  * ML y la combinación; si no hay, el costo guardado en sus ventas de los últimos 90 días.
  */
-async function costosPorPublicacion(tenantId: string): Promise<Map<string, { costo: number; fuente: "bodega" | "ventas" }>> {
+async function costosPorPublicacion(tenantId: string): Promise<Map<string, { costo: number; fuente: "bodega" | "ventas"; modeloId: string | null }>> {
   const [claves, precios, ventas] = await Promise.all([
     prisma.mapeoCanal.findMany({
       where: { tenantId, canal: "mercadolibre", ignorar: false, combinacionId: { not: null } },
@@ -172,21 +181,21 @@ async function costosPorPublicacion(tenantId: string): Promise<Map<string, { cos
     }),
   ]);
   const costoDe = new Map(
-    precios.filter((p) => p.costo).map((p) => [p.combinacionId, p.costo!.fabricacion + p.costo!.insumos])
+    precios.filter((p) => p.costo).map((p) => [p.combinacionId, { costo: p.costo!.fabricacion + p.costo!.insumos, modeloId: p.modeloId }])
   );
 
-  const porMla = new Map<string, number[]>();
+  const porMla = new Map<string, Array<{ costo: number; modeloId: string }>>();
   for (const k of claves) {
     const c = costoDe.get(k.combinacionId!);
     if (c == null) continue;
     const mla = k.clave.split("|")[0];
-    porMla.set(mla, [...(porMla.get(mla) ?? []), c * Math.max(1, k.unidades)]);
+    porMla.set(mla, [...(porMla.get(mla) ?? []), { costo: c.costo * Math.max(1, k.unidades), modeloId: c.modeloId }]);
   }
-  const out = new Map<string, { costo: number; fuente: "bodega" | "ventas" }>();
-  for (const [mla, cs] of porMla) out.set(mla, { costo: cs.reduce((a, b) => a + b, 0) / cs.length, fuente: "bodega" });
+  const out = new Map<string, { costo: number; fuente: "bodega" | "ventas"; modeloId: string | null }>();
+  for (const [mla, cs] of porMla) out.set(mla, { costo: cs.reduce((a, b) => a + b.costo, 0) / cs.length, fuente: "bodega", modeloId: cs[0].modeloId });
   for (const v of ventas) {
     if (v.mlaOrigen && !out.has(v.mlaOrigen) && v._avg.costoUnitario) {
-      out.set(v.mlaOrigen, { costo: v._avg.costoUnitario, fuente: "ventas" });
+      out.set(v.mlaOrigen, { costo: v._avg.costoUnitario, fuente: "ventas", modeloId: null });
     }
   }
   return out;
@@ -306,6 +315,7 @@ export async function resumenPublicidad(tenantId: string, rango: ml.Rango): Prom
         ganancia: r * precio,
         roasMinimo: roasMinimo(1, r),
         fuente: conCosto.every((p) => costos.get(p.id)!.fuente === "bodega") ? "bodega" : "ventas",
+        modeloId: conCosto.map((p) => costos.get(p.id)!.modeloId).find(Boolean) ?? null,
       };
     }
     const m = g.metrics;
@@ -362,6 +372,7 @@ export async function resumenPublicidad(tenantId: string, rango: ml.Rango): Prom
       perdidoPorPresupuesto: q?.lost_impression_share_by_budget ?? null,
       perdidoPorRanking: q?.lost_impression_share_by_ad_rank ?? null,
       ultimoCambio: cambiosCampana.get(String(c.id))?.toISOString() ?? null,
+      modificadaEnMl: c.last_updated,
       alertas: alertasDe({
         gasto: c.metrics.cost,
         ventas: c.metrics.total_amount,
@@ -374,6 +385,11 @@ export async function resumenPublicidad(tenantId: string, rango: ml.Rango): Prom
   });
   // Primero las activas, después por gasto.
   filasCampana.sort((x, y) => Number(y.estado === "active") - Number(x.estado === "active") || y.gasto - x.gasto);
+
+  // Las de Shay no se distinguen acá: ML no las separa y no están en el ERP. Van al final.
+  const sinCampana = filasAnuncio
+    .filter((x) => !x.campanaId)
+    .sort((x, y) => Number(y.publicaciones.length > 0) - Number(x.publicaciones.length > 0) || x.titulo.localeCompare(y.titulo));
 
   const sendero = filasCampana.filter((c) => !c.esShay);
   const deShay = filasCampana.filter((c) => c.esShay);
@@ -389,10 +405,8 @@ export async function resumenPublicidad(tenantId: string, rango: ml.Rango): Prom
     totales: { gasto, ventas, roas: roasDe(ventas, gasto), gananciaEstimada: total.ganancia, cobertura: total.cobertura },
     shay: { gasto: deShay.reduce((s, c) => s + c.gasto, 0), ventas: deShay.reduce((s, c) => s + c.ventas, 0) },
     campanas: filasCampana,
-    // Las de Shay no se distinguen acá: ML no las separa y no están en el ERP. Van al final.
-    sinCampana: filasAnuncio
-      .filter((x) => !x.campanaId)
-      .sort((x, y) => Number(y.publicaciones.length > 0) - Number(x.publicaciones.length > 0) || x.titulo.localeCompare(y.titulo)),
+    sinCampana,
+    recomendaciones: recomendaciones(filasCampana, sinCampana),
     dias,
     roasQueAsumeElPrecio: roasQueAsumeElPrecio(gastos),
     leidoEn: new Date().toISOString(),
@@ -479,6 +493,9 @@ export async function aplicarCambio(
   quien: { origen: "pantalla" | "claude"; usuario: string | null; confirmadoAparte: boolean }
 ): Promise<ResultadoCambio> {
   const p = await preparar(tenantId, pedido);
+  if (!ESCRITURA_EN_ML) {
+    return { estado: "rechazado", vista: p.vista, motivo: `Mercado Libre todavía no deja cambiar la publicidad desde aplicaciones: hacelo en ${PANEL_DE_ML}.` };
+  }
   if (p.vista.errores.length) return { estado: "rechazado", vista: p.vista, motivo: p.vista.errores.join(" ") };
   if (p.vista.avisos.some((x) => x.aparte) && !quien.confirmadoAparte) {
     return {

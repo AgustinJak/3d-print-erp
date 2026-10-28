@@ -6,6 +6,22 @@ import type { GastosVenta } from "@/lib/precios-bodega";
  * pruebas las corre sueltas.
  */
 
+/* ───────────────────────── Escritura ───────────────────────── */
+
+/**
+ * Si el ERP y el MCP pueden cambiar la publicidad en ML, o sólo leerla y decir qué cambiar.
+ *
+ * Apagado desde el 2026-10-28: ML contesta 401 "User does not have permission to write." a toda
+ * escritura de Product Ads, aunque el token tenga `urn:ml:mktp:ads:/read-write`. Según su soporte,
+ * en MLA sólo están publicadas las lecturas y escribir requiere una habilitación interna que se
+ * pide por ticket en el Developer Partner Program (docs/sdd/005, bitácora). Con esto en false, la
+ * vista previa sigue andando y se usa para decir qué tocar en el panel.
+ */
+export const ESCRITURA_EN_ML = false;
+
+/** Dónde se cambia a mano, con las palabras de la doc de ML. */
+export const PANEL_DE_ML = "Mercado Libre › Mi perfil › Publicidad";
+
 /* ───────────────────────── Período ───────────────────────── */
 
 export type Periodo = "7d" | "30d" | "mes" | "mes-pasado";

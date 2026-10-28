@@ -51,6 +51,7 @@ vista previa.
 - [001-ver-la-publicidad](specs/001-ver-la-publicidad.md)
 - [002-cambiar-la-publicidad](specs/002-cambiar-la-publicidad.md)
 - [003-claude-por-mcp](specs/003-claude-por-mcp.md)
+- [004-que-conviene-hacer](specs/004-que-conviene-hacer.md) (2026-10-28)
 
 ## 7. Fuera de alcance
 

@@ -37,6 +37,8 @@ export interface CampanaMl {
   strategy: string;
   roas_target: number | null;
   budget: number;
+  /** Lo último que cambió en ML: a mano en el panel o algo de ML mismo, no se distingue. */
+  last_updated: string | null;
   metrics: MetricasMl;
 }
 
@@ -128,6 +130,7 @@ export async function campanas(tenantId: string, a: Anunciante, r: Rango): Promi
         strategy: String(c.strategy ?? "").toLowerCase(),
         roas_target: typeof c.roas_target === "number" ? c.roas_target : null,
         budget: Number(c.budget) || 0,
+        last_updated: typeof c.last_updated === "string" ? c.last_updated : null,
         metrics: metricas(c.metrics),
       });
     }
@@ -194,7 +197,7 @@ export async function anuncios(tenantId: string, a: Anunciante, r: Rango): Promi
 }
 
 /** Una campaña como está ahora, sin métricas: lo que se compara antes de cambiarla. */
-export async function campana(tenantId: string, a: Anunciante, campanaId: number): Promise<Omit<CampanaMl, "metrics">> {
+export async function campana(tenantId: string, a: Anunciante, campanaId: number): Promise<Omit<CampanaMl, "metrics" | "last_updated">> {
   const c = await mlFetch<Partial<CampanaMl>>(tenantId, `/advertising/${a.siteId}/product_ads/campaigns/${campanaId}`, { headers: V2 });
   return {
     id: Number(c.id ?? campanaId),
