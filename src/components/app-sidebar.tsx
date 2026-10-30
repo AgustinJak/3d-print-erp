@@ -40,28 +40,38 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useIsDemoTenant } from "@/components/current-user-provider";
 
-const navPrincipal = [
-  { title: "Panel", href: "/", icon: LayoutDashboard },
+// Agrupado por tarea del día (Agustín, 2026-10-30): vender, producir, armar el catálogo, ponerle
+// precio y vender en los canales, la plata.
+const navInicio = [{ title: "Panel", href: "/", icon: LayoutDashboard }];
+
+const navVentas = [
   { title: "Pedidos", href: "/pedidos", icon: ShoppingCart },
+  { title: "Historial de pedidos", href: "/historial", icon: History },
+  { title: "Clientes", href: "/clientes", icon: Users },
+];
+
+const navTaller = [
   { title: "Producción", href: "/produccion", icon: Factory },
+  { title: "Stock", href: "/stock", icon: Boxes },
+  { title: "Filamentos", href: "/filamentos", icon: Palette },
 ];
 
 const navCatalogo = [
-  { title: "Categorías", href: "/categorias", icon: Tag },
   { title: "Productos", href: "/modelos", icon: Box },
-  { title: "Precios", href: "/precios", icon: BadgeDollarSign },
-  { title: "Filamentos", href: "/filamentos", icon: Palette },
-  { title: "Stock", href: "/stock", icon: Boxes },
+  { title: "Categorías", href: "/categorias", icon: Tag },
+  { title: "Tendencias", href: "/tendencias", icon: Radar },
 ];
 
-const navNegocio = [
-  { title: "Clientes", href: "/clientes", icon: Users },
-  { title: "Tendencias", href: "/tendencias", icon: Radar },
-  { title: "Finanzas", href: "/finanzas", icon: DollarSign },
-  { title: "Publicidad", href: "/publicidad", icon: Megaphone },
+// Lo que se publica en Mercado Libre y la web. Oculto en la cuenta demo: sus endpoints no la atienden.
+const navCanales = [
+  { title: "Precios", href: "/precios", icon: BadgeDollarSign },
   { title: "Promos", href: "/promos", icon: Percent },
+  { title: "Publicidad", href: "/publicidad", icon: Megaphone },
+];
+
+const navPlata = [
+  { title: "Finanzas", href: "/finanzas", icon: DollarSign },
   { title: "Gastos", href: "/gastos", icon: Receipt },
-  { title: "Historial", href: "/historial", icon: History },
   { title: "Shay Juguetes", href: "/shay", icon: Store },
 ];
 
@@ -96,9 +106,9 @@ export function AppSidebar() {
     router.push(href);
   };
 
-  const renderGroup = (label: string, items: typeof navPrincipal) => (
+  const renderGroup = (label: string | null, items: typeof navInicio) => (
     <SidebarGroup>
-      <SidebarGroupLabel>{label}</SidebarGroupLabel>
+      {label && <SidebarGroupLabel>{label}</SidebarGroupLabel>}
       <SidebarGroupContent>
         <SidebarMenu>
           {items.map((item) => (
@@ -128,9 +138,12 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        {renderGroup("Principal", navPrincipal)}
-        {renderGroup("Catálogo", isDemo ? navCatalogo.filter((i) => i.href !== "/precios") : navCatalogo)}
-        {renderGroup("Negocio", isDemo ? navNegocio.filter((i) => i.href !== "/publicidad" && i.href !== "/promos") : navNegocio)}
+        {renderGroup(null, navInicio)}
+        {renderGroup("Ventas", navVentas)}
+        {renderGroup("Taller", navTaller)}
+        {renderGroup("Catálogo", navCatalogo)}
+        {!isDemo && renderGroup("Mercado Libre y web", navCanales)}
+        {renderGroup("Plata", navPlata)}
         {!isDemo && renderGroup("Sistema", navSistema)}
         {!isDemo && renderGroup("Personal", navPersonal)}
       </SidebarContent>

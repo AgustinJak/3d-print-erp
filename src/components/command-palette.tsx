@@ -31,7 +31,7 @@ const pages: PageEntry[] = [
   { name: "Publicidad", href: "/publicidad", icon: Megaphone, keywords: "publicidad product ads campañas mercado libre roas anuncios", hideOnDemo: true },
   { name: "Promos", href: "/promos", icon: Percent, keywords: "promos promociones descuentos campañas ofertas cupones mercado libre", hideOnDemo: true },
   { name: "Gastos", href: "/gastos", icon: Receipt, keywords: "gastos costos compras" },
-  { name: "Historial", href: "/historial", icon: History, keywords: "historial completados archivo" },
+  { name: "Historial de pedidos", href: "/historial", icon: History, keywords: "historial pedidos completados archivo" },
   { name: "Integraciones", href: "/integraciones", icon: Plug, keywords: "integraciones webhook shop sendero api logs", hideOnDemo: true },
 ];
 
