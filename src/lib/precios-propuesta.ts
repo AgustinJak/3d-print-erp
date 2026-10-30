@@ -9,7 +9,7 @@ import {
   pctDeCombinacion,
   type ContextoDePrecios,
 } from "@/lib/precios-combinacion";
-import { costosDeLectura, costosDeOpcionUno, gastosConCostos, opcionDe } from "@/lib/precios-ml-publicacion";
+import { costosDeLectura, costosDeOpcionDos, costosDeOpcionUno, gastosConCostos, opcionDe, precioParaGanancia } from "@/lib/precios-ml-publicacion";
 import { margenDe } from "@/lib/precios-formula";
 import { promoEsperada } from "@/lib/promos-ml-reglas";
 import { cargoFijo } from "@/lib/tarifas-ml-reglas";
@@ -77,6 +77,18 @@ export interface FilaDeCanal {
   ignorada: boolean;
 }
 
+/**
+ * Las dos opciones de venta de una combinación en ML (docs/sdd/006, spec 006, TASK-012): cuántas
+ * publicaciones activas tiene de cada una, y si falta una, a qué precio se publicaría.
+ */
+export interface OpcionesMl {
+  uno: number;
+  dos: number;
+  /** La que falta, a publicar: la opción 1 al precio de la combinación; la 2 con el envío gratis que ML cotizó. */
+  precioUno: number | null;
+  precioDos: number | null;
+}
+
 /** Lo que deja una venta, en pesos y en % del precio. */
 export interface Deja {
   ganancia: number;
@@ -101,6 +113,8 @@ export interface FilaErp {
 export interface Propuesta {
   gastos: { deBodega: boolean; origen: "erp" | "bodega" | "medidos"; redondeo: string; margen: number; promo: number };
   combinaciones: PrecioDeCombinacion[];
+  /** Por combinación: cuántas publicaciones activas tiene de cada opción de venta (spec 006). */
+  opcionesMl: Record<string, OpcionesMl>;
   canales: FilaDeCanal[];
   erp: FilaErp[];
   /** La lectura más vieja de cada canal, para el "leído hace…". */
@@ -241,6 +255,32 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
       };
     });
 
+  // Las dos opciones de venta (spec 006): la opción de cada publicación activa de una unidad.
+  const opcionesMl: Record<string, OpcionesMl> = {};
+  const envioCotizado = new Map<string, number>();
+  for (const m of mapeos) {
+    if (m.canal !== "mercadolibre" || !m.combinacionId || m.unidades > 1) continue;
+    const l = m.precioLectura as LecturaMl | null;
+    if (!l?.tipo || l.estado !== "active") continue;
+    const o = (opcionesMl[m.combinacionId] ??= { uno: 0, dos: 0, precioUno: null, precioDos: null });
+    if (opcionDe(l) === 1) o.uno++;
+    else o.dos++;
+    if (l.costoEnvio) envioCotizado.set(m.combinacionId, Math.max(envioCotizado.get(m.combinacionId) ?? 0, l.costoEnvio));
+  }
+  if (cx.erp) {
+    for (const [cid, o] of Object.entries(opcionesMl)) {
+      const p = porId.get(cid);
+      if (!p?.precios || !p.costo || (o.uno > 0 && o.dos > 0)) continue;
+      if (o.uno === 0) o.precioUno = p.precios.mlPublicado;
+      if (o.dos === 0 && p.precios.ganancia != null) {
+        const g = gastosDe(cx.general.gastos, p.politica);
+        const costos = costosDeOpcionDos(cx.erp.tarifas, g, pctDeCombinacion(cx, cid, p.modeloId), envioCotizado.get(cid) ?? null);
+        const r = precioParaGanancia(g, p.costo.fabricacion, p.costo.insumos, p.politica.redondeo, p.precios.ganancia, costos, cx.erp.tarifas);
+        o.precioDos = Number.isFinite(r.publicado) ? r.publicado : null;
+      }
+    }
+  }
+
   const masVieja = (canal: "mercadolibre" | "shop") => {
     const l = canales.filter((f) => f.canal === canal && f.leidoEn).map((f) => f.leidoEn!);
     return l.length ? l.sort()[0] : null;
@@ -254,6 +294,7 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
       promo: cx.general.gastos.mlPromoPct,
     },
     combinaciones,
+    opcionesMl,
     canales,
     erp,
     leidoMl: masVieja("mercadolibre"),

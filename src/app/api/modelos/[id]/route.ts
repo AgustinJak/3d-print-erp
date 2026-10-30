@@ -6,6 +6,7 @@ import { sembrarCombinacionesDeModelo, soltarVariantesBorradas } from "@/lib/com
 import { actualizarNombres, grupoDeVariante, tipoDeVariante } from "@/lib/catalogo";
 import { parsePrice } from "@/lib/utils";
 import { esRedondeo } from "@/lib/precios-formula";
+import { completarCategorias } from "@/lib/categorias-ml";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -244,6 +245,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       data.redondeo = body.redondeo || null;
     }
     if ("precioMlFijo" in body) data.precioMlFijo = opcional("precioMlFijo");
+    // La categoría de ML elegida a mano (spec 004, TASK-007); null = volver a la automática.
+    if ("categoriaMl" in body) {
+      const cat = body.categoriaMl;
+      if (cat !== null && (typeof cat !== "string" || !/^MLA\d+$/.test(cat))) return NextResponse.json({ error: "categoría de ML inválida" }, { status: 400 });
+      data.categoriaMl = cat;
+      data.categoriaMlOrigen = cat ? "manual" : null;
+    }
 
     const categoriaIds = Array.isArray(body.categoriaIds) ? body.categoriaIds.filter((x): x is string => typeof x === "string") : null;
 
@@ -269,6 +277,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       await sembrarCombinacionesDeModelo(prisma, tenantId, id);
       if ("nombre" in body) await actualizarNombres(tenantId, id);
     }
+    // Volver a la categoría automática: se recalcula ya, heredada o predicha (spec 004).
+    if ("categoriaMl" in body && body.categoriaMl === null) await completarCategorias(tenantId, { aplicar: true, modeloIds: [id] }).catch(() => undefined);
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (e instanceof NextResponse) return e;

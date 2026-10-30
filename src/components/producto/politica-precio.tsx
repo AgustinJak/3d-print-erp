@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { Loader2, Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { toast } from "sonner";
 import { ArrowRight, SlidersHorizontal } from "lucide-react";
@@ -30,6 +32,113 @@ interface Valores {
 const txt = (n: number | null) => (n == null ? "" : String(n));
 const desde = (p: Ficha["politica"]): Valores => ({ margen: txt(p.margen), promoMl: txt(p.promoMl), redondeo: p.redondeo ?? "", precioMlFijo: txt(p.precioMlFijo) });
 const nombreRedondeo = (id: string) => REDONDEOS.find((r) => r.id === id)?.label ?? id;
+
+const ORIGEN: Record<string, string> = {
+  publicacion: "la de sus publicaciones",
+  heredada: "heredada de productos parecidos",
+  predicha: "la que sugirió ML por el nombre",
+  manual: "elegida a mano",
+};
+
+interface Sugerida {
+  id: string;
+  nombre: string;
+  comision: number | null;
+}
+
+/**
+ * La categoría de ML del producto (docs/sdd/006, spec 004, TASK-007): define la comisión de lo que
+ * no está publicado y con qué se va a crear. Si ya tiene publicaciones, manda la de ellas.
+ */
+function CategoriaMl({ ficha, onCambio }: { ficha: Ficha; onCambio: () => void }) {
+  const c = ficha.politica.categoria;
+  const [buscando, setBuscando] = useState(false);
+  const [q, setQ] = useState(ficha.producto.nombre);
+  const [opciones, setOpciones] = useState<Sugerida[] | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+
+  async function buscar() {
+    setOcupado(true);
+    try {
+      setOpciones(await pedir<Sugerida[]>(`/api/precios/categoria-ml?q=${encodeURIComponent(q)}`));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function elegir(id: string | null) {
+    setOcupado(true);
+    try {
+      await pedir(`/api/modelos/${ficha.producto.id}`, json("PATCH", { categoriaMl: id }));
+      toast.success(id ? "Categoría de ML guardada" : "Vuelve a la categoría automática");
+      setBuscando(false);
+      setOpciones(null);
+      onCambio();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2 pt-2 border-t">
+      <Dato etiqueta="Categoría de ML">
+        {c ? (
+          <span>
+            {c.nombre}
+            {c.comision != null && <span className="text-muted-foreground"> · {String(c.comision).replace(".", ",")} %</span>}
+            <span className="block text-xs text-muted-foreground">{ORIGEN[c.origen] ?? c.origen}</span>
+          </span>
+        ) : (
+          <span className="text-muted-foreground">sin categoría: usa la comisión más alta</span>
+        )}
+      </Dato>
+      {c?.origen === "publicacion" ? (
+        <p className="text-xs text-muted-foreground">Ya está publicado: la categoría se cambia en Mercado Libre.</p>
+      ) : buscando ? (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <Input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && buscar()} placeholder="Qué es el producto" className="h-8" />
+            <Button size="sm" variant="outline" onClick={buscar} disabled={ocupado || q.trim().length < 3}>
+              {ocupado ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+            </Button>
+          </div>
+          {opciones && (
+            <div className="rounded-md border divide-y text-sm">
+              {opciones.length ? (
+                opciones.map((o) => (
+                  <button key={o.id} type="button" disabled={ocupado} onClick={() => elegir(o.id)} className="w-full text-left px-3 py-2 hover:bg-muted">
+                    {o.nombre}
+                    <span className="text-xs text-muted-foreground"> · {o.id}{o.comision != null ? ` · ${String(o.comision).replace(".", ",")} %` : ""}</span>
+                  </button>
+                ))
+              ) : (
+                <p className="px-3 py-2 text-xs text-muted-foreground">ML no sugirió nada: probá con otras palabras.</p>
+              )}
+            </div>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => setBuscando(false)}>
+            Cancelar
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => setBuscando(true)}>
+            {c ? "Cambiar categoría" : "Elegir categoría"}
+          </Button>
+          {c?.origen === "manual" && (
+            <Button size="sm" variant="ghost" onClick={() => elegir(null)} disabled={ocupado}>
+              Volver a la automática
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function SeccionPoliticaPrecio({ ficha, onCambio }: { ficha: Ficha; onCambio: () => void }) {
   const p = ficha.politica;
@@ -136,6 +245,7 @@ export function SeccionPoliticaPrecio({ ficha, onCambio }: { ficha: Ficha; onCam
           <Link href={`/precios?modelo=${ficha.producto.id}`} className="text-xs text-primary hover:underline inline-flex items-center gap-1">
             Ver los precios que salen <ArrowRight className="h-3 w-3" />
           </Link>
+          <CategoriaMl ficha={ficha} onCambio={onCambio} />
         </div>
       )}
     </Seccion>

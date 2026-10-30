@@ -5,6 +5,7 @@ import { gruposDe, tipoDeVariante, type TipoGrupo } from "@/lib/catalogo";
 import { fabricacionDePieza, leerParametros, leerRecetas } from "@/lib/costos-bodega";
 import { cargarContexto, componentesDeItem, type Componente } from "@/lib/reservas";
 import { leerGastosDeVenta, preciosDeCombinaciones } from "@/lib/precios-combinacion";
+import { categoriaDeProducto } from "@/lib/categorias-ml";
 import { PREFIJO_FALTA, textoDeFalta } from "@/lib/precios-reglas";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
@@ -74,6 +75,8 @@ export interface Ficha {
     redondeo: string | null;
     precioMlFijo: number | null;
     general: { margen: number; promo: number; redondeo: string; origen: "erp" | "bodega" | "medidos" };
+    /** La categoría de ML con que se calcula (spec 004): la de sus publicaciones, heredada, predicha o a mano. */
+    categoria: { id: string; nombre: string; comision: number | null; origen: "publicacion" | "heredada" | "predicha" | "manual" } | null;
   };
   grupos: Array<{ nombre: string; tipo: TipoGrupo; opciones: OpcionDeFicha[] }>;
   /** La fila del producto cuando no tiene grupo de piezas. */
@@ -256,6 +259,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         redondeo: m.redondeo,
         precioMlFijo: m.precioMlFijo,
         general: { margen: general.gastos.margenMinorista, promo: general.gastos.mlPromoPct, redondeo: general.redondeo, origen: general.origen },
+        categoria: await categoriaDeProducto(tenantId, m.id).catch(() => null),
       },
       grupos,
       fila: filaPropia ? fichaDeFila(filaPropia) : null,

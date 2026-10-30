@@ -15,7 +15,7 @@ import { json, pedir, pesos } from "@/components/producto/seccion";
 import { ConfiguracionDePrecios } from "@/components/precios/configuracion";
 import { MargenMasivo } from "@/components/precios/margen-masivo";
 import { CAMBIO_GRANDE_PCT, conDiferencia, esGrande, PREFIJO_FALTA, textoDeFalta } from "@/lib/precios-reglas";
-import type { Deja, FilaDeCanal, FilaErp, Propuesta, ResultadoFila } from "@/lib/precios-propuesta";
+import type { Deja, FilaDeCanal, FilaErp, OpcionesMl, Propuesta, ResultadoFila } from "@/lib/precios-propuesta";
 
 /**
  * Precios (docs/sdd/003, spec 004): qué precio cambiaría en cada canal, y aplicarlo.
@@ -341,7 +341,7 @@ function PantallaPrecios() {
           <Loader2 className="h-4 w-4 animate-spin" /> Calculando precios…
         </div>
       ) : pestana === "combinaciones" ? (
-        <TablaCombinaciones filas={combinaciones} onMargenGuardado={cargar} />
+        <TablaCombinaciones filas={combinaciones} opciones={datos?.opcionesMl ?? {}} onMargenGuardado={cargar} />
       ) : pestana === "historial" ? (
         <TablaHistorial cambios={historial} />
       ) : pestana === "erp" ? (
@@ -423,7 +423,21 @@ function PantallaPrecios() {
   );
 }
 
-function TablaCombinaciones({ filas, onMargenGuardado }: { filas: Propuesta["combinaciones"]; onMargenGuardado: () => void }) {
+/** Las dos opciones de venta de una combinación en ML (spec 006): cuál tiene y cuál falta. */
+function LineaOpciones({ o }: { o: OpcionesMl | undefined }) {
+  if (!o) return <div className="text-xs text-muted-foreground">sin publicar en ML</div>;
+  if (o.uno > 0 && o.dos > 0) return <div className="text-xs text-muted-foreground">opción 1 y 2 publicadas</div>;
+  const falta = o.uno === 0 ? 1 : 2;
+  const precio = falta === 1 ? o.precioUno : o.precioDos;
+  return (
+    <div className="text-xs text-amber-600 dark:text-amber-400" title={falta === 2 ? "3 cuotas sin interés y envío gratis, dejando lo mismo que la opción 1" : "Clásica, sin cuotas"}>
+      falta la opción {falta}
+      {precio != null && ` · publicaría ${pesos(precio)}`}
+    </div>
+  );
+}
+
+function TablaCombinaciones({ filas, opciones, onMargenGuardado }: { filas: Propuesta["combinaciones"]; opciones: Record<string, OpcionesMl>; onMargenGuardado: () => void }) {
   const [verFaltan, setVerFaltan] = useState(false);
   // El margen es del producto: tildar una combinación elige su producto (spec 002).
   const [elegidos, setElegidos] = useState<Set<string>>(new Set());
@@ -535,6 +549,7 @@ function TablaCombinaciones({ filas, onMargenGuardado }: { filas: Propuesta["com
                   <td className="p-2 text-right tabular-nums">
                     {pesos(c.precios!.mlPublicado)}
                     {c.precios!.mlPublicado !== c.precios!.ml && <div className="text-xs text-muted-foreground">paga {pesos(c.precios!.ml)}</div>}
+                    <LineaOpciones o={opciones[c.combinacionId]} />
                   </td>
                   <td className="p-2 text-right tabular-nums">{pesos(c.precios!.web)}</td>
                   <td className="p-2 text-right tabular-nums">{pesos(c.precios!.personalizado)}</td>

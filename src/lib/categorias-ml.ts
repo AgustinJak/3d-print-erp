@@ -72,7 +72,7 @@ export interface PropuestaDeCategoria {
  * Para cada producto sin publicaciones y sin categoría elegida a mano: la heredada si hay de dónde,
  * si no la predicha. Con `aplicar`, la guarda en `modelos`.
  */
-export async function completarCategorias(tenantId: string, opts: { aplicar?: boolean } = {}): Promise<PropuestaDeCategoria[]> {
+export async function completarCategorias(tenantId: string, opts: { aplicar?: boolean; modeloIds?: string[] } = {}): Promise<PropuestaDeCategoria[]> {
   const [publicadas, modelos] = await Promise.all([
     categoriasPublicadas(tenantId),
     prisma.modelo.findMany({
@@ -96,6 +96,7 @@ export async function completarCategorias(tenantId: string, opts: { aplicar?: bo
   const out: PropuestaDeCategoria[] = [];
   for (const m of modelos) {
     if (publicadas.has(m.id) || m.categoriaMlOrigen === "manual") continue;
+    if (opts.modeloIds && !opts.modeloIds.includes(m.id)) continue;
     const votos = new Map<string, number>();
     for (const c of m.categorias) for (const [ml, n] of porCategoriaErp.get(c.categoriaId) ?? []) votos.set(ml, (votos.get(ml) ?? 0) + n);
     // Hereda sólo si los hermanos están de acuerdo: "Deco/Hogar" junta jaboneras con soportes de
