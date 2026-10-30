@@ -153,6 +153,7 @@ function ca4(cx: ContextoDePrecios, ps: PrecioDeCombinacion[]) {
     costos: new Map([["fila-katana", { stockId: "fila-katana", etiqueta: "Katana", fab: 7000, insumos: 0, total: 7000, receta, insumosSinDeclarar: false }]]),
     bodegaDeFila: new Map([["fila-katana", "b"], ["fila-funda", "bf"]]),
     piezas: new Map(),
+    erp: null,
   };
   const con = precioDeCombinacion({ id: "c1", modeloId: "k", nombre: "Katana · Con Funda", sku: null, variantes: ["con"] }, armado);
   ok(con.precios === null && con.falta.some((f) => f.motivo === "insumo_sin_costo" && f.etiqueta === "Funda sin receta"), "la Con Funda queda sin precio", con.falta);
@@ -189,7 +190,7 @@ function rn4() {
 async function main() {
   const cx = await cargarContextoDePrecios(T);
   const [ps, costos] = await Promise.all([preciosDeCombinaciones(T, {}, cx), costosPorFilaDeStock(T)]);
-  console.log(`${ps.length} combinaciones activas, ${ps.filter((p) => p.precios).length} con precio. Gastos ${cx.general.deBodega ? "de Bodega" : "medidos (Bodega no subió los suyos)"}.\n`);
+  console.log(`${ps.length} combinaciones activas, ${ps.filter((p) => p.precios).length} con precio. Gastos ${cx.general.origen === "erp" ? "del ERP (motor de la 006: la comparación con las fotos de Bodega no aplica)" : cx.general.deBodega ? "de Bodega" : "medidos (Bodega no subió los suyos)"}.\n`);
   await ca1(ps);
   await ca2(ps, cx, costos);
   ca3();

@@ -73,7 +73,7 @@ export interface FilaErp {
 }
 
 export interface Propuesta {
-  gastos: { deBodega: boolean; redondeo: string; margen: number; promo: number };
+  gastos: { deBodega: boolean; origen: "erp" | "bodega" | "medidos"; redondeo: string; margen: number; promo: number };
   combinaciones: PrecioDeCombinacion[];
   canales: FilaDeCanal[];
   erp: FilaErp[];
@@ -118,12 +118,13 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
     .map((m) => {
       const canal = m.canal as "mercadolibre" | "shop";
       const p = m.combinacionId ? porId.get(m.combinacionId) : undefined;
-      // El Shop sólo acepta precios enteros.
-      const crudo = p ? precioDeClave(p, canal, m.unidades, cx.general.gastos) : null;
-      const propuesto = crudo != null && canal === "shop" ? Math.round(crudo) : crudo;
       const lectura = canal === "mercadolibre" ? ((m.precioLectura as LecturaMl | null) ?? null) : null;
       const lecturaShop = canal === "shop" ? ((m.precioLectura as LecturaShop | null) ?? null) : null;
       const mla = canal === "mercadolibre" ? m.clave.split("|")[0] : null;
+      // El Shop sólo acepta precios enteros. Con la configuración del ERP, cada publicación de ML
+      // tiene su precio según lo que cobra ML por ella (docs/sdd/006, spec 003).
+      const crudo = p ? precioDeClave(p, canal, m.unidades, cx.general.gastos, { cx, mla, lectura }) : null;
+      const propuesto = crudo != null && canal === "shop" ? Math.round(crudo) : crudo;
       const muestra = (m.muestra ?? {}) as { titulo?: string };
 
       let motivo: string | null = null;
@@ -213,6 +214,7 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
   return {
     gastos: {
       deBodega: cx.general.deBodega,
+      origen: cx.general.origen,
       redondeo: cx.general.redondeo,
       margen: cx.general.gastos.margenMinorista,
       promo: cx.general.gastos.mlPromoPct,

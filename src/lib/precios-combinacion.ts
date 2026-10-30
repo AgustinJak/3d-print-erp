@@ -11,12 +11,24 @@ import {
   redondear,
   techoDeRedondeo,
   TRAMOS_MAYORISTA,
+  TRAMOS_WEB,
   tresPrecios,
   type GastosVenta,
   type Politica,
   type Redondeo,
   type TresPrecios,
 } from "@/lib/precios-formula";
+import type { LecturaMl } from "@/lib/precios-ml";
+import {
+  costosDeLectura,
+  costosDeOpcionUno,
+  opcionUnoConMargen,
+  opcionUnoFija,
+  precioParaGanancia,
+  tresPreciosErp,
+} from "@/lib/precios-ml-publicacion";
+import { tarifasGuardadas } from "@/lib/tarifas-ml";
+import { pctMasAlto, type TarifasMl } from "@/lib/tarifas-ml-reglas";
 
 /**
  * El precio de cada combinación que se vende (docs/sdd/003, spec 003).
@@ -39,23 +51,44 @@ export interface GastosDeVenta {
   redondeo: Redondeo;
   /** false = Bodega todavía no subió sus gastos y se usan los medidos (la pantalla lo avisa). */
   deBodega: boolean;
+  /**
+   * De dónde salen (docs/sdd/006, spec 001): "erp" = `config_precios`, y entonces se calcula con
+   * el motor del ERP (margen sobre el precio y lo que cobra ML de verdad); "bodega" o "medidos" =
+   * como en el SDD 003, mientras el ERP no tenga su configuración.
+   */
+  origen: "erp" | "bodega" | "medidos";
 }
 
-/** Los gastos de venta y el redondeo general que subió la calculadora de Bodega. */
-export async function leerGastosDeVenta(): Promise<GastosDeVenta> {
-  const filas = await prisma.$queryRaw<Array<{ gastos_venta: unknown }>>`
-    SELECT gastos_venta FROM bodega.cost_settings WHERE id = 'default'`;
-  const g = filas[0]?.gastos_venta;
-  if (!g || typeof g !== "object") return { gastos: GASTOS_MEDIDOS, redondeo: REDONDEO_POR_DEFECTO, deBodega: false };
-
-  const o = g as Record<string, unknown>;
+/** Las claves de GastosVenta que vengan en `o`, sobre los gastos medidos. */
+function gastosDesde(o: Record<string, unknown>): GastosVenta {
   const gastos = { ...GASTOS_MEDIDOS };
-  for (const k of Object.keys(GASTOS_MEDIDOS) as Array<keyof GastosVenta>) {
+  const claves = [...Object.keys(GASTOS_MEDIDOS), "webEnvioReservaPct"] as Array<keyof GastosVenta>;
+  for (const k of claves) {
     const v = o[k];
     const n = typeof v === "number" ? v : parseFloat(String(v));
     if (Number.isFinite(n)) gastos[k] = n;
   }
-  return { gastos, redondeo: esRedondeo(o.redondeo) ? o.redondeo : REDONDEO_POR_DEFECTO, deBodega: true };
+  return gastos;
+}
+
+/**
+ * Los gastos de venta y el redondeo generales: los del ERP (`config_precios`) si el tenant ya los
+ * tiene; si no, los que subió la calculadora de Bodega.
+ */
+export async function leerGastosDeVenta(tenantId?: string): Promise<GastosDeVenta> {
+  if (tenantId) {
+    const cfg = await prisma.configPrecios.findUnique({ where: { tenantId } });
+    if (cfg && cfg.gastos && typeof cfg.gastos === "object") {
+      const o = cfg.gastos as Record<string, unknown>;
+      return { gastos: gastosDesde(o), redondeo: esRedondeo(o.redondeo) ? o.redondeo : REDONDEO_POR_DEFECTO, deBodega: false, origen: "erp" };
+    }
+  }
+  const filas = await prisma.$queryRaw<Array<{ gastos_venta: unknown }>>`
+    SELECT gastos_venta FROM bodega.cost_settings WHERE id = 'default'`;
+  const g = filas[0]?.gastos_venta;
+  if (!g || typeof g !== "object") return { gastos: GASTOS_MEDIDOS, redondeo: REDONDEO_POR_DEFECTO, deBodega: false, origen: "medidos" };
+  const o = g as Record<string, unknown>;
+  return { gastos: gastosDesde(o), redondeo: esRedondeo(o.redondeo) ? o.redondeo : REDONDEO_POR_DEFECTO, deBodega: true, origen: "bodega" };
 }
 
 /** Lo que guardó Bodega la última vez que tocaron "Guardar precios" en la pieza. */
@@ -134,24 +167,61 @@ export interface PrecioDeCombinacion {
   foto: FotoDeBodega | null;
 }
 
+/** Lo que usa el motor del ERP, además de lo de siempre (docs/sdd/006). */
+export interface DelErp {
+  tarifas: TarifasMl | null;
+  /** La política propia de cada producto del ERP, y su precio de ML fijo si tiene. */
+  modelos: Map<string, { politica: Politica; precioMlFijo: number | null; categoriaMl: string | null }>;
+  /** La categoría de ML de cada combinación, la de una publicación suya ya leída. */
+  categorias: Map<string, string>;
+}
+
 export interface ContextoDePrecios {
   general: GastosDeVenta;
   reservas: Contexto;
   costos: Map<string, CostoDeFila>;
   bodegaDeFila: Map<string, string | null>;
   piezas: Map<string, DeBodega>;
+  /** null = todavía se calcula como en el SDD 003. */
+  erp: DelErp | null;
+}
+
+export async function cargarDelErp(tenantId: string): Promise<DelErp> {
+  const [tarifas, modelos, mapeos] = await Promise.all([
+    tarifasGuardadas(tenantId),
+    prisma.modelo.findMany({ where: { tenantId }, select: { id: true, margen: true, promoMl: true, redondeo: true, precioMlFijo: true, categoriaMl: true } }),
+    prisma.mapeoCanal.findMany({ where: { tenantId, canal: "mercadolibre", ignorar: false, combinacionId: { not: null } }, select: { combinacionId: true, precioLectura: true } }),
+  ]);
+  const categorias = new Map<string, string>();
+  for (const m of mapeos) {
+    const cat = (m.precioLectura as unknown as LecturaMl | null)?.categoria;
+    if (cat && !categorias.has(m.combinacionId!)) categorias.set(m.combinacionId!, cat);
+  }
+  return {
+    tarifas,
+    modelos: new Map(modelos.map((m) => [m.id, { politica: politicaDeModelo(m), precioMlFijo: m.precioMlFijo, categoriaMl: m.categoriaMl }])),
+    categorias,
+  };
+}
+
+/** La comisión de ML de una combinación: la de su categoría; si no se sabe, la más alta. */
+export function pctDeCombinacion(cx: ContextoDePrecios, combinacionId: string, modeloId: string, categoria?: string | null): number {
+  const t = cx.erp?.tarifas;
+  const cat = categoria ?? cx.erp?.categorias.get(combinacionId) ?? cx.erp?.modelos.get(modeloId)?.categoriaMl ?? null;
+  return (cat ? t?.categorias[cat] : undefined) ?? pctMasAlto(t ?? null) ?? cx.general.gastos.mlComisionPct;
 }
 
 /** Todo lo que hace falta para calcular cualquier combinación del tenant, de una vez. */
 export async function cargarContextoDePrecios(tenantId: string): Promise<ContextoDePrecios> {
   const [general, reservas, costos, filas, piezas] = await Promise.all([
-    leerGastosDeVenta(),
+    leerGastosDeVenta(tenantId),
     cargarContexto(prisma, tenantId),
     costosPorFilaDeStock(tenantId),
     prisma.stock.findMany({ where: { tenantId }, select: { id: true, bodegaModelId: true } }),
     leerPiezasDeBodega(),
   ]);
-  return { general, reservas, costos, bodegaDeFila: new Map(filas.map((f) => [f.id, f.bodegaModelId])), piezas };
+  const erp = general.origen === "erp" ? await cargarDelErp(tenantId) : null;
+  return { general, reservas, costos, bodegaDeFila: new Map(filas.map((f) => [f.id, f.bodegaModelId])), piezas, erp };
 }
 
 /** Los gastos con que se calcula una combinación: los generales con el margen y la promo de su pieza. */
@@ -201,12 +271,22 @@ export function precioDeCombinacion(
   }
 
   const deBodega = pieza ? cx.piezas.get(pieza.bodegaModelId) : undefined;
-  const p = aplicarPolitica(cx.general.gastos, cx.general.redondeo, deBodega?.politica ?? { margen: null, redondeo: null, promo: null });
+  // Con la configuración del ERP manda la política del producto en el ERP. De Bodega se sigue
+  // tomando el redondeo y la promo de la pieza, no el margen: era sobre otra cuenta (spec 002).
+  const delErp = cx.erp?.modelos.get(c.modeloId);
+  const propiaPolitica: Politica = cx.erp
+    ? {
+        margen: delErp?.politica.margen ?? null,
+        redondeo: delErp?.politica.redondeo ?? deBodega?.politica.redondeo ?? null,
+        promo: delErp?.politica.promo ?? deBodega?.politica.promo ?? null,
+      }
+    : (deBodega?.politica ?? { margen: null, redondeo: null, promo: null });
+  const p = aplicarPolitica(cx.general.gastos, cx.general.redondeo, propiaPolitica);
   const politica = {
     margen: p.gastos.margenMinorista,
     redondeo: p.redondeo,
     promo: p.gastos.mlPromoPct,
-    propia: !!deBodega && Object.values(deBodega.politica).some((v) => v != null),
+    propia: Object.values(propiaPolitica).some((v) => v != null),
   };
 
   const base = { combinacionId: c.id, modeloId: c.modeloId, modelo: cx.reservas.modelos.get(c.modeloId) ?? "", nombre: c.nombre, sku: c.sku, variantes: c.variantes, politica, foto: deBodega?.foto ?? null };
@@ -218,7 +298,13 @@ export function precioDeCombinacion(
     pieza,
     receta,
   };
-  const precios = tresPrecios(p.gastos, costo.fabricacion, costo.insumos, p.redondeo);
+  const precios = cx.erp
+    ? tresPreciosErp(p.gastos, costo.fabricacion, costo.insumos, p.redondeo, {
+        pct: pctDeCombinacion(cx, c.id, c.modeloId),
+        tarifas: cx.erp.tarifas,
+        precioFijo: delErp?.precioMlFijo ?? null,
+      })
+    : tresPrecios(p.gastos, costo.fabricacion, costo.insumos, p.redondeo);
   // Los gastos más el margen se comen todo el precio: la calculadora tampoco da número.
   if (![precios.ml, precios.web, precios.personalizado].every(Number.isFinite)) {
     return { ...base, costo, falta: [{ motivo: "sin_precio_posible", etiqueta: pieza.etiqueta }], precios: null };
@@ -257,10 +343,12 @@ export function precioDeClave(
   p: PrecioDeCombinacion,
   canal: "mercadolibre" | "shop",
   unidades: number,
-  general: GastosVenta
+  general: GastosVenta,
+  erp?: { cx: ContextoDePrecios; mla: string | null; lectura: LecturaMl | null }
 ): number | null {
   if (!p.precios) return null;
   const n = Math.max(1, Math.floor(unidades));
+  if (erp?.cx.erp && p.costo) return precioDeClaveErp(p, canal, n, erp.cx, erp.mla, erp.lectura);
   if (n === 1) return canal === "mercadolibre" ? p.precios.mlPublicado : p.precios.web;
 
   const g = gastosDe(general, p.politica);
@@ -270,6 +358,40 @@ export function precioDeClave(
   const techo = techoDeRedondeo(g, deBodega, crudo);
   const total = redondear(crudo, p.politica.redondeo, techo);
   return deBodega === "ml" ? precioConPromo(total, g.mlPromoPct, techo).publicado : total;
+}
+
+/**
+ * El precio de una clave con la configuración del ERP (docs/sdd/006, specs 003, 006 y 009).
+ *
+ * - ML: la opción 1 de esas unidades (un pack se calcula entero, con un solo cargo fijo y un solo
+ *   envío), y la publicación sube hasta dejar lo mismo con sus costos: cuotas, envío gratis,
+ *   comisión de su categoría. Con el precio fijo del producto, la opción 1 es ese precio.
+ * - Shop: la web, y un pack con el tramo por cantidad de la web.
+ */
+function precioDeClaveErp(
+  p: PrecioDeCombinacion,
+  canal: "mercadolibre" | "shop",
+  n: number,
+  cx: ContextoDePrecios,
+  mla: string | null,
+  lectura: LecturaMl | null
+): number | null {
+  const g = gastosDe(cx.general.gastos, p.politica);
+  if (canal === "shop") {
+    if (n === 1) return p.precios!.web;
+    const descuento = [...TRAMOS_WEB].reverse().find((t) => n >= t.desde)?.descuento ?? 0;
+    return Math.round(redondear(n * p.precios!.web * (1 - descuento / 100), p.politica.redondeo));
+  }
+  const erp = cx.erp!;
+  const fab = p.costo!.fabricacion * n;
+  const ins = p.costo!.insumos * n;
+  const pct = pctDeCombinacion(cx, p.combinacionId, p.modeloId, lectura?.categoria);
+  const fijo = n === 1 ? (erp.modelos.get(p.modeloId)?.precioMlFijo ?? null) : null;
+  const uno = costosDeOpcionUno(g, pct);
+  const op1 = fijo != null ? opcionUnoFija(g, fab, ins, fijo, uno, erp.tarifas) : opcionUnoConMargen(g, fab, ins, p.politica.redondeo, uno, erp.tarifas);
+  if (!lectura?.tipo || !mla) return op1.publicado;
+  const r = precioParaGanancia(g, fab, ins, p.politica.redondeo, op1.ganancia, costosDeLectura(lectura, mla, erp.tarifas, g, pct), erp.tarifas);
+  return Number.isFinite(r.publicado) ? r.publicado : null;
 }
 
 export interface PrecioDeVentaErp {

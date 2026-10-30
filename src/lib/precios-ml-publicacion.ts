@@ -1,12 +1,15 @@
 import {
   margenDe,
   precioConGanancia,
+  precioConMargen,
   precioMl,
   precioConPromo,
+  precioWeb,
   redondear,
   techoDeRedondeo,
   type GastosVenta,
   type Redondeo,
+  type TresPrecios,
 } from "@/lib/precios-formula";
 import { cargoFijo, RECARGO_CUOTAS_POR_DEFECTO, type TarifasMl } from "@/lib/tarifas-ml-reglas";
 import type { LecturaMl } from "@/lib/precios-ml";
@@ -215,6 +218,34 @@ export function opcionUnoFija(
     ganancia: margenDe(gastosConCostos(g, costos, fijo), "ml", final, fabricacion, insumos).ganancia,
     cargoFijo: fijo,
     costos,
+  };
+}
+
+/**
+ * Los tres precios de una combinación con la configuración del ERP (docs/sdd/006, specs 001, 003 y
+ * 009): ML es la opción 1 con la comisión de su categoría (o el precio fijo del producto), la web
+ * es margen sobre el precio con la reserva para el envío gratis, y personalizados es margen sobre
+ * el precio sin gastos. La ganancia es la de la opción 1: la meta de cada publicación de ML.
+ */
+export function tresPreciosErp(
+  g: GastosVenta,
+  fabricacion: number,
+  insumos: number,
+  redondeo: Redondeo,
+  ml: { pct: number; tarifas: Pick<TarifasMl, "fijos"> | null; precioFijo: number | null }
+): TresPrecios {
+  const costos = costosDeOpcionUno(g, ml.pct);
+  const op1 =
+    ml.precioFijo != null
+      ? opcionUnoFija(g, fabricacion, insumos, ml.precioFijo, costos, ml.tarifas)
+      : opcionUnoConMargen(g, fabricacion, insumos, redondeo, costos, ml.tarifas);
+  const pers = precioConMargen(g, "personalizado", fabricacion, insumos).recomendado.precio;
+  return {
+    ml: op1.final,
+    mlPublicado: op1.publicado,
+    web: precioWeb(g, fabricacion, insumos, redondeo),
+    personalizado: redondear(pers, redondeo),
+    ganancia: Number.isFinite(op1.ganancia) ? op1.ganancia : null,
   };
 }
 

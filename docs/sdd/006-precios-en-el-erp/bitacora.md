@@ -175,3 +175,20 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
   `sale_price` no distinguía: ahora también mira la lista de promos (`quedoEnPromos`). 29 de 29.
 - MLA2765408434 pasada de la Tanjiro vieja 65 a la nueva (Agustín). Agustín va a costear las 47
   combinaciones sin costo.
+
+## 2026-10-30 · Claude (sesión del inventario) — el motor del ERP, con interruptor
+
+- En producción el commit 8750fe1 (pantalla de Promos y todo lo de la 006 hasta acá).
+- TASK-006 y el núcleo de TASK-008: `leerGastosDeVenta(tenantId)` lee `config_precios` si existe
+  (`origen: "erp"`); si no, Bodega como siempre. Con `origen: "erp"`, `precioDeCombinacion` usa
+  `tresPreciosErp` (opción 1 de ML con la comisión de la categoría o el precio fijo, web con
+  `precioWeb`, personalizados con margen sobre el precio) y `precioDeClave` calcula cada
+  publicación de ML con lo que cobra ML por ella; un pack de ML se calcula entero; un pack del Shop
+  usa los tramos de la web. La política del producto sale de `modelos` del ERP; de Bodega se sigue
+  tomando redondeo y promo de la pieza, no el margen.
+- Sin la fila nada cambia: `sdd-003-probar-precios` da las mismas 16 fallas conocidas.
+- `scripts/sdd-006-migrar.ts` (TASK-009), en modo de prueba: ML 36 suben y 54 bajan respecto de lo
+  que propone Precios hoy; **la web baja en todos los productos, mucho** (collar $12.490 → $2.790,
+  bola de JoJo's $22.290 → $8.190, Yamato sin funda $48.890 → $29.290). Con margen 35 % sobre el
+  precio y 13,6 % de gastos, una venta en la web deja un tercio de los pesos que deja en ML. Antes
+  (SDD 003) la web dejaba los mismos pesos que ML. **No se aplicó: lo decide Agustín.**

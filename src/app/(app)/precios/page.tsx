@@ -240,9 +240,16 @@ function PantallaPrecios() {
           <h1 className="text-2xl font-bold">Precios</h1>
           {datos && (
             <p className="text-sm text-muted-foreground">
-              {datos.gastos.deBodega ? "Gastos de Bodega" : "Gastos medidos (Bodega todavía no subió los suyos)"} · margen {datos.gastos.margen} % · promo ML{" "}
-              {String(datos.gastos.promo).replace(".", ",")} % · redondeo {REDONDEO[datos.gastos.redondeo] ?? datos.gastos.redondeo}. El margen, la promo y el redondeo
-              de cada pieza, si los tiene, van en Bodega.
+              {datos.gastos.origen === "erp"
+                ? "Configuración del ERP"
+                : datos.gastos.deBodega
+                  ? "Gastos de Bodega"
+                  : "Gastos medidos (Bodega todavía no subió los suyos)"}{" "}
+              · margen {datos.gastos.margen} % sobre el precio · promo ML {String(datos.gastos.promo).replace(".", ",")} % · redondeo{" "}
+              {REDONDEO[datos.gastos.redondeo] ?? datos.gastos.redondeo}.{" "}
+              {datos.gastos.origen === "erp"
+                ? "Cada publicación de ML con lo que cobra ML por ella: comisión de su categoría, cargo fijo, cuotas y envío."
+                : "El margen, la promo y el redondeo de cada pieza, si los tiene, van en Bodega."}
             </p>
           )}
         </div>
