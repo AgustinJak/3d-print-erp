@@ -5,6 +5,7 @@ import {
   precioMl,
   precioConPromo,
   precioWeb,
+  precioWebConGanancia,
   redondear,
   techoDeRedondeo,
   type GastosVenta,
@@ -223,9 +224,13 @@ export function opcionUnoFija(
 
 /**
  * Los tres precios de una combinación con la configuración del ERP (docs/sdd/006, specs 001, 003 y
- * 009): ML es la opción 1 con la comisión de su categoría (o el precio fijo del producto), la web
- * es margen sobre el precio con la reserva para el envío gratis, y personalizados es margen sobre
- * el precio sin gastos. La ganancia es la de la opción 1: la meta de cada publicación de ML.
+ * 009). ML es la opción 1 con la comisión de su categoría (o el precio fijo del producto), y lo
+ * que deja es la meta de cada publicación de ML.
+ *
+ * La web y personalizados **dejan los mismos pesos que ML, y nunca menos que el margen** (decisión
+ * de Agustín, 2026-10-30): con 35 % parejo, una venta en la web dejaba un tercio de lo que deja en
+ * ML (collar $2.790 contra $7.990), porque la web paga 13,6 % de gastos y ML casi 40 %. El piso del
+ * margen cubre los productos con precio de ML fijo, que ganan menos en ML a propósito.
  */
 export function tresPreciosErp(
   g: GastosVenta,
@@ -239,13 +244,16 @@ export function tresPreciosErp(
     ml.precioFijo != null
       ? opcionUnoFija(g, fabricacion, insumos, ml.precioFijo, costos, ml.tarifas)
       : opcionUnoConMargen(g, fabricacion, insumos, redondeo, costos, ml.tarifas);
-  const pers = precioConMargen(g, "personalizado", fabricacion, insumos).recomendado.precio;
+  const ganancia = Number.isFinite(op1.ganancia) && op1.ganancia > 0 ? op1.ganancia : null;
+  const web = precioWeb(g, fabricacion, insumos, redondeo);
+  const pers = redondear(precioConMargen(g, "personalizado", fabricacion, insumos).recomendado.precio, redondeo);
+  const persMismo = ganancia != null ? redondear(precioConGanancia(g, "personalizado", fabricacion, insumos, ganancia, false).precio, redondeo) : pers;
   return {
     ml: op1.final,
     mlPublicado: op1.publicado,
-    web: precioWeb(g, fabricacion, insumos, redondeo),
-    personalizado: redondear(pers, redondeo),
-    ganancia: Number.isFinite(op1.ganancia) ? op1.ganancia : null,
+    web: ganancia != null ? Math.max(web, precioWebConGanancia(g, fabricacion, insumos, redondeo, ganancia)) : web,
+    personalizado: Math.max(pers, persMismo),
+    ganancia,
   };
 }
 

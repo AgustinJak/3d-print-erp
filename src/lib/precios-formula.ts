@@ -561,6 +561,22 @@ export function precioWeb(g: GastosVenta, fabricacion: number, insumos: number, 
 }
 
 /**
+ * El precio de la web que deja `ganancia` en pesos (docs/sdd/006, decisión de Agustín del
+ * 2026-10-30): con la reserva para el envío gratis, y si el producto solo pasa el umbral, con su
+ * envío adentro y sin reserva, igual que `precioWeb`.
+ */
+export function precioWebConGanancia(g: GastosVenta, fabricacion: number, insumos: number, redondeo: Redondeo, ganancia: number): number {
+  const visible = (gx: GastosVenta) => {
+    const crudo = precioConGanancia(gx, 'web', fabricacion, insumos, ganancia, false).precio
+    return redondear(crudo, redondeo, techoDeRedondeo(gx, 'web', crudo))
+  }
+  const conReserva = visible(g)
+  if (!g.webEnvioReservaPct || g.webEnvioGratisDesde <= 0 || conReserva < g.webEnvioGratisDesde) return conReserva
+  const sinReserva = visible({ ...g, webEnvioReservaPct: 0 })
+  return sinReserva >= g.webEnvioGratisDesde ? sinReserva : conReserva
+}
+
+/**
  * Los descuentos por cantidad de la web, uno para todos los productos como los tiene el Shop, y el
  * margen que cada tramo no puede perforar (decisión de Agustín, 2026-10-30; docs/sdd/006, spec 009).
  *

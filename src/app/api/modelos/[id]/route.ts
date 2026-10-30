@@ -5,6 +5,7 @@ import { asegurarFilasDeStock } from "@/lib/stock-filas";
 import { sembrarCombinacionesDeModelo, soltarVariantesBorradas } from "@/lib/combinaciones";
 import { actualizarNombres, grupoDeVariante, tipoDeVariante } from "@/lib/catalogo";
 import { parsePrice } from "@/lib/utils";
+import { esRedondeo } from "@/lib/precios-formula";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -228,6 +229,21 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       data.imagenUrl = urls[0] ?? null; // la primera es la principal
     }
     if ("activo" in body) data.activo = Boolean(body.activo);
+
+    // La política de precio del producto (docs/sdd/006, spec 002): vacío = sigue a la general.
+    const pct = (k: string, max: number) => {
+      if (body[k] === null || body[k] === "") return null;
+      const n = Number(String(body[k]).replace(",", "."));
+      if (!Number.isFinite(n) || n < 0 || n > max) throw new Error(`${k} tiene que ir de 0 a ${max}`);
+      return n;
+    };
+    if ("margen" in body) data.margen = pct("margen", 80);
+    if ("promoMl" in body) data.promoMl = pct("promoMl", 60);
+    if ("redondeo" in body) {
+      if (body.redondeo !== null && body.redondeo !== "" && !esRedondeo(body.redondeo)) return NextResponse.json({ error: "redondeo inválido" }, { status: 400 });
+      data.redondeo = body.redondeo || null;
+    }
+    if ("precioMlFijo" in body) data.precioMlFijo = opcional("precioMlFijo");
 
     const categoriaIds = Array.isArray(body.categoriaIds) ? body.categoriaIds.filter((x): x is string => typeof x === "string") : null;
 

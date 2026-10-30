@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { gruposDe, tipoDeVariante, type TipoGrupo } from "@/lib/catalogo";
 import { fabricacionDePieza, leerParametros, leerRecetas } from "@/lib/costos-bodega";
 import { cargarContexto, componentesDeItem, type Componente } from "@/lib/reservas";
-import { preciosDeCombinaciones } from "@/lib/precios-combinacion";
+import { leerGastosDeVenta, preciosDeCombinaciones } from "@/lib/precios-combinacion";
 import { PREFIJO_FALTA, textoDeFalta } from "@/lib/precios-reglas";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
@@ -64,6 +64,17 @@ export interface Ficha {
     /** Piezas enganchadas que Bodega todavía no costeó. */
     faltan: string[];
   };
+  /**
+   * La política de precio del producto (docs/sdd/006, spec 002): null = sigue a la general. La
+   * general viene para mostrar qué usa el producto cuando no tiene la suya.
+   */
+  politica: {
+    margen: number | null;
+    promoMl: number | null;
+    redondeo: string | null;
+    precioMlFijo: number | null;
+    general: { margen: number; promo: number; redondeo: string; origen: "erp" | "bodega" | "medidos" };
+  };
   grupos: Array<{ nombre: string; tipo: TipoGrupo; opciones: OpcionDeFicha[] }>;
   /** La fila del producto cuando no tiene grupo de piezas. */
   fila: FilaDeFicha | null;
@@ -109,6 +120,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       },
     });
     if (!m) return NextResponse.json({ error: "Producto no encontrado" }, { status: 404 });
+    const general = await leerGastosDeVenta(tenantId);
 
     const [filas, combinaciones, reglas, publicaciones, ctx, parametros, recetas, precios] = await Promise.all([
       prisma.stock.findMany({ where: { tenantId, modeloId: id }, select: { id: true, etiqueta: true, cantidad: true, variantes: true, bodegaModelId: true }, orderBy: { etiqueta: "asc" } }),
@@ -238,6 +250,13 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         consolidadoEn: m.consolidadoEn,
       },
       costo: { deBodega, faltan },
+      politica: {
+        margen: m.margen,
+        promoMl: m.promoMl,
+        redondeo: m.redondeo,
+        precioMlFijo: m.precioMlFijo,
+        general: { margen: general.gastos.margenMinorista, promo: general.gastos.mlPromoPct, redondeo: general.redondeo, origen: general.origen },
+      },
       grupos,
       fila: filaPropia ? fichaDeFila(filaPropia) : null,
       filasSobrantes,
