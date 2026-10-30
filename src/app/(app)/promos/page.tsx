@@ -161,10 +161,37 @@ function Acciones({ f, general, onPedir }: { f: FilaPromo; general: number; onPe
 
 /* ───────────────────────── Pestañas ───────────────────────── */
 
-function TablaFilas({ filas, general, onPedir, conAvisos }: { filas: FilaPromo[]; general: number; onPedir: (p: PedidoDePromo[], t: string) => void; conAvisos?: boolean }) {
+function TablaFilas({
+  filas,
+  general,
+  onPedir,
+  conAvisos,
+  elegidas,
+  onElegir,
+}: {
+  filas: FilaPromo[];
+  general: number;
+  onPedir: (p: PedidoDePromo[], t: string) => void;
+  conAvisos?: boolean;
+  /** Con selección: las publicaciones tildadas para un cambio en cantidad. */
+  elegidas?: Set<string>;
+  onElegir?: (mlas: string[], si: boolean) => void;
+}) {
+  const sel = !!elegidas && !!onElegir;
+  const columnas = sel
+    ? "md:grid-cols-[20px_minmax(0,2fr)_minmax(0,2fr)_90px_minmax(0,1.2fr)_32px]"
+    : "md:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_90px_minmax(0,1.2fr)_32px]";
   return (
     <div className="rounded-lg border divide-y text-sm">
-      <div className="hidden md:grid grid-cols-[minmax(0,2fr)_minmax(0,2fr)_90px_minmax(0,1.2fr)_32px] gap-3 px-3 py-2 text-xs text-muted-foreground">
+      <div className={`hidden md:grid ${columnas} gap-3 px-3 py-2 text-xs text-muted-foreground items-center`}>
+        {sel && (
+          <input
+            type="checkbox"
+            aria-label="Elegir todas"
+            checked={filas.length > 0 && filas.every((f) => elegidas!.has(f.mla))}
+            onChange={(e) => onElegir!(filas.map((f) => f.mla), e.target.checked)}
+          />
+        )}
         <span>Producto</span>
         <span>Hoy</span>
         <span>Supone</span>
@@ -172,7 +199,11 @@ function TablaFilas({ filas, general, onPedir, conAvisos }: { filas: FilaPromo[]
         <span />
       </div>
       {filas.map((f) => (
-        <div key={f.mla} className="grid grid-cols-[minmax(0,1fr)_32px] md:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_90px_minmax(0,1.2fr)_32px] gap-x-3 gap-y-1 px-3 py-2 items-center">
+        <div
+          key={f.mla}
+          className={`grid ${sel ? "grid-cols-[20px_minmax(0,1fr)_32px]" : "grid-cols-[minmax(0,1fr)_32px]"} ${columnas} gap-x-3 gap-y-1 px-3 py-2 items-center ${sel && elegidas!.has(f.mla) ? "bg-primary/5" : ""}`}
+        >
+          {sel && <input type="checkbox" aria-label={`Elegir ${f.producto}`} checked={elegidas!.has(f.mla)} onChange={(e) => onElegir!([f.mla], e.target.checked)} />}
           <Producto f={f} />
           <div className="md:contents">
             <span className="col-span-2 md:col-span-1 text-xs md:text-sm">
@@ -193,12 +224,97 @@ function TablaFilas({ filas, general, onPedir, conAvisos }: { filas: FilaPromo[]
               )}
             </span>
           </div>
-          <div className="row-start-1 col-start-2 md:row-auto md:col-auto">
+          <div className={`row-start-1 ${sel ? "col-start-3" : "col-start-2"} md:row-auto md:col-auto`}>
             <Acciones f={f} general={general} onPedir={onPedir} />
           </div>
         </div>
       ))}
     </div>
+  );
+}
+
+type Masiva = "cambiar" | "sumar" | "sacar";
+
+/**
+ * Lo mismo para varias publicaciones elegidas en Avisos o Todas (Agustín, 2026-10-30: "selector
+ * masivo"). Arma un pedido por publicación a la que le corresponde, y dice cuántas no y por qué.
+ * Todo pasa después por la vista previa.
+ */
+function BarraMasiva({ d, elegidas, onLimpiar, onPedir }: { d: ResumenPromos; elegidas: Set<string>; onLimpiar: () => void; onPedir: (p: PedidoDePromo[], t: string) => void }) {
+  const [accion, setAccion] = useState<Masiva>("cambiar");
+  const [pct, setPct] = useState(String(d.promoGeneral));
+  const campanas = d.campanas.filter((c) => c.aptas > 0 && ["SELLER_CAMPAIGN", "PRICE_DISCOUNT", "DEAL", "SELLER_COUPON_CAMPAIGN"].includes(c.tipo));
+  const [campanaId, setCampanaId] = useState(() => campanas.find((c) => c.tipo === "SELLER_CAMPAIGN")?.id ?? campanas[0]?.id ?? "");
+  const campana = campanas.find((c) => c.id === campanaId) ?? null;
+  const n = Number(pct.replace(",", "."));
+  const filas = d.filas.filter((f) => elegidas.has(f.mla));
+
+  const pedidos: PedidoDePromo[] = [];
+  const fuera: string[] = [];
+  for (const f of filas) {
+    if (accion === "cambiar") {
+      if (f.activa && SE_CAMBIA.includes(f.activa.tipo) && Number.isFinite(n)) {
+        pedidos.push({ mla: f.mla, accion: "cambiar", promocionId: f.activa.id, promocionTipo: f.activa.tipo, precio: Math.round(f.publicado * (1 - n / 100)) });
+      } else fuera.push(f.producto);
+    } else if (accion === "sacar") {
+      if (f.activa) pedidos.push({ mla: f.mla, accion: "sacar", promocionId: f.activa.id, promocionTipo: f.activa.tipo, precio: null });
+      else fuera.push(f.producto);
+    } else {
+      const c = campana && f.candidatas.find((x) => (campana.tipo === "PRICE_DISCOUNT" ? x.tipo === "PRICE_DISCOUNT" : x.id === campana.id));
+      if (c && Number.isFinite(n)) pedidos.push({ mla: f.mla, accion: "sumar", promocionId: c.id, promocionTipo: c.tipo, precio: precioParaPct(c, f.publicado, n).precio });
+      else fuera.push(f.producto);
+    }
+  }
+  const motivo =
+    accion === "cambiar" ? "no están en una campaña propia" : accion === "sacar" ? "no tienen promo" : "no son aptas para esa campaña";
+  const titulo =
+    accion === "cambiar"
+      ? `Pasar ${pedidos.length} a ${pct} % en su campaña`
+      : accion === "sacar"
+        ? `Sacar ${pedidos.length} de su promo`
+        : `Sumar ${pedidos.length} a ${campana?.nombre || nombreDeTipo(campana?.tipo ?? "")} al ${pct} %`;
+
+  return (
+    <Card className="border-primary/40 sticky top-2 z-10">
+      <CardContent className="py-3 px-4 space-y-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium">
+            {elegidas.size} {elegidas.size === 1 ? "elegida" : "elegidas"}
+          </span>
+          <select value={accion} onChange={(e) => setAccion(e.target.value as Masiva)} className="h-8 rounded-md border bg-transparent px-2">
+            <option value="cambiar">Pasar a otro % en su campaña</option>
+            <option value="sumar">Sumar a una campaña</option>
+            <option value="sacar">Sacar de la promo</option>
+          </select>
+          {accion === "sumar" && (
+            <select value={campanaId} onChange={(e) => setCampanaId(e.target.value)} className="h-8 rounded-md border bg-transparent px-2 max-w-[240px]">
+              {campanas.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre || nombreDeTipo(c.tipo)} ({nombreDeTipo(c.tipo)})
+                </option>
+              ))}
+            </select>
+          )}
+          {accion !== "sacar" && (
+            <label className="flex items-center gap-1">
+              <Input value={pct} onChange={(e) => setPct(e.target.value)} className="w-16 h-8" inputMode="decimal" />%
+            </label>
+          )}
+          <Button size="sm" className="ml-auto" disabled={!pedidos.length} onClick={() => onPedir(pedidos, titulo)}>
+            Ver {pedidos.length} y mandar
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onLimpiar}>
+            Limpiar
+          </Button>
+        </div>
+        {fuera.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {fuera.length} no {fuera.length === 1 ? "entra" : "entran"}: {motivo} ({fuera.slice(0, 4).join(", ")}
+            {fuera.length > 4 ? "…" : ""}).
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -370,6 +486,16 @@ export default function PaginaPromos() {
   const [pestana, setPestana] = useState<Pestana>("avisos");
   const [filtro, setFiltro] = useState<TipoDeAviso | "todos">("todos");
   const [cambio, setCambio] = useState<{ pedidos: PedidoDePromo[]; titulo: string } | null>(null);
+  const [elegidas, setElegidas] = useState<Set<string>>(new Set());
+  const elegir = (mlas: string[], si: boolean) =>
+    setElegidas((prev) => {
+      const s = new Set(prev);
+      for (const m of mlas) {
+        if (si) s.add(m);
+        else s.delete(m);
+      }
+      return s;
+    });
   const [historial, setHistorial] = useState<CambioDePromoRegistrado[] | null>(null);
 
   const cargar = useCallback(async () => {
@@ -417,6 +543,7 @@ export default function PaginaPromos() {
 
   function aplicado() {
     setHistorial(null);
+    setElegidas(new Set());
     cargar();
   }
 
@@ -489,6 +616,10 @@ export default function PaginaPromos() {
             ))}
           </div>
 
+          {elegidas.size > 0 && (pestana === "avisos" || pestana === "todas") && (
+            <BarraMasiva d={d} elegidas={elegidas} onLimpiar={() => setElegidas(new Set())} onPedir={pedirCambio} />
+          )}
+
           {pestana === "avisos" && (
             <div className="space-y-3">
               <div className="flex flex-wrap gap-2 text-sm">
@@ -504,7 +635,7 @@ export default function PaginaPromos() {
                 ))}
               </div>
               {avisosVisibles.length ? (
-                <TablaFilas filas={avisosVisibles} general={d.promoGeneral} onPedir={pedirCambio} conAvisos />
+                <TablaFilas filas={avisosVisibles} general={d.promoGeneral} onPedir={pedirCambio} conAvisos elegidas={elegidas} onElegir={elegir} />
               ) : (
                 <EmptyState icon={Percent} title="Nada para avisar" description="Todas las publicaciones tienen la promo que supone su precio." />
               )}
@@ -513,7 +644,7 @@ export default function PaginaPromos() {
 
           {pestana === "campana" && <PorCampana d={d} onPedir={pedirCambio} />}
 
-          {pestana === "todas" && <TablaFilas filas={d.filas} general={d.promoGeneral} onPedir={pedirCambio} />}
+          {pestana === "todas" && <TablaFilas filas={d.filas} general={d.promoGeneral} onPedir={pedirCambio} elegidas={elegidas} onElegir={elegir} />}
 
           {pestana === "historial" && <Historial cambios={historial} />}
 
