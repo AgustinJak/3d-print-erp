@@ -13,7 +13,7 @@
     "approvedAt": "2026-10-29",
     "notes": "\"Dale\", con los agregados de las specs 006 y 007."
   },
-  "updatedAt": "2026-10-30T20:36:51.761Z",
+  "updatedAt": "2026-10-30T22:09:09.000Z",
   "tasks": [
     {
       "id": "TASK-001",
@@ -291,7 +291,7 @@
       "title": "Verificar y crear la opción que falta",
       "description": "Primero: confirmar en la doc de ML cómo se suma una condición de venta a un User Product existente y que la app tenga permiso. Después, crearla para todas las variantes con vista previa y confirmación. La primera, un producto que elija Agustín.",
       "component": "integration",
-      "status": "in-progress",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-012"
@@ -304,8 +304,8 @@
         "src/lib/precios-ml.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": "2026-10-30: verificado con /items/validate qué pide ML (family_name, marca, modelo, medidas del paquete). Falta crear la primera, pausada, con el producto que elija Agustín."
+      "completedAt": "2026-10-30",
+      "notes": "2026-10-30: verificado con /items/validate qué pide ML (family_name, marca, modelo, medidas del paquete). Falta crear la primera, pausada, con el producto que elija Agustín. Primera creación: Dumpling, MLA2249115007 (sólo opción 1). La opción que falta se crea desde el mismo botón (opción 2 marcable)."
     },
     {
       "id": "TASK-014",
@@ -355,7 +355,7 @@
       "title": "Crear en ML, pausado y enlazado",
       "description": "Primero: verificar con un producto de prueba que elija Agustín si se puede crear pausado, qué pide la categoría como mínimo y cómo van las variantes de un User Product. Después: botón en la página del producto que crea las dos opciones pausadas, con vista previa y registro, y deja las claves enlazadas.",
       "component": "integration",
-      "status": "in-progress",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-012",
@@ -372,8 +372,8 @@
         "src/app/(app)/modelos/[id]/page.tsx"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": "2026-10-30: ver TASK-013; mismos requisitos."
+      "completedAt": "2026-10-30",
+      "notes": "2026-10-30: ver TASK-013; mismos requisitos. Botón en la página del producto con borrador, revisión contra ML y creación pausada y enlazada. Falta agrupar variantes en un User Product."
     },
     {
       "id": "TASK-018",

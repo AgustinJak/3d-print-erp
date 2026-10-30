@@ -231,3 +231,11 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
   volvió a prender (`self_service_in`; el GET de Flex tardó ~20 s). Construido en Precios › Mercado Libre:
   se eligen publicaciones y se prende o apaga con vista previa, verificación y registro (`cambios_flex`).
   La tabla de ML ahora deja elegir cualquier publicación; "Aplicar" toma sólo las que tienen precio nuevo.
+
+- (2026-10-30) Primera creación en ML, a pedido de Agustín: el Dumpling Clicker, **MLA2249115007**, opción 1 a
+  $9.212, pausada y enlazada. ML no acepta crear pausada (la crea activa: se pausó en el paso siguiente) y
+  sin foto no deja crear. Detalle en la spec 008. Sigue el botón "Crear en Mercado Libre" (TASK-017).
+- (2026-10-30) "Crear en Mercado Libre" construido en la página del producto (borrador, revisión con
+  /items/validate, creación pausada y enlazada). Probado el borrador y la revisión con la Jabonera Ikigai y
+  Saja Boys (frenan por falta de foto, como corresponde; la categoría de Saja Boys es dudosa). Vault al
+  día: INV - Flujos 10b e índice de endpoints, Flujos del ecosistema 6d.

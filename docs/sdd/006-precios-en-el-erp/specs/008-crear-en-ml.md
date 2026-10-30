@@ -68,3 +68,32 @@ Hoy lo crea a mano en ML y después hay que mapearlo.
   $35.000, "Mandatory free shipping added". No se sabe si bloquean la creación real: se confirma
   creando el primero, pausado, con el producto que elija Agustín.
 - Las publicaciones actuales usan `BRAND=Generic` y garantía "de fábrica, 10 días".
+
+## Primera creación de prueba (2026-10-30, el Dumpling Clicker, elegido por Agustín)
+
+- **MLA2249115007**, "Llavero Dumpling Clicker Fidget Antiestrés", Souvenirs › Llaveros (MLA457519,
+  la del llavero clicker BT21; el predictor había dado "Adiestramiento › Clickers"), Clásica a $9.212,
+  stock 1, paquete 10 × 10 × 10 cm y 80 g (estimados, como el BT21), garantía de fábrica 10 días,
+  marca Generic. Sólo la opción 1: la 2 daba $28.890 (envío gratis estimado $9.900) para un producto
+  de $8.290.
+- **Sin foto ML no deja crear** (`item.listing_type_id.requiresPictures`, error). La foto la pasó
+  Agustín: `POST /pictures/items/upload` (multipart) y en la publicación `pictures: [{ id }]`.
+- **`status: "paused"` al crear no sirve**: ML la creó activa. Se pausó en el paso siguiente
+  (`PUT /items/{id}` con `status: paused`); quedó activa alrededor de un segundo.
+- Los avisos de `validate` ("User has not mode me1", "Free shipping costs exceeds sale") **no
+  bloquearon** la creación real.
+- Quedó enlazada al Dumpling en `mapeos_canal` (origen manual) y la categoría del producto quedó a
+  mano (MLA457519).
+
+## Construido (2026-10-30)
+
+- Página del producto, sección "Sin publicar en Mercado Libre": las combinaciones activas con precio y
+  sin publicación de ML. "Crear en ML" abre el borrador del ERP (`src/lib/crear-ml.ts`): nombre,
+  categoría, opción 1 con lo que deja, opción 2 opcional (desmarcada si sale más del doble), medidas y
+  peso del paquete, stock y fotos del producto.
+- "Revisar en ML" (`POST /api/modelos/[id]/crear-ml` sin `aplicar`): palabras prohibidas, foto,
+  medidas, y `/items/validate`. "Crear pausada" sólo con la revisión sin errores y sin cambios desde
+  entonces: crea, pausa, enlaza en `mapeos_canal`, registra en `cambios_precio` (estado "creada") y
+  deja la categoría como la del producto.
+- Falta: productos con variantes (una publicación por combinación de un mismo User Product). Hoy se
+  crea una publicación por combinación, suelta.
