@@ -100,7 +100,7 @@ function combinacionDePrueba(precios: Partial<copia.TresPrecios>, redondeo: copi
     variantes: [],
     costo: null,
     falta: [],
-    politica: { margen: 50, redondeo, promo: 0, propia: false },
+    politica: { margen: 50, redondeo, promo: 0, propia: false, margenPropio: false },
     precios: { ml: 3490, mlPublicado: 3490, web: 2800, personalizado: 1990, ganancia: 1000, ...precios },
     foto: null,
   };

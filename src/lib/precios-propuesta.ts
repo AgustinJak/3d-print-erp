@@ -9,7 +9,9 @@ import {
   pctDeCombinacion,
   type ContextoDePrecios,
 } from "@/lib/precios-combinacion";
-import { costosDeLectura, opcionDe } from "@/lib/precios-ml-publicacion";
+import { costosDeLectura, costosDeOpcionUno, gastosConCostos, opcionDe } from "@/lib/precios-ml-publicacion";
+import { margenDe } from "@/lib/precios-formula";
+import { promoEsperada } from "@/lib/promos-ml-reglas";
 import { cargoFijo } from "@/lib/tarifas-ml-reglas";
 import { CAMBIO_GRANDE_PCT, conDiferencia, esGrande, textoDeFalta } from "@/lib/precios-reglas";
 import {
@@ -57,6 +59,12 @@ export interface FilaDeCanal {
    * esta publicación. Tipo, cuotas, envío gratis y su costo, comisión, cargo fijo y opción de venta.
    */
   porque: string | null;
+  /**
+   * Lo que deja una venta a lo publicado hoy y a lo propuesto (Agustín, 2026-10-30: "el número de
+   * ganancia abajo"), con lo que cobra el canal y el costo de la combinación. En ML, a lo que paga
+   * el cliente: con la promo si la hay.
+   */
+  deja: { hoy: Deja | null; propuesto: Deja | null };
   /** Por qué pide la confirmación aparte: cambia más de 30 % o ML sacaría la promoción. */
   aparte: string | null;
   etiquetas: string[];
@@ -69,11 +77,19 @@ export interface FilaDeCanal {
   ignorada: boolean;
 }
 
+/** Lo que deja una venta, en pesos y en % del precio. */
+export interface Deja {
+  ganancia: number;
+  margen: number;
+}
+
 export interface FilaErp {
   modeloId: string;
   modelo: string;
   actual: number;
   propuesto: number | null;
+  /** Lo que deja el producto base a lo de hoy y a lo propuesto (personalizados: sin gastos). */
+  deja: { hoy: Deja | null; propuesto: Deja | null };
   diferencia: number | null;
   pct: number | null;
   motivo: string | null;
@@ -171,6 +187,10 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
         motivo,
         aviso: campana?.aviso ?? null,
         porque: mla && lectura?.tipo && p && cx.erp ? porqueDeMl(lectura, mla, cx, p, propuesto) : null,
+        deja: {
+          hoy: p ? dejaDeClave(cx, p, canal, m.unidades, m.precioPublicado, lectura, mla, lectura?.paga ?? null) : null,
+          propuesto: p ? dejaDeClave(cx, p, canal, m.unidades, propuesto, lectura, mla, null) : null,
+        },
         aparte: campana?.sacaPromo ? "ML saca la promoción" : esGrande(dif.pct) ? `cambia más de ${CAMBIO_GRANDE_PCT} %` : null,
         etiquetas,
         producto: canal === "shop" ? productoDeClave(m.clave) : null,
@@ -206,11 +226,14 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
         .filter((a) => nombres.has(a.varianteId))
         .map((a) => ({ varianteId: a.varianteId, nombre: nombres.get(a.varianteId)!.nombre, actual: nombres.get(a.varianteId)!.precioAdicional, propuesto: a.precioAdicional }));
       const sinPrecio = combinaciones.filter((c) => c.modeloId === m.id && !c.precios);
+      const base = r.base ? combinaciones.find((c) => c.combinacionId === r.base) : undefined;
+      const dejaErp = (precio: number | null) => (base?.costo && precio ? deja(margenDe(gastosDe(cx.general.gastos, base.politica), "personalizado", precio, base.costo.fabricacion, base.costo.insumos)) : null);
       return {
         modeloId: m.id,
         modelo: m.nombre,
         actual: m.precioVenta,
         propuesto: r.precioVenta,
+        deja: { hoy: dejaErp(m.precioVenta), propuesto: dejaErp(r.precioVenta) },
         ...diferencia(m.precioVenta, r.precioVenta),
         motivo: r.precioVenta == null ? textoDeFalta(sinPrecio.flatMap((c) => c.falta)) : null,
         adicionales,
@@ -236,6 +259,38 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
     leidoMl: masVieja("mercadolibre"),
     leidoShop: masVieja("shop"),
   };
+}
+
+const deja = (r: { ganancia: number; margen: number }): Deja | null =>
+  Number.isFinite(r.ganancia) ? { ganancia: Math.round(r.ganancia), margen: Math.round(r.margen * 10) / 10 } : null;
+
+/**
+ * Lo que deja una venta de esta clave a `precio` (el publicado). En ML, a lo que paga el cliente:
+ * `paga` si se leyó, si no el publicado menos la promo que supone (sin promo si la regla de los
+ * $30.000 la saca); con la configuración del ERP, con lo que cobra ML por esta publicación.
+ */
+function dejaDeClave(
+  cx: ContextoDePrecios,
+  p: PrecioDeCombinacion,
+  canal: "mercadolibre" | "shop",
+  unidades: number,
+  precio: number | null,
+  lectura: LecturaMl | null,
+  mla: string | null,
+  paga: number | null
+): Deja | null {
+  if (!p.costo || precio == null || !(precio > 0)) return null;
+  const g = gastosDe(cx.general.gastos, p.politica);
+  const n = Math.max(1, Math.floor(unidades));
+  const fab = p.costo.fabricacion * n;
+  const ins = p.costo.insumos * n;
+  if (canal === "shop") return deja(margenDe(g, "web", precio, fab, ins));
+  const final = paga ?? precio * (1 - promoEsperada(precio, g.mlPromoPct, g.mlEnvioDesde) / 100);
+  if (!cx.erp) return deja(margenDe(g, "ml", final, fab, ins));
+  const pct = pctDeCombinacion(cx, p.combinacionId, p.modeloId, lectura?.categoria);
+  const costos = lectura?.tipo && mla ? costosDeLectura(lectura, mla, cx.erp.tarifas, g, pct) : costosDeOpcionUno(g, pct);
+  const fijo = cx.erp.tarifas?.fijos.length ? cargoFijo(cx.erp.tarifas, final) : g.mlCargoFijo;
+  return deja(margenDe(gastosConCostos(g, costos, fijo), "ml", final, fab, ins));
 }
 
 /** El porqué del precio de una publicación de ML, en una línea (spec 003, REQ-3). */

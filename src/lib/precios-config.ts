@@ -178,3 +178,40 @@ export async function historialConfig(tenantId: string, limite = 30): Promise<Ca
     };
   });
 }
+
+/* ───────────────────────── Margen de varios productos a la vez ───────────────────────── */
+
+export interface FilaDeMargen {
+  combinacionId: string;
+  modeloId: string;
+  producto: string;
+  antes: { margen: number; mlPublicado: number; web: number; personalizado: number; ganancia: number | null } | null;
+  despues: { margen: number; mlPublicado: number; web: number; personalizado: number; ganancia: number | null } | null;
+}
+
+/**
+ * Cómo quedan las combinaciones de estos productos con otro margen (Agustín, 2026-10-30: "agarrar
+ * varias y cambiar el % de 35 a 40"). `margen` null = volver al general. No guarda nada.
+ */
+export async function simularMargen(tenantId: string, modeloIds: string[], margen: number | null): Promise<FilaDeMargen[]> {
+  const base = await cargarContextoDePrecios(tenantId);
+  if (!base.erp) throw new Error("El margen por producto se usa con la configuración de precios del ERP.");
+  const modelos = new Map(base.erp.modelos);
+  for (const id of modeloIds) {
+    const m = modelos.get(id) ?? { politica: { margen: null, redondeo: null, promo: null }, precioMlFijo: null, categoriaMl: null };
+    modelos.set(id, { ...m, politica: { ...m.politica, margen } });
+  }
+  const cx: ContextoDePrecios = { ...base, erp: { ...base.erp, modelos } };
+  const [antes, despues] = await Promise.all([preciosDeCombinaciones(tenantId, { modeloIds }, base), preciosDeCombinaciones(tenantId, { modeloIds }, cx)]);
+  const d = new Map(despues.map((p) => [p.combinacionId, p]));
+  const resumen = (p: (typeof antes)[number] | undefined) =>
+    p?.precios ? { margen: p.politica.margen, mlPublicado: p.precios.mlPublicado, web: p.precios.web, personalizado: p.precios.personalizado, ganancia: p.precios.ganancia != null ? Math.round(p.precios.ganancia) : null } : null;
+  return antes.map((p) => ({ combinacionId: p.combinacionId, modeloId: p.modeloId, producto: p.nombre, antes: resumen(p), despues: resumen(d.get(p.combinacionId)) }));
+}
+
+/** Guarda el margen de varios productos. No publica nada: los precios nuevos se aplican en Precios. */
+export async function guardarMargen(tenantId: string, modeloIds: string[], margen: number | null): Promise<number> {
+  if (margen != null && (!Number.isFinite(margen) || margen < 5 || margen > 80)) throw new Error("El margen tiene que ir de 5 a 80");
+  const r = await prisma.modelo.updateMany({ where: { tenantId, id: { in: modeloIds } }, data: { margen } });
+  return r.count;
+}

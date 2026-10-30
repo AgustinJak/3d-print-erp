@@ -162,7 +162,7 @@ export interface PrecioDeCombinacion {
   /** Vacía = hay precio. */
   falta: Falta[];
   /** Con qué se calculó: la política de la pieza en Bodega, o la general. */
-  politica: { margen: number; redondeo: Redondeo; promo: number; propia: boolean };
+  politica: { margen: number; redondeo: Redondeo; promo: number; propia: boolean; margenPropio: boolean };
   precios: TresPrecios | null;
   /** Lo último que guardó Bodega para la pieza, para comparar. */
   foto: FotoDeBodega | null;
@@ -288,6 +288,8 @@ export function precioDeCombinacion(
     redondeo: p.redondeo,
     promo: p.gastos.mlPromoPct,
     propia: Object.values(propiaPolitica).some((v) => v != null),
+    // Sólo el margen: "propia" también es el redondeo o la promo de la pieza en Bodega.
+    margenPropio: propiaPolitica.margen != null,
   };
 
   const base = { combinacionId: c.id, modeloId: c.modeloId, modelo: cx.reservas.modelos.get(c.modeloId) ?? "", nombre: c.nombre, sku: c.sku, variantes: c.variantes, politica, foto: deBodega?.foto ?? null };

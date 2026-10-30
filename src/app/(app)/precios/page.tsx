@@ -13,8 +13,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { EmptyState } from "@/components/empty-state";
 import { json, pedir, pesos } from "@/components/producto/seccion";
 import { ConfiguracionDePrecios } from "@/components/precios/configuracion";
+import { MargenMasivo } from "@/components/precios/margen-masivo";
 import { CAMBIO_GRANDE_PCT, conDiferencia, esGrande, PREFIJO_FALTA, textoDeFalta } from "@/lib/precios-reglas";
-import type { FilaDeCanal, FilaErp, Propuesta, ResultadoFila } from "@/lib/precios-propuesta";
+import type { Deja, FilaDeCanal, FilaErp, Propuesta, ResultadoFila } from "@/lib/precios-propuesta";
 
 /**
  * Precios (docs/sdd/003, spec 004): qué precio cambiaría en cada canal, y aplicarlo.
@@ -81,6 +82,16 @@ function filtrar<T extends { motivo: string | null; diferencia: number | null }>
     default:
       return filas;
   }
+}
+
+/** Lo que deja una venta a ese precio, debajo del precio (Agustín, 2026-10-30). */
+function LineaDeja({ d }: { d: Deja | null }) {
+  if (!d) return null;
+  return (
+    <div className={`text-xs font-normal ${d.ganancia < 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`} title="Lo que te queda por venta, después de comisiones, envío, impuestos y el costo">
+      deja {pesos(d.ganancia)} ({String(d.margen).replace(".", ",")} %)
+    </div>
+  );
 }
 
 function Diferencia({ diferencia, porcentaje }: { diferencia: number | null; porcentaje: number | null }) {
@@ -330,7 +341,7 @@ function PantallaPrecios() {
           <Loader2 className="h-4 w-4 animate-spin" /> Calculando precios…
         </div>
       ) : pestana === "combinaciones" ? (
-        <TablaCombinaciones filas={combinaciones} />
+        <TablaCombinaciones filas={combinaciones} onMargenGuardado={cargar} />
       ) : pestana === "historial" ? (
         <TablaHistorial cambios={historial} />
       ) : pestana === "erp" ? (
@@ -412,14 +423,57 @@ function PantallaPrecios() {
   );
 }
 
-function TablaCombinaciones({ filas }: { filas: Propuesta["combinaciones"] }) {
+function TablaCombinaciones({ filas, onMargenGuardado }: { filas: Propuesta["combinaciones"]; onMargenGuardado: () => void }) {
   const [verFaltan, setVerFaltan] = useState(false);
+  // El margen es del producto: tildar una combinación elige su producto (spec 002).
+  const [elegidos, setElegidos] = useState<Set<string>>(new Set());
+  const [cambiando, setCambiando] = useState(false);
   const conPrecio = filas.filter((c) => c.precios);
   const faltan = filas.filter((c) => !c.precios);
   const visibles = verFaltan ? faltan : conPrecio;
+  const productosVisibles = [...new Set(visibles.map((c) => c.modeloId))];
+  const alternar = (id: string, si: boolean) =>
+    setElegidos((prev) => {
+      const s = new Set(prev);
+      if (si) s.add(id);
+      else s.delete(id);
+      return s;
+    });
   if (!filas.length) return <EmptyState icon={Tag} title="Nada para mostrar" description="No hay combinaciones activas con ese filtro." />;
   return (
     <Card className="overflow-x-auto">
+      {elegidos.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 p-3 border-b text-sm bg-primary/5">
+          <span>
+            {elegidos.size} {elegidos.size === 1 ? "producto elegido" : "productos elegidos"}
+          </span>
+          <Button size="sm" onClick={() => setCambiando(true)}>
+            Cambiar margen
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setElegidos(new Set())}>
+            Limpiar
+          </Button>
+        </div>
+      )}
+      <Dialog open={cambiando} onOpenChange={(o) => !o && setCambiando(false)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Margen de {elegidos.size} {elegidos.size === 1 ? "producto" : "productos"}</DialogTitle>
+            <DialogDescription>Mirá cómo quedan antes de guardar. No se publica nada.</DialogDescription>
+          </DialogHeader>
+          {cambiando && (
+            <MargenMasivo
+              modeloIds={[...elegidos]}
+              onCerrar={() => setCambiando(false)}
+              onGuardado={() => {
+                setCambiando(false);
+                setElegidos(new Set());
+                onMargenGuardado();
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
       <div className="flex items-center gap-2 p-3 border-b text-sm">
         <button type="button" onClick={() => setVerFaltan(false)} className={!verFaltan ? "font-medium" : "text-muted-foreground hover:underline"}>
           Con precio ({conPrecio.length})
@@ -432,6 +486,16 @@ function TablaCombinaciones({ filas }: { filas: Propuesta["combinaciones"] }) {
       <table className="w-full text-sm">
         <thead className="text-xs text-muted-foreground">
           <tr className="border-b">
+            <th className="p-2 w-8">
+              {!verFaltan && (
+                <input
+                  type="checkbox"
+                  aria-label="Elegir todos los productos"
+                  checked={productosVisibles.length > 0 && productosVisibles.every((id) => elegidos.has(id))}
+                  onChange={(e) => setElegidos(e.target.checked ? new Set(productosVisibles) : new Set())}
+                />
+              )}
+            </th>
             <th className="text-left font-medium p-2">Combinación</th>
             {verFaltan ? (
               <th className="text-left font-medium p-2">Qué falta</th>
@@ -450,10 +514,15 @@ function TablaCombinaciones({ filas }: { filas: Propuesta["combinaciones"] }) {
           {visibles.map((c) => (
             <tr key={c.combinacionId} className="border-b last:border-0 align-top">
               <td className="p-2">
+                {!verFaltan && (
+                  <input type="checkbox" aria-label={`Elegir ${c.modelo}`} checked={elegidos.has(c.modeloId)} onChange={(e) => alternar(c.modeloId, e.target.checked)} />
+                )}
+              </td>
+              <td className="p-2">
                 <Link href={`/modelos/${c.modeloId}`} className="hover:underline">
                   {c.nombre}
                 </Link>
-                {c.politica.propia && <span className="ml-1.5 text-xs text-muted-foreground">(margen {c.politica.margen} % propio)</span>}
+                {c.politica.margenPropio && <span className="ml-1.5 text-xs text-muted-foreground">(margen {c.politica.margen} % propio)</span>}
               </td>
               {verFaltan ? (
                 <td className="p-2 text-muted-foreground">{textoDeFalta(c.falta).replace(`${PREFIJO_FALTA} — `, "")}</td>
@@ -598,8 +667,12 @@ function TablaCanal({
                 <td className="p-2 text-right tabular-nums">
                   {f.publicado != null ? pesos(f.publicado) : <span className="text-muted-foreground">—</span>}
                   {f.paga != null && f.publicado != null && Math.abs(f.paga - f.publicado) > 1 && <div className="text-xs text-muted-foreground">paga {pesos(f.paga)}</div>}
+                  <LineaDeja d={f.deja.hoy} />
                 </td>
-                <td className="p-2 text-right tabular-nums">{f.propuesto != null ? pesos(f.propuesto) : <span className="text-muted-foreground">—</span>}</td>
+                <td className="p-2 text-right tabular-nums">
+                  {f.propuesto != null ? pesos(f.propuesto) : <span className="text-muted-foreground">—</span>}
+                  <LineaDeja d={f.deja.propuesto} />
+                </td>
                 <td className="p-2 text-right tabular-nums">
                   <Diferencia diferencia={f.diferencia} porcentaje={f.pct} />
                 </td>
@@ -673,8 +746,14 @@ function TablaErp({
                   {f.motivo && <div className="text-xs text-muted-foreground max-w-[340px]">{f.motivo}</div>}
                   <Resultado r={resultados.get(f.modeloId)} />
                 </td>
-                <td className="p-2 text-right tabular-nums">{pesos(f.actual)}</td>
-                <td className="p-2 text-right tabular-nums">{f.propuesto != null ? pesos(f.propuesto) : "—"}</td>
+                <td className="p-2 text-right tabular-nums">
+                  {pesos(f.actual)}
+                  <LineaDeja d={f.deja.hoy} />
+                </td>
+                <td className="p-2 text-right tabular-nums">
+                  {f.propuesto != null ? pesos(f.propuesto) : "—"}
+                  <LineaDeja d={f.deja.propuesto} />
+                </td>
                 <td className="p-2 text-right tabular-nums">
                   <Diferencia diferencia={f.diferencia} porcentaje={f.pct} />
                 </td>

@@ -117,6 +117,31 @@ export async function tarifasGuardadas(tenantId: string): Promise<TarifasMl | nu
 }
 
 /**
+ * Suma la comisión de categorías que todavía no están, sin tocar las demás ni releer los tramos y
+ * las cuotas (docs/sdd/006, TASK-007: la categoría de un producto sin publicar). Sólo GET.
+ */
+export async function sumarCategorias(tenantId: string, categorias: string[]): Promise<TarifasMl | null> {
+  const previas = await tarifasGuardadas(tenantId);
+  if (!previas) return null;
+  const faltan = [...new Set(categorias)].filter((c) => previas.categorias[c] == null);
+  if (!faltan.length) return previas;
+  const cats = { ...previas.categorias };
+  for (let i = 0; i < faltan.length; i += 6) {
+    await Promise.all(
+      faltan.slice(i, i + 6).map(async (c) => {
+        const pct = clasica(await cotizar(tenantId, 20000, c).catch(() => []))?.meli_percentage_fee;
+        if (typeof pct === "number") cats[c] = pct;
+      })
+    );
+  }
+  const t: TarifasMl = { ...previas, categorias: cats };
+  const cfg = await prisma.configTenant.findUnique({ where: { tenantId } });
+  const data = { ...((cfg?.data ?? {}) as Record<string, unknown>), [CLAVE]: t };
+  await prisma.configTenant.update({ where: { tenantId }, data: { data: data as unknown as Prisma.InputJsonValue } });
+  return t;
+}
+
+/**
  * Las tarifas al día para estas categorías: lee de ML lo que falta o lo que tiene más de un día, y
  * lo guarda. Sólo `GET`.
  */
