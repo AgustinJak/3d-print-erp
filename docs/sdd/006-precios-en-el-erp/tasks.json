@@ -13,7 +13,7 @@
     "approvedAt": "2026-10-29",
     "notes": "\"Dale\", con los agregados de las specs 006 y 007."
   },
-  "updatedAt": "2026-10-30T20:31:04.654Z",
+  "updatedAt": "2026-10-30T20:36:51.761Z",
   "tasks": [
     {
       "id": "TASK-001",
@@ -333,7 +333,7 @@
       "title": "Flex desde el ERP",
       "description": "Primero: verificar en la doc de ML el recurso y el permiso. Después: leer si tiene Flex y prenderlo o apagarlo desde Precios, con registro.",
       "component": "integration",
-      "status": "in-progress",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-003"
@@ -347,8 +347,8 @@
         "src/app/(app)/precios/page.tsx"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": "2026-10-30: lectura de Flex (self_service_in) y etiqueta en Precios (c2447e3). Falta prender/apagar: se prueba con un producto que elija Agustín."
+      "completedAt": "2026-10-30",
+      "notes": "2026-10-30: lectura de Flex (self_service_in) y etiqueta en Precios (c2447e3). Falta prender/apagar: se prueba con un producto que elija Agustín. Prender/apagar probado con el Carrete y en Precios › Mercado Libre, con registro en cambios_flex."
     },
     {
       "id": "TASK-017",

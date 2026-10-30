@@ -35,3 +35,19 @@ create table if not exists public.promos_ml_lectura (
   primary key (tenant_id, mla)
 );
 alter table public.promos_ml_lectura enable row level security;
+
+-- Cada vez que se prende o apaga Flex desde el ERP (docs/sdd/006, spec 007). "aplicado" =
+-- verificado en la publicación (`self_service_in` / `self_service_out`).
+create table if not exists public.cambios_flex (
+  id         text primary key,
+  tenant_id  text not null,
+  mla        text not null,
+  antes      boolean,
+  despues    boolean not null,
+  estado     text not null,
+  respuesta  jsonb,
+  usuario    text,
+  creado_en  timestamptz not null default now()
+);
+create index if not exists cambios_flex_por_tenant on public.cambios_flex (tenant_id, creado_en desc);
+alter table public.cambios_flex enable row level security;

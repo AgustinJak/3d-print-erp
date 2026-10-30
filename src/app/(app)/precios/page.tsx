@@ -14,6 +14,7 @@ import { EmptyState } from "@/components/empty-state";
 import { json, pedir, pesos } from "@/components/producto/seccion";
 import { ConfiguracionDePrecios } from "@/components/precios/configuracion";
 import { MargenMasivo } from "@/components/precios/margen-masivo";
+import { ConfirmarFlex } from "@/components/precios/confirmar-flex";
 import { CAMBIO_GRANDE_PCT, conDiferencia, esGrande, PREFIJO_FALTA, textoDeFalta } from "@/lib/precios-reglas";
 import type { Deja, FilaDeCanal, FilaErp, OpcionesMl, Propuesta, ResultadoFila } from "@/lib/precios-propuesta";
 
@@ -119,6 +120,7 @@ function PantallaPrecios() {
   const [elegidas, setElegidas] = useState<Set<string>>(new Set());
   const [leyendo, setLeyendo] = useState<"mercadolibre" | "shop" | null>(null);
   const [confirmar, setConfirmar] = useState<{ canal: "mercadolibre" | "erp" | "shop"; filas: Aplicable[] } | null>(null);
+  const [flex, setFlex] = useState<{ prender: boolean; mlas: string[] } | null>(null);
   const [grandesOk, setGrandesOk] = useState(false);
   const [aplicando, setAplicando] = useState(false);
   const [resultados, setResultados] = useState<Map<string, ResultadoFila>>(new Map());
@@ -364,8 +366,25 @@ function PantallaPrecios() {
               ? pedirConfirmacion("shop", productoEntero(filas).map(aplicableDeCanal))
               : pedirConfirmacion("mercadolibre", filas.map(aplicableDeCanal))
           }
+          onFlex={pestana === "mercadolibre" ? (prender, mlas) => setFlex({ prender, mlas }) : undefined}
         />
       )}
+
+      <Dialog open={!!flex} onOpenChange={(o) => !o && setFlex(null)}>
+        <DialogContent className="sm:max-w-lg">
+          {flex && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {flex.prender ? "Prender" : "Apagar"} Flex en {flex.mlas.length} {flex.mlas.length === 1 ? "publicación" : "publicaciones"}
+                </DialogTitle>
+                <DialogDescription>Así están hoy en Mercado Libre. No se manda nada hasta que confirmes.</DialogDescription>
+              </DialogHeader>
+              <ConfirmarFlex mlas={flex.mlas} prender={flex.prender} onCerrar={() => setFlex(null)} onHecho={cargar} />
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!confirmar} onOpenChange={(o) => !o && !aplicando && setConfirmar(null)}>
         <DialogContent className="max-w-lg">
@@ -576,20 +595,45 @@ function Resultado({ r }: { r: ResultadoFila | undefined }) {
   );
 }
 
-function BarraDeSeleccion({ n, onAplicar, onLimpiar }: { n: number; onAplicar: () => void; onLimpiar: () => void }) {
+function BarraDeSeleccion({
+  n,
+  aplicables = n,
+  onAplicar,
+  onLimpiar,
+  onFlex,
+}: {
+  n: number;
+  /** Cuántas de las elegidas tienen un precio para aplicar (en ML se puede elegir para Flex). */
+  aplicables?: number;
+  onAplicar: () => void;
+  onLimpiar: () => void;
+  onFlex?: (prender: boolean) => void;
+}) {
   if (!n) return null;
   return (
-    <div className="flex items-center justify-between gap-2 p-3 border-b bg-muted/40 text-sm">
+    <div className="flex flex-wrap items-center justify-between gap-2 p-3 border-b bg-muted/40 text-sm">
       <span>
         {n} {n === 1 ? "elegida" : "elegidas"}
       </span>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="ghost" onClick={onLimpiar}>
           Limpiar
         </Button>
-        <Button size="sm" onClick={onAplicar}>
-          Aplicar {n}
-        </Button>
+        {onFlex && (
+          <>
+            <Button size="sm" variant="outline" onClick={() => onFlex(true)}>
+              Prender Flex
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => onFlex(false)}>
+              Apagar Flex
+            </Button>
+          </>
+        )}
+        {aplicables > 0 && (
+          <Button size="sm" onClick={onAplicar}>
+            Aplicar {aplicables}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -602,6 +646,7 @@ function TablaCanal({
   resultados,
   onAlternar,
   onAplicar,
+  onFlex,
 }: {
   canal: "mercadolibre" | "shop";
   filas: FilaDeCanal[];
@@ -609,16 +654,29 @@ function TablaCanal({
   resultados: Map<string, ResultadoFila>;
   onAlternar: (clave: string) => void;
   onAplicar: (filas: FilaDeCanal[]) => void;
+  /** ML: prender o apagar Flex en las publicaciones elegidas (spec 007). */
+  onFlex?: (prender: boolean, mlas: string[]) => void;
 }) {
   // En la web cuenta el producto: si alguna de sus combinaciones cambia, se aplica entero.
   const productosConCambio = new Set(filas.filter((f) => f.canal === "shop" && !f.motivo && conDiferencia(f)).map((f) => f.producto));
   const sePuede = (f: FilaDeCanal) => !f.motivo && !f.ignorada && (f.canal === "shop" ? productosConCambio.has(f.producto) : conDiferencia(f));
   const aplicables = filas.filter(sePuede);
   const elegidasAca = aplicables.filter((f) => elegidas.has(f.clave));
+  // En ML se elige cualquier publicación (para Flex); "Aplicar" toma sólo las que tienen precio.
+  const ml = canal === "mercadolibre" && !!onFlex;
+  const seleccionables = ml ? filas : aplicables;
+  const elegidasTodas = seleccionables.filter((f) => elegidas.has(f.clave));
+  const mlasElegidas = [...new Set(elegidasTodas.map((f) => f.clave.split("|")[0]))];
   if (!filas.length) return <EmptyState icon={Tag} title="Nada para mostrar" description="No hay publicaciones con ese filtro." />;
   return (
     <Card className="overflow-x-auto">
-      <BarraDeSeleccion n={elegidasAca.length} onAplicar={() => onAplicar(elegidasAca)} onLimpiar={() => elegidasAca.forEach((f) => onAlternar(f.clave))} />
+      <BarraDeSeleccion
+        n={elegidasTodas.length}
+        aplicables={elegidasAca.length}
+        onAplicar={() => onAplicar(elegidasAca)}
+        onLimpiar={() => elegidasTodas.forEach((f) => onAlternar(f.clave))}
+        onFlex={ml ? (prender) => onFlex!(prender, mlasElegidas) : undefined}
+      />
       {canal === "shop" && (
         <p className="p-3 border-b text-xs text-muted-foreground">
           En la web se aplica cada producto entero: al elegir una combinación van todas las del producto, porque el Shop guarda el precio
@@ -629,14 +687,14 @@ function TablaCanal({
         <thead className="text-xs text-muted-foreground">
           <tr className="border-b">
             <th className="w-8 p-2">
-              {aplicables.length > 0 && (
+              {seleccionables.length > 0 && (
                 <input
                   type="checkbox"
                   aria-label="Elegir todas"
-                  checked={elegidasAca.length === aplicables.length}
+                  checked={elegidasTodas.length === seleccionables.length}
                   onChange={() => {
-                    const todas = elegidasAca.length === aplicables.length;
-                    aplicables.forEach((f) => (todas ? elegidas.has(f.clave) : !elegidas.has(f.clave)) && onAlternar(f.clave));
+                    const todas = elegidasTodas.length === seleccionables.length;
+                    seleccionables.forEach((f) => (todas ? elegidas.has(f.clave) : !elegidas.has(f.clave)) && onAlternar(f.clave));
                   }}
                 />
               )}
@@ -654,7 +712,7 @@ function TablaCanal({
             const puede = sePuede(f);
             return (
               <tr key={f.clave} className="border-b last:border-0 align-top">
-                <td className="p-2">{puede && <input type="checkbox" checked={elegidas.has(f.clave)} onChange={() => onAlternar(f.clave)} aria-label="Elegir" />}</td>
+                <td className="p-2">{(puede || ml) && <input type="checkbox" checked={elegidas.has(f.clave)} onChange={() => onAlternar(f.clave)} aria-label="Elegir" />}</td>
                 <td className="p-2">
                   {f.modeloId ? (
                     <Link href={`/modelos/${f.modeloId}`} className="hover:underline">

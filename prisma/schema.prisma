@@ -734,6 +734,23 @@ model PromoMlLectura {
   @@map("promos_ml_lectura")
 }
 
+/// Cada vez que se prende o apaga Flex desde el ERP (docs/sdd/006, spec 007).
+model CambioFlex {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  mla       String
+  antes     Boolean?
+  despues   Boolean
+  /// "aplicado" | "sin_efecto" | "error"
+  estado    String
+  respuesta Json?
+  usuario   String?
+  creadoEn  DateTime @default(now()) @map("creado_en")
+
+  @@index([tenantId, creadoEn])
+  @@map("cambios_flex")
+}
+
 /// Cada promo de ML que se prende, cambia o saca desde el ERP (docs/sdd/006, spec 010, REQ-7).
 model CambioPromo {
   id            String   @id @default(cuid())

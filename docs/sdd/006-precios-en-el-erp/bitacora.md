@@ -226,3 +226,8 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
   Clicker, Lucero de Alba, Mate Copa del mundo, tapa damian, Exhibidor giratorio.
 - Agustín ya está aplicando: el collar está publicado en la web a $4.890 y el Sauce tiene margen
   propio de 50 %.
+
+- (2026-10-30) Flex probado con el Carrete a pedido de Agustín: DELETE lo apagó (`self_service_out`), POST lo
+  volvió a prender (`self_service_in`; el GET de Flex tardó ~20 s). Construido en Precios › Mercado Libre:
+  se eligen publicaciones y se prende o apaga con vista previa, verificación y registro (`cambios_flex`).
+  La tabla de ML ahora deja elegir cualquier publicación; "Aplicar" toma sólo las que tienen precio nuevo.
