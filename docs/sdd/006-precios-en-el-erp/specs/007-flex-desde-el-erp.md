@@ -24,3 +24,13 @@ Agustín activa Flex a mano en el panel de ML. Pidió poder prenderlo y apagarlo
 
 - **RN-1** Cambiar Flex es un cambio en ML: vista previa, confirmación y registro, como los precios.
 - **RN-2** Flex no cambia la fórmula del precio en esta feature.
+
+## Lo que se verificó (2026-10-30)
+
+- **Leer** funciona: `GET /flex/sites/MLA/items/{id}/v2` contesta `{"has_flex": true}`, y la publicación
+  trae `self_service_in` en `shipping.tags`. El ERP lo toma de ahí en cada "Leer precios de ML"
+  (`LecturaMl.flex`) y la fila de Precios muestra la etiqueta "Flex".
+- La cuenta tiene la logística `self_service` activa (`/users/{id}/shipping_preferences`).
+- `GET /sites/MLA/shipping/selfservice/items/{id}` da 403.
+- **Prender o apagar** no se probó: es público (cambia la promesa de entrega). Lo esperable es `POST`
+  y `DELETE` sobre `/flex/sites/MLA/items/{id}/v2`; se prueba con un producto que elija Agustín.

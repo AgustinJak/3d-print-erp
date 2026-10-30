@@ -13,7 +13,7 @@
     "approvedAt": "2026-10-29",
     "notes": "\"Dale\", con los agregados de las specs 006 y 007."
   },
-  "updatedAt": "2026-10-30T20:00:55.312Z",
+  "updatedAt": "2026-10-30T20:31:04.654Z",
   "tasks": [
     {
       "id": "TASK-001",
@@ -148,7 +148,7 @@
       "title": "Categoría de ML de cada producto",
       "description": "Heredada, predicha (domain_discovery) o manual; endpoint del predictor.",
       "component": "api",
-      "status": "in-progress",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-001",
@@ -163,8 +163,8 @@
         "src/app/api/precios/categoria-ml/route.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": "2026-10-30: categorias-ml.ts (heredada con 60 % de acuerdo, predicha, manual), completada en 28 productos. Falta elegirla a mano desde la página del producto."
+      "completedAt": "2026-10-30",
+      "notes": "2026-10-30: categorias-ml.ts (heredada con 60 % de acuerdo, predicha, manual), completada en 28 productos. Falta elegirla a mano desde la página del producto. 2026-10-30: elegirla a mano en Política de precio (2e9f11d)."
     },
     {
       "id": "TASK-008",
@@ -268,7 +268,7 @@
       "title": "Dos opciones: precios y clasificación",
       "description": "opcionesDeVenta: opción 1 y opción 2 con la misma plata; cada publicación clasificada; aviso de opción faltante.",
       "component": "api",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-005",
@@ -283,15 +283,15 @@
         "src/lib/precios-propuesta.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-30",
+      "notes": "2026-10-30: Combinaciones dice qué opciones tiene publicadas y cuál falta con su precio (2e9f11d): 49 con las dos, 37 sin la 2, 10 sin la 1."
     },
     {
       "id": "TASK-013",
       "title": "Verificar y crear la opción que falta",
       "description": "Primero: confirmar en la doc de ML cómo se suma una condición de venta a un User Product existente y que la app tenga permiso. Después, crearla para todas las variantes con vista previa y confirmación. La primera, un producto que elija Agustín.",
       "component": "integration",
-      "status": "pending",
+      "status": "in-progress",
       "origin": "plan",
       "dependencies": [
         "TASK-012"
@@ -305,7 +305,7 @@
       ],
       "blockedReason": null,
       "completedAt": null,
-      "notes": null
+      "notes": "2026-10-30: verificado con /items/validate qué pide ML (family_name, marca, modelo, medidas del paquete). Falta crear la primera, pausada, con el producto que elija Agustín."
     },
     {
       "id": "TASK-014",
@@ -333,7 +333,7 @@
       "title": "Flex desde el ERP",
       "description": "Primero: verificar en la doc de ML el recurso y el permiso. Después: leer si tiene Flex y prenderlo o apagarlo desde Precios, con registro.",
       "component": "integration",
-      "status": "pending",
+      "status": "in-progress",
       "origin": "plan",
       "dependencies": [
         "TASK-003"
@@ -348,14 +348,14 @@
       ],
       "blockedReason": null,
       "completedAt": null,
-      "notes": null
+      "notes": "2026-10-30: lectura de Flex (self_service_in) y etiqueta en Precios (c2447e3). Falta prender/apagar: se prueba con un producto que elija Agustín."
     },
     {
       "id": "TASK-017",
       "title": "Crear en ML, pausado y enlazado",
       "description": "Primero: verificar con un producto de prueba que elija Agustín si se puede crear pausado, qué pide la categoría como mínimo y cómo van las variantes de un User Product. Después: botón en la página del producto que crea las dos opciones pausadas, con vista previa y registro, y deja las claves enlazadas.",
       "component": "integration",
-      "status": "pending",
+      "status": "in-progress",
       "origin": "plan",
       "dependencies": [
         "TASK-012",
@@ -373,7 +373,7 @@
       ],
       "blockedReason": null,
       "completedAt": null,
-      "notes": null
+      "notes": "2026-10-30: ver TASK-013; mismos requisitos."
     },
     {
       "id": "TASK-018",

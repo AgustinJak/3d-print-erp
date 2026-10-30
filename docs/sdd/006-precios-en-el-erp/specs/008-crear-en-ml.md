@@ -56,3 +56,15 @@ Hoy lo crea a mano en ML y después hay que mapearlo.
 
 - Botón por producto (Agustín, 2026-10-29: "botón por ahora"). Lo automático queda para más
   adelante, sólo para productos marcados "para vender en ML".
+
+## Lo que se verificó con `POST /items/validate` (2026-10-30, sin crear nada)
+
+- ML usa **User Products**: pide `family_name` (sin `title`).
+- Obligatorios: `BRAND`, `MODEL`, `EMPTY_GTIN_REASON` (sin código de barras) y las medidas y el peso
+  del paquete (`SELLER_PACKAGE_HEIGHT`, `_WIDTH`, `_LENGTH`, `_WEIGHT`). El ERP sólo tiene el
+  peso: la vista previa tiene que pedir las medidas.
+- Con todo eso, `validate` contesta 400 sólo con **avisos**: "User has not mode me1" (de la
+  configuración de envíos de la cuenta) y, debajo de $30.000, "Free shipping costs exceeds sale"; a
+  $35.000, "Mandatory free shipping added". No se sabe si bloquean la creación real: se confirma
+  creando el primero, pausado, con el producto que elija Agustín.
+- Las publicaciones actuales usan `BRAND=Generic` y garantía "de fábrica, 10 días".
