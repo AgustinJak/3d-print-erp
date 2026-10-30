@@ -5,7 +5,12 @@ import {
   preciosDeCombinaciones,
   precioDeVentaErp,
   type PrecioDeCombinacion,
+  gastosDe,
+  pctDeCombinacion,
+  type ContextoDePrecios,
 } from "@/lib/precios-combinacion";
+import { costosDeLectura, opcionDe } from "@/lib/precios-ml-publicacion";
+import { cargoFijo } from "@/lib/tarifas-ml-reglas";
 import { CAMBIO_GRANDE_PCT, conDiferencia, esGrande, textoDeFalta } from "@/lib/precios-reglas";
 import {
   esErrorDeAutorizacion,
@@ -47,6 +52,11 @@ export interface FilaDeCanal {
   motivo: string | null;
   /** Algo para saber antes de aplicar (una campaña), que no lo impide. */
   aviso: string | null;
+  /**
+   * ML con la configuración del ERP (docs/sdd/006, spec 003, REQ-3): de dónde sale el precio de
+   * esta publicación. Tipo, cuotas, envío gratis y su costo, comisión, cargo fijo y opción de venta.
+   */
+  porque: string | null;
   /** Por qué pide la confirmación aparte: cambia más de 30 % o ML sacaría la promoción. */
   aparte: string | null;
   etiquetas: string[];
@@ -160,6 +170,7 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
         ...dif,
         motivo,
         aviso: campana?.aviso ?? null,
+        porque: mla && lectura?.tipo && p && cx.erp ? porqueDeMl(lectura, mla, cx, p, propuesto) : null,
         aparte: campana?.sacaPromo ? "ML saca la promoción" : esGrande(dif.pct) ? `cambia más de ${CAMBIO_GRANDE_PCT} %` : null,
         etiquetas,
         producto: canal === "shop" ? productoDeClave(m.clave) : null,
@@ -225,6 +236,25 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
     leidoMl: masVieja("mercadolibre"),
     leidoShop: masVieja("shop"),
   };
+}
+
+/** El porqué del precio de una publicación de ML, en una línea (spec 003, REQ-3). */
+function porqueDeMl(l: LecturaMl, mla: string, cx: ContextoDePrecios, p: PrecioDeCombinacion, publicado: number | null): string {
+  const g = gastosDe(cx.general.gastos, p.politica);
+  const c = costosDeLectura(l, mla, cx.erp!.tarifas, g, pctDeCombinacion(cx, p.combinacionId, p.modeloId, l.categoria));
+  const final = publicado != null ? publicado * (1 - g.mlPromoPct / 100) : null;
+  const fijo = final != null && cx.erp!.tarifas?.fijos.length ? cargoFijo(cx.erp!.tarifas, final) : null;
+  const n = (x: number) => String(Math.round(x * 10) / 10).replace(".", ",");
+  const partes = [
+    l.tipo === "gold_pro" ? "Premium" : "Clásica",
+    c.recargoCuotas ? `cuotas +${n(c.recargoCuotas)} %` : "sin cuotas",
+    c.envioGratis ? `envío gratis $${Math.round(c.costoEnvio).toLocaleString("es-AR")}` : "envío a cargo del comprador",
+    `comisión ${n(c.pct)} %`,
+    fijo != null ? `cargo fijo $${fijo.toLocaleString("es-AR")}` : null,
+    `opción ${opcionDe(l)}`,
+  ];
+  const estimado = c.estimado.length ? ` (estimado: ${c.estimado.join(", ")})` : "";
+  return partes.filter(Boolean).join(" · ") + estimado;
 }
 
 export function erpConDiferencia(f: FilaErp): boolean {

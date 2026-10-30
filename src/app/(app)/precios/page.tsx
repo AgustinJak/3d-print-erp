@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/empty-state";
 import { json, pedir, pesos } from "@/components/producto/seccion";
+import { ConfiguracionDePrecios } from "@/components/precios/configuracion";
 import { CAMBIO_GRANDE_PCT, conDiferencia, esGrande, PREFIJO_FALTA, textoDeFalta } from "@/lib/precios-reglas";
 import type { FilaDeCanal, FilaErp, Propuesta, ResultadoFila } from "@/lib/precios-propuesta";
 
@@ -22,7 +23,7 @@ import type { FilaDeCanal, FilaErp, Propuesta, ResultadoFila } from "@/lib/preci
  * sale sin el click de confirmación, y lo que cambia más de 30 % pide confirmarlo aparte.
  */
 
-type Pestana = "combinaciones" | "mercadolibre" | "shop" | "erp" | "historial";
+type Pestana = "combinaciones" | "mercadolibre" | "shop" | "erp" | "historial" | "configuracion";
 type Filtro = "diferencias" | "aplicables" | "falta-costear" | "falta-mapear" | "todas";
 
 interface Cambio {
@@ -289,6 +290,7 @@ function PantallaPrecios() {
               ["shop", `Web (${cuenta(shop)})`],
               ["erp", `ERP (${cuenta(erp)})`],
               ["historial", "Historial"],
+              ["configuracion", "Configuración"],
             ] as const
           ).map(([v, label]) => (
             <button key={v} type="button" onClick={() => cambiarPestana(v)} className={`px-3 py-1.5 ${pestana === v ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
@@ -313,7 +315,7 @@ function PantallaPrecios() {
             ))}
           </div>
         )}
-        {pestana !== "historial" && (
+        {pestana !== "historial" && pestana !== "configuracion" && (
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar producto, SKU o publicación" className="pl-7 h-8" />
@@ -321,7 +323,9 @@ function PantallaPrecios() {
         )}
       </div>
 
-      {cargando && !datos ? (
+      {pestana === "configuracion" ? (
+        <ConfiguracionDePrecios onGuardado={cargar} />
+      ) : cargando && !datos ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground p-6">
           <Loader2 className="h-4 w-4 animate-spin" /> Calculando precios…
         </div>
@@ -589,6 +593,7 @@ function TablaCanal({
                       </Badge>
                     ))}
                   </div>
+                  {f.porque && <div className="text-[11px] text-muted-foreground mt-0.5">{f.porque}</div>}
                 </td>
                 <td className="p-2 text-right tabular-nums">
                   {f.publicado != null ? pesos(f.publicado) : <span className="text-muted-foreground">—</span>}

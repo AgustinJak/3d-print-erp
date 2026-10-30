@@ -21,6 +21,7 @@ import {
 import type { LecturaMl } from "@/lib/precios-ml";
 import {
   costosDeLectura,
+  opcionDe,
   costosDeOpcionUno,
   opcionUnoConMargen,
   opcionUnoFija,
@@ -390,6 +391,9 @@ function precioDeClaveErp(
   const uno = costosDeOpcionUno(g, pct);
   const op1 = fijo != null ? opcionUnoFija(g, fab, ins, fijo, uno, erp.tarifas) : opcionUnoConMargen(g, fab, ins, p.politica.redondeo, uno, erp.tarifas);
   if (!lectura?.tipo || !mla) return op1.publicado;
+  // La publicación de la opción 1 de un producto con precio fijo va en ese número exacto: es lo
+  // que eligió Agustín. Recalcularla desde la ganancia la corría unos pesos por el redondeo.
+  if (fijo != null && opcionDe(lectura) === 1 && !lectura.envioGratis) return fijo;
   const r = precioParaGanancia(g, fab, ins, p.politica.redondeo, op1.ganancia, costosDeLectura(lectura, mla, erp.tarifas, g, pct), erp.tarifas);
   return Number.isFinite(r.publicado) ? r.publicado : null;
 }
