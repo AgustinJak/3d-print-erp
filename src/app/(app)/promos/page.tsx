@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { AlertTriangle, ChevronDown, ExternalLink, Loader2, MoreHorizontal, Percent, RefreshCw } from "lucide-react";
+import { AlertTriangle, ChevronDown, ExternalLink, Loader2, MoreHorizontal, Percent, RefreshCw, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,6 +39,10 @@ const AVISOS: Record<TipoDeAviso, { texto: string; clase: string }> = {
   "de-mas": { texto: "Promo de más", clase: "bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/30" },
   vence: { texto: "Vence pronto", clase: "bg-muted text-muted-foreground" },
 };
+
+/** El buscador (Agustín, 2026-10-30): por producto o publicación, sin tildes ni mayúsculas. */
+const normal = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const coincide = (f: FilaPromo, q: string) => !q.trim() || normal(`${f.producto} ${f.mla}`).includes(normal(q.trim()));
 
 /** Las campañas propias se pueden cambiar de %; las de ML, no. */
 const SE_CAMBIA = ["SELLER_CAMPAIGN", "PRICE_DISCOUNT"];
@@ -240,7 +244,7 @@ type Masiva = "cambiar" | "sumar" | "sacar";
  * masivo"). Arma un pedido por publicación a la que le corresponde, y dice cuántas no y por qué.
  * Todo pasa después por la vista previa.
  */
-function BarraMasiva({ d, elegidas, onLimpiar, onPedir }: { d: ResumenPromos; elegidas: Set<string>; onLimpiar: () => void; onPedir: (p: PedidoDePromo[], t: string) => void }) {
+function BarraMasiva({ d, elegidas, onLimpiar, onPedir }: { d: ResumenPromos; elegidas: Set<string>; onLimpiar: () => void; onPedir: (p: PedidoDePromo[], t: string, pct?: number) => void }) {
   const [accion, setAccion] = useState<Masiva>("cambiar");
   const [pct, setPct] = useState(String(d.promoGeneral));
   const campanas = d.campanas.filter((c) => c.aptas > 0 && ["SELLER_CAMPAIGN", "PRICE_DISCOUNT", "DEAL", "SELLER_COUPON_CAMPAIGN"].includes(c.tipo));
@@ -300,7 +304,7 @@ function BarraMasiva({ d, elegidas, onLimpiar, onPedir }: { d: ResumenPromos; el
               <Input value={pct} onChange={(e) => setPct(e.target.value)} className="w-16 h-8" inputMode="decimal" />%
             </label>
           )}
-          <Button size="sm" className="ml-auto" disabled={!pedidos.length} onClick={() => onPedir(pedidos, titulo)}>
+          <Button size="sm" className="ml-auto" disabled={!pedidos.length} onClick={() => onPedir(pedidos, titulo, accion === "sacar" ? undefined : n)}>
             Ver {pedidos.length} y mandar
           </Button>
           <Button size="sm" variant="ghost" onClick={onLimpiar}>
@@ -319,7 +323,7 @@ function BarraMasiva({ d, elegidas, onLimpiar, onPedir }: { d: ResumenPromos; el
 }
 
 /** Una campaña: las publicaciones aptas, con un % para todas y selección en cantidad (REQ-4, REQ-5). */
-function PorCampana({ d, onPedir }: { d: ResumenPromos; onPedir: (p: PedidoDePromo[], t: string) => void }) {
+function PorCampana({ d, q, onPedir }: { d: ResumenPromos; q: string; onPedir: (p: PedidoDePromo[], t: string, pct?: number) => void }) {
   const visibles = d.campanas.filter((c) => c.aptas > 0 || c.adentro > 0);
   const [id, setId] = useState<string>(() => visibles.find((c) => c.tipo === "SELLER_CAMPAIGN")?.id ?? visibles[0]?.id ?? "");
   const campana = visibles.find((c) => c.id === id) ?? null;
@@ -337,9 +341,11 @@ function PorCampana({ d, onPedir }: { d: ResumenPromos; onPedir: (p: PedidoDePro
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [d.filas, campana]
   );
-  const adentro = d.filas.filter((f) => (f.activa && mismo(f.activa)) || f.pendientes.some(mismo) || f.cupones.some(mismo));
+  const adentro = d.filas.filter((f) => coincide(f, q) && ((f.activa && mismo(f.activa)) || f.pendientes.some(mismo) || f.cupones.some(mismo)));
   const pctNum = Number(pct.replace(",", "."));
   const conPct = aptas.map((x) => ({ ...x, p: precioParaPct(x.c, x.f.publicado, Number.isFinite(pctNum) ? pctNum : d.promoGeneral) }));
+  // Se muestran las que coinciden con el buscador; lo tildado antes de buscar sigue tildado.
+  const visiblesPct = conPct.filter((x) => coincide(x.f, q));
 
   if (!campana) return <EmptyState icon={Percent} title="No hay campañas" description="Leé las promos de ML para ver las campañas." />;
 
@@ -347,7 +353,7 @@ function PorCampana({ d, onPedir }: { d: ResumenPromos; onPedir: (p: PedidoDePro
     const pedidos: PedidoDePromo[] = conPct
       .filter((x) => elegidas.has(x.f.mla))
       .map((x) => ({ mla: x.f.mla, accion: "sumar", promocionId: x.c.id, promocionTipo: x.c.tipo, precio: x.p.precio }));
-    onPedir(pedidos, `Sumar ${pedidos.length} a ${campana!.nombre || nombreDeTipo(campana!.tipo)}`);
+    onPedir(pedidos, `Sumar ${pedidos.length} a ${campana!.nombre || nombreDeTipo(campana!.tipo)}`, Number.isFinite(pctNum) ? pctNum : undefined);
   }
 
   return (
@@ -387,17 +393,27 @@ function PorCampana({ d, onPedir }: { d: ResumenPromos; onPedir: (p: PedidoDePro
         </CardContent>
       </Card>
 
-      {conPct.length ? (
+      {visiblesPct.length ? (
         <div className="rounded-lg border divide-y text-sm">
           <label className="flex items-center gap-3 px-3 py-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
-              checked={elegidas.size === conPct.length}
-              onChange={(e) => setElegidas(e.target.checked ? new Set(conPct.map((x) => x.f.mla)) : new Set())}
+              checked={visiblesPct.every((x) => elegidas.has(x.f.mla))}
+              onChange={(e) =>
+                setElegidas((prev) => {
+                  const s = new Set(prev);
+                  for (const x of visiblesPct) {
+                    if (e.target.checked) s.add(x.f.mla);
+                    else s.delete(x.f.mla);
+                  }
+                  return s;
+                })
+              }
             />
-            Aptas para esta campaña ({conPct.length})
+            Aptas para esta campaña ({visiblesPct.length}
+            {visiblesPct.length !== conPct.length ? ` de ${conPct.length}` : ""}){elegidas.size > 0 && ` · ${elegidas.size} tildadas`}
           </label>
-          {conPct.map(({ f, c, p }) => (
+          {visiblesPct.map(({ f, c, p }) => (
             <label key={f.mla} className="grid grid-cols-[20px_minmax(0,1fr)] md:grid-cols-[20px_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1.2fr)] gap-x-3 gap-y-1 px-3 py-2 items-center cursor-pointer hover:bg-muted/40">
               <input
                 type="checkbox"
@@ -428,7 +444,7 @@ function PorCampana({ d, onPedir }: { d: ResumenPromos; onPedir: (p: PedidoDePro
           ))}
         </div>
       ) : (
-        <p className="text-sm text-muted-foreground">Ninguna publicación es apta para esta campaña.</p>
+        <p className="text-sm text-muted-foreground">{q.trim() ? "Ninguna apta coincide con la búsqueda." : "Ninguna publicación es apta para esta campaña."}</p>
       )}
 
       {adentro.length > 0 && (
@@ -485,8 +501,9 @@ export default function PaginaPromos() {
   const [leyendo, setLeyendo] = useState<{ hechas: number; faltan: number } | null>(null);
   const [pestana, setPestana] = useState<Pestana>("avisos");
   const [filtro, setFiltro] = useState<TipoDeAviso | "todos">("todos");
-  const [cambio, setCambio] = useState<{ pedidos: PedidoDePromo[]; titulo: string } | null>(null);
+  const [cambio, setCambio] = useState<{ pedidos: PedidoDePromo[]; titulo: string; pct?: number } | null>(null);
   const [elegidas, setElegidas] = useState<Set<string>>(new Set());
+  const [q, setQ] = useState("");
   const elegir = (mlas: string[], si: boolean) =>
     setElegidas((prev) => {
       const s = new Set(prev);
@@ -550,8 +567,9 @@ export default function PaginaPromos() {
   const d = datos;
   const conAviso = useMemo(() => d?.filas.filter((f) => f.avisos.length) ?? [], [d]);
   const cuenta = (t: TipoDeAviso) => conAviso.filter((f) => f.avisos.some((a) => a.tipo === t)).length;
-  const avisosVisibles = filtro === "todos" ? conAviso : conAviso.filter((f) => f.avisos.some((a) => a.tipo === filtro));
-  const pedirCambio = (pedidos: PedidoDePromo[], titulo: string) => setCambio({ pedidos, titulo });
+  const avisosVisibles = (filtro === "todos" ? conAviso : conAviso.filter((f) => f.avisos.some((a) => a.tipo === filtro))).filter((f) => coincide(f, q));
+  const todasVisibles = d?.filas.filter((f) => coincide(f, q)) ?? [];
+  const pedirCambio = (pedidos: PedidoDePromo[], titulo: string, pct?: number) => setCambio({ pedidos, titulo, pct });
 
   return (
     <div className="space-y-5 max-w-6xl">
@@ -601,6 +619,7 @@ export default function PaginaPromos() {
             <Tarjeta titulo="Con otro %" valor={String(cuenta("distinta"))} detalle={`${cuenta("vence")} vencen en menos de 3 días`} />
           </div>
 
+          <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-md border overflow-hidden text-sm w-fit">
             {(
               [
@@ -614,6 +633,13 @@ export default function PaginaPromos() {
                 {texto}
               </button>
             ))}
+          </div>
+            {pestana !== "historial" && (
+              <div className="relative flex-1 min-w-[200px] max-w-sm">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar producto o publicación" className="pl-7 h-8" />
+              </div>
+            )}
           </div>
 
           {elegidas.size > 0 && (pestana === "avisos" || pestana === "todas") && (
@@ -642,9 +668,14 @@ export default function PaginaPromos() {
             </div>
           )}
 
-          {pestana === "campana" && <PorCampana d={d} onPedir={pedirCambio} />}
+          {pestana === "campana" && <PorCampana d={d} q={q} onPedir={pedirCambio} />}
 
-          {pestana === "todas" && <TablaFilas filas={d.filas} general={d.promoGeneral} onPedir={pedirCambio} elegidas={elegidas} onElegir={elegir} />}
+          {pestana === "todas" &&
+            (todasVisibles.length ? (
+              <TablaFilas filas={todasVisibles} general={d.promoGeneral} onPedir={pedirCambio} elegidas={elegidas} onElegir={elegir} />
+            ) : (
+              <p className="text-sm text-muted-foreground">Ninguna publicación coincide con la búsqueda.</p>
+            ))}
 
           {pestana === "historial" && <Historial cambios={historial} />}
 
@@ -679,7 +710,7 @@ export default function PaginaPromos() {
                 <DialogTitle>{cambio.titulo}</DialogTitle>
                 <DialogDescription>Revisá cada una antes de mandarlas a Mercado Libre.</DialogDescription>
               </DialogHeader>
-              <ConfirmarPromos pedidos={cambio.pedidos} onCerrar={() => setCambio(null)} onAplicado={aplicado} />
+              <ConfirmarPromos pedidos={cambio.pedidos} pctPedido={cambio.pct} onCerrar={() => setCambio(null)} onAplicado={aplicado} />
             </>
           )}
         </DialogContent>

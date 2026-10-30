@@ -35,8 +35,35 @@ const ESTADOS: Record<ResultadoDePromo["estado"], { texto: string; clase: string
   error: { texto: "Error de ML", clase: "text-red-600 dark:text-red-400" },
 };
 
-export function ConfirmarPromos({ pedidos, onCerrar, onAplicado }: { pedidos: PedidoDePromo[]; onCerrar: () => void; onAplicado: () => void }) {
+const clave = (p: PedidoDePromo) => `${p.mla}|${p.promocionId ?? p.promocionTipo}|${p.accion}`;
+
+/**
+ * Lo que la vista previa encontró en ML que conviene mirar: los avisos de ML (ya está en otra
+ * promo, más % del que supone el precio) y, si se pidió un %, cuando ML no lo deja y queda otro.
+ */
+function avisosDe(v: RevisionDePromo, pctPedido?: number): string[] {
+  const otros = [...v.avisos];
+  if (pctPedido != null && v.pedido.accion !== "sacar" && v.despues.pct != null && Math.abs(v.despues.pct - pctPedido) > 0.5) {
+    otros.unshift(`ML no deja ${pctPedido} %: queda en ${v.despues.pct} %.`);
+  }
+  return otros;
+}
+
+export function ConfirmarPromos({
+  pedidos,
+  pctPedido,
+  onCerrar,
+  onAplicado,
+}: {
+  pedidos: PedidoDePromo[];
+  /** El % que se eligió (en cantidad): las que ML deja en otro % se marcan. */
+  pctPedido?: number;
+  onCerrar: () => void;
+  onAplicado: () => void;
+}) {
   const [vista, setVista] = useState<RevisionDePromo[] | null>(null);
+  // Las que Agustín saca del envío, sin volver a elegir todo (pedido del 2026-10-30).
+  const [fuera, setFuera] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [resultados, setResultados] = useState<ResultadoDePromo[] | null>(null);
   const [avance, setAvance] = useState<number | null>(null);
@@ -56,7 +83,17 @@ export function ConfirmarPromos({ pedidos, onCerrar, onAplicado }: { pedidos: Pe
     };
   }, [pedidos]);
 
-  const validos = vista?.filter((v) => !v.errores.length) ?? [];
+  const validos = vista?.filter((v) => !v.errores.length && !fuera.has(clave(v.pedido))) ?? [];
+  const conAviso = vista?.filter((v) => !v.errores.length && avisosDe(v, pctPedido).length) ?? [];
+  const sacar = (ks: string[], si: boolean) =>
+    setFuera((prev) => {
+      const s = new Set(prev);
+      for (const k of ks) {
+        if (si) s.add(k);
+        else s.delete(k);
+      }
+      return s;
+    });
 
   async function aplicar() {
     const mandar = validos.map((v) => v.pedido);
@@ -104,13 +141,41 @@ export function ConfirmarPromos({ pedidos, onCerrar, onAplicado }: { pedidos: Pe
   const filas = resultados ?? vista;
   return (
     <div className="space-y-3">
+      {!resultados && (conAviso.length > 0 || fuera.size > 0) && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {conAviso.length > 0 && (
+            <Button size="sm" variant="outline" onClick={() => sacar(conAviso.map((v) => clave(v.pedido)), true)}>
+              Quitar las {conAviso.length} con aviso
+            </Button>
+          )}
+          {fuera.size > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => setFuera(new Set())}>
+              Volver a poner las {fuera.size}
+            </Button>
+          )}
+        </div>
+      )}
       <div className="max-h-[50vh] overflow-y-auto rounded-md border divide-y text-sm">
         {filas.map((v) => {
           const r = resultados ? (v as ResultadoDePromo) : null;
+          const k = clave(v.pedido);
+          const afuera = !r && (fuera.has(k) || v.errores.length > 0);
+          const avisos = avisosDe(v, pctPedido);
           return (
-            <div key={`${v.pedido.mla}-${v.pedido.promocionId}-${v.pedido.accion}`} className="px-3 py-2 space-y-1">
+            <div key={k} className={`px-3 py-2 space-y-1 ${afuera ? "opacity-50" : ""}`}>
               <div className="flex items-center justify-between gap-2">
-                <span className="font-medium truncate">{v.producto}</span>
+                <span className="font-medium truncate flex items-center gap-2">
+                  {!r && (
+                    <input
+                      type="checkbox"
+                      aria-label={`Mandar ${v.producto}`}
+                      checked={!afuera}
+                      disabled={v.errores.length > 0}
+                      onChange={(e) => sacar([k], !e.target.checked)}
+                    />
+                  )}
+                  {v.producto}
+                </span>
                 {r ? (
                   <span className={`text-xs shrink-0 ${ESTADOS[r.estado].clase}`}>{ESTADOS[r.estado].texto}</span>
                 ) : (
@@ -136,7 +201,7 @@ export function ConfirmarPromos({ pedidos, onCerrar, onAplicado }: { pedidos: Pe
                   </p>
                 ))}
               {!r &&
-                v.avisos.map((a) => (
+                avisos.map((a) => (
                   <p key={a} className="text-xs text-amber-700 dark:text-amber-400 flex items-start gap-1.5">
                     <AlertTriangle className="h-3.5 w-3.5 mt-px shrink-0" /> {a}
                   </p>
@@ -152,7 +217,7 @@ export function ConfirmarPromos({ pedidos, onCerrar, onAplicado }: { pedidos: Pe
           <Info className="h-3.5 w-3.5 mt-px shrink-0" />
           {validos.length === vista.length
             ? `${vista.length === 1 ? "Se va a mandar a" : `Se van a mandar las ${vista.length} a`} Mercado Libre. Es público: el cliente ve el precio nuevo enseguida.`
-            : `${vista.length - validos.length} no se pueden mandar (en rojo). Se mandan las otras ${validos.length}.`}
+            : `Se mandan ${validos.length} de ${vista.length}: ${[vista.filter((v) => v.errores.length).length ? `${vista.filter((v) => v.errores.length).length} no se pueden (en rojo)` : "", fuera.size ? `${[...fuera].filter((k) => vista.some((v) => clave(v.pedido) === k && !v.errores.length)).length} las sacaste vos` : ""].filter(Boolean).join(", ")}.`}
         </p>
       )}
 
