@@ -6,7 +6,7 @@
  * Sólo las funciones puras: margen, ROAS mínimo, períodos, alertas, la revisión de cambios y las
  * recomendaciones (spec 004). No toca la base ni Mercado Libre.
  */
-import { GASTOS_MEDIDOS } from "@/lib/precios-bodega";
+import { GASTOS_MEDIDOS } from "@/lib/precios-formula";
 import type { FilaAnuncio, FilaCampana } from "@/lib/publicidad-ml";
 import { recomendaciones } from "@/lib/publicidad-recomendaciones";
 import {

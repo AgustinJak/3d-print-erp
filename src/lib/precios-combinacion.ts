@@ -16,15 +16,15 @@ import {
   type Politica,
   type Redondeo,
   type TresPrecios,
-} from "@/lib/precios-bodega";
+} from "@/lib/precios-formula";
 
 /**
  * El precio de cada combinación que se vende (docs/sdd/003, spec 003).
  *
  * Bodega le pone precio a una pieza; lo que se vende es una combinación, la pieza más los insumos
  * de su receta. El ERP ya sabe las dos cosas —la pieza por `stock.bodega_model_id`, los insumos por
- * `reglas_insumo`— así que corre la misma fórmula que la calculadora (`precios-bodega.ts`, copia
- * verificada) con el costo de la combinación entera.
+ * `reglas_insumo`— así que corre la misma fórmula que la calculadora (`precios-formula.ts`, del ERP desde
+ * docs/sdd/006) con el costo de la combinación entera.
  *
  * Lo que se le pide margen es la impresión de la pieza. Todo lo demás —los insumos de la pieza en
  * Bodega y la funda de "Con Funda", aunque la funda también se imprima— va al costo, como lo trata

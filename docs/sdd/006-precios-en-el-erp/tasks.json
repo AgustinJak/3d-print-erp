@@ -1,0 +1,462 @@
+{
+  "$schema": "../_plantillas/tasks.schema.json",
+  "featureId": "006-precios-en-el-erp",
+  "epic": "ninguna",
+  "version": "1.0.0",
+  "status": "in-progress",
+  "branch": "master",
+  "baseBranch": "master",
+  "pullRequest": null,
+  "validation": {
+    "approved": true,
+    "approvedBy": "Agustín",
+    "approvedAt": "2026-10-29",
+    "notes": "\"Dale\", con los agregados de las specs 006 y 007."
+  },
+  "updatedAt": "2026-10-30T04:52:46.829Z",
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Tablas y columnas",
+      "description": "config_precios, cambios_config_precios y las columnas de modelos (prisma/sql/precios-en-el-erp.sql, schema.prisma).",
+      "component": "database",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [
+        "001-configuracion-de-precios",
+        "002-politica-por-producto",
+        "004-productos-sin-publicar"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "prisma/sql/precios-en-el-erp.sql",
+        "prisma/schema.prisma"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-29",
+      "notes": "Aplicado en la base. El motor de Prisma estaba en uso por los MCP de publicidad: se renombró el viejo para generar el nuevo."
+    },
+    {
+      "id": "TASK-002",
+      "title": "La fórmula pasa a ser del ERP",
+      "description": "precios-bodega.ts → precios-formula.ts; se borran los scripts de sincronización con Bodega.",
+      "component": "api",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/precios-formula.ts",
+        "scripts/sdd-003-copiar-formula.ts",
+        "scripts/sdd-003-comparar-formula.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-30",
+      "notes": null
+    },
+    {
+      "id": "TASK-003",
+      "title": "Leer tarifas y datos de cada publicación",
+      "description": "leerPreciosMl suma tipo, envío gratis y su costo, categoría, campaña de cuotas y comisión; tarifasMl con los tramos del cargo fijo.",
+      "component": "integration",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [
+        "003-ml-por-publicacion"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/precios-ml.ts",
+        "src/lib/tarifas-ml.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-30",
+      "notes": null
+    },
+    {
+      "id": "TASK-004",
+      "title": "Recargo por cuotas cobrado",
+      "description": "Comparar el recargo cotizado con sale_fee de las ventas reales de cada Premium; usar el cobrado si hay ventas. Resuelve 8,9 % contra 12,9 %.",
+      "component": "integration",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-003"
+      ],
+      "specs": [
+        "003-ml-por-publicacion"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/tarifas-ml.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-30",
+      "notes": "Investigado: con 3x_campaign ML cobra el % de la categoría + 8,5 % (el cotizador dice 12,9 %). Falta llevarlo al código."
+    },
+    {
+      "id": "TASK-005",
+      "title": "Precio por publicación",
+      "description": "precios-ml-publicacion.ts con la elección del tramo de cargo fijo; pruebas.",
+      "component": "api",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002",
+        "TASK-003"
+      ],
+      "specs": [
+        "003-ml-por-publicacion"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/precios-ml-publicacion.ts",
+        "scripts/sdd-006-probar-precios.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-10-30",
+      "notes": "2026-10-30: margen 35 % sobre el precio (opcionUnoConMargen) y promo sin cruzar $30.000."
+    },
+    {
+      "id": "TASK-006",
+      "title": "Configuración y política desde el ERP",
+      "description": "leerGastosDeVenta y la política salen de config_precios y modelos; nada de bodega.cost_settings.gastos_venta ni bodega.models.precios.",
+      "component": "api",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-001",
+        "TASK-002"
+      ],
+      "specs": [
+        "001-configuracion-de-precios",
+        "002-politica-por-producto"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/precios-combinacion.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-007",
+      "title": "Categoría de ML de cada producto",
+      "description": "Heredada, predicha (domain_discovery) o manual; endpoint del predictor.",
+      "component": "api",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-001",
+        "TASK-003"
+      ],
+      "specs": [
+        "004-productos-sin-publicar"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/categoria-ml.ts",
+        "src/app/api/precios/categoria-ml/route.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-008",
+      "title": "Propuesta por publicación y para publicar",
+      "description": "armarPropuesta usa precioDePublicacion por clave de ML y suma los precios para publicar de lo que no tiene publicaciones.",
+      "component": "api",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-005",
+        "TASK-006",
+        "TASK-007"
+      ],
+      "specs": [
+        "003-ml-por-publicacion",
+        "004-productos-sin-publicar"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/precios-propuesta.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-009",
+      "title": "Migración",
+      "description": "scripts/sdd-006-migrar-precios.ts con modo de prueba e informe de precios antes y después; promo general 10 %.",
+      "component": "database",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-001",
+        "TASK-006",
+        "TASK-007"
+      ],
+      "specs": [
+        "001-configuracion-de-precios",
+        "002-politica-por-producto"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "scripts/sdd-006-migrar-precios.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-010",
+      "title": "Pantallas",
+      "description": "Precios › Configuración; filas de ML con tipo, cuotas, envío y comisión; para publicar; sección Precio en la página del producto.",
+      "component": "ui",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-008"
+      ],
+      "specs": [
+        "001-configuracion-de-precios",
+        "002-politica-por-producto",
+        "003-ml-por-publicacion",
+        "004-productos-sin-publicar"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/app/(app)/precios/page.tsx",
+        "src/app/(app)/modelos/[id]/page.tsx"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-011",
+      "title": "Bodega sin precios",
+      "description": "Calculadora sólo de costos, ficha sin precios con link al ERP, sync sin gastos_venta ni política. Release después del ERP.",
+      "component": "integration",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-009",
+        "TASK-010"
+      ],
+      "specs": [
+        "005-cambios-en-bodega"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "Bodega/Bodega3D-App/src/renderer/src/pages/Calculadora.tsx",
+        "Bodega/Bodega3D-App/src/renderer/src/pages/ModeloDetalle.tsx",
+        "Bodega/Bodega3D-App/src/main/sync.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-012",
+      "title": "Dos opciones: precios y clasificación",
+      "description": "opcionesDeVenta: opción 1 y opción 2 con la misma plata; cada publicación clasificada; aviso de opción faltante.",
+      "component": "api",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-005",
+        "TASK-008"
+      ],
+      "specs": [
+        "006-dos-opciones-de-venta"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/precios-ml-publicacion.ts",
+        "src/lib/precios-propuesta.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-013",
+      "title": "Verificar y crear la opción que falta",
+      "description": "Primero: confirmar en la doc de ML cómo se suma una condición de venta a un User Product existente y que la app tenga permiso. Después, crearla para todas las variantes con vista previa y confirmación. La primera, un producto que elija Agustín.",
+      "component": "integration",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-012"
+      ],
+      "specs": [
+        "006-dos-opciones-de-venta"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/precios-ml.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-014",
+      "title": "Costo de envío gratis de un producto sin publicar",
+      "description": "Cotizar con peso y medidas si están cargados; si no, el de la configuración, marcado como estimado.",
+      "component": "integration",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-003"
+      ],
+      "specs": [
+        "006-dos-opciones-de-venta"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/tarifas-ml.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-015",
+      "title": "Flex desde el ERP",
+      "description": "Primero: verificar en la doc de ML el recurso y el permiso. Después: leer si tiene Flex y prenderlo o apagarlo desde Precios, con registro.",
+      "component": "integration",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-003"
+      ],
+      "specs": [
+        "007-flex-desde-el-erp"
+      ],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/precios-ml.ts",
+        "src/app/(app)/precios/page.tsx"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-017",
+      "title": "Crear en ML, pausado y enlazado",
+      "description": "Primero: verificar con un producto de prueba que elija Agustín si se puede crear pausado, qué pide la categoría como mínimo y cómo van las variantes de un User Product. Después: botón en la página del producto que crea las dos opciones pausadas, con vista previa y registro, y deja las claves enlazadas.",
+      "component": "integration",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-012",
+        "TASK-013"
+      ],
+      "specs": [
+        "008-crear-en-ml"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 de la spec 008-crear-en-ml"
+      ],
+      "files": [
+        "src/lib/crear-en-ml.ts",
+        "src/app/(app)/modelos/[id]/page.tsx"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-018",
+      "title": "Precio de la web, envío gratis y tramos por cantidad",
+      "description": "precioWeb (margen 35 %, reserva para el envío gratis, envío adentro si el producto solo pasa el umbral); TRAMOS_WEB 8/12/18 con pisos 18/17/14 y margenesDeTramos; mostrar en Precios › Configuración el peor producto y la mediana de cada tramo; comparar la reserva con lo absorbido cada mes.",
+      "component": "lib",
+      "status": "in-progress",
+      "origin": "spec",
+      "dependencies": [
+        "TASK-006"
+      ],
+      "specs": [
+        "009-mayorista-en-la-web",
+        "001-configuracion-de-precios"
+      ],
+      "acceptanceCriteria": [
+        "009/CA-1",
+        "009/CA-2",
+        "009/CA-3"
+      ],
+      "files": [
+        "src/lib/precios-formula.ts",
+        "scripts/sdd-006-informe-precios.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": "2026-10-30: funciones puras, pruebas (28/28) e informe hechos. Pantalla pendiente (TASK-010). En el Shop sólo cambia la configuración del panel (umbral 40.000 y tramos)."
+    },
+    {
+      "id": "TASK-019",
+      "title": "Promos de ML desde el ERP",
+      "description": "Avisos (sin promo, promo distinta, de más, sin campaña), campañas por publicación con lo que deja cada una, y prender/cambiar/sacar promos en cantidad, a mano, con vista previa y registro. Nunca automático.",
+      "component": "lib",
+      "status": "in-progress",
+      "origin": "spec",
+      "dependencies": [
+        "TASK-008"
+      ],
+      "specs": [
+        "010-avisos-de-promo"
+      ],
+      "acceptanceCriteria": [
+        "010/CA-1",
+        "010/CA-2"
+      ],
+      "files": [
+        "prisma/sql/promos-ml.sql",
+        "src/lib/promos-ml-reglas.ts",
+        "src/lib/promos-ml.ts",
+        "src/app/api/promos/route.ts",
+        "src/app/api/promos/leer/route.ts",
+        "src/app/api/promos/cambios/route.ts",
+        "src/app/api/promos/historial/route.ts",
+        "src/app/(app)/promos/page.tsx",
+        "src/components/promos/confirmar-promos.tsx",
+        "scripts/sdd-006-probar-promos.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": "2026-10-30: construido; primer envío desde la pantalla OK (Ichigo a Q4). Verificación con sale_price y con la lista de promos. Falta desplegar."
+    },
+    {
+      "id": "TASK-016",
+      "title": "Cerebro",
+      "description": "INV - Flujos (sección 10), BOD - Flujos, Flujos del ecosistema (contrato 3), backlogs.",
+      "component": "docs",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-010",
+        "TASK-011",
+        "TASK-013",
+        "TASK-015",
+        "TASK-017",
+        "TASK-018",
+        "TASK-019"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    }
+  ]
+}

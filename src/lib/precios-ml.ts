@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getMlAccount, mlFetch } from "@/lib/mercadolibre";
+import { actualizarTarifas } from "@/lib/tarifas-ml";
 
 /**
  * Precios en Mercado Libre (docs/sdd/003, spec 005): leer lo publicado, decidir si se puede tocar
@@ -19,7 +20,8 @@ import { getMlAccount, mlFetch } from "@/lib/mercadolibre";
  * - En una campaña del vendedor el precio cambia, pero el cliente sigue pagando el de la oferta
  *   hasta que la campaña termina o se saca la publicación (Agustín, 2026-10-24; probado con el
  *   Carrete: a $3.900 siguió pagando $3.610). Bajar el precio por debajo de la oferta la elimina,
- *   y la app no puede volver a meterla: la API de promociones le da 403.
+ *   y hasta el 2026-10-30 la app no podía volver a meterla (403). Con el permiso de promociones
+ *   ya puede (docs/sdd/006, spec 010).
  */
 
 export interface LecturaMl {
@@ -33,6 +35,20 @@ export interface LecturaMl {
   automatizada: boolean | null;
   variaciones: number;
   catalogo: boolean;
+  /**
+   * Lo que define cuánto cobra ML por esta publicación (docs/sdd/006, spec 003). Opcionales: las
+   * lecturas de antes de la 006 no los tienen.
+   */
+  tipo?: string | null;
+  categoria?: string | null;
+  envioGratis?: boolean;
+  /**
+   * Lo que le cuesta (o le costaría, si no lo tiene) al vendedor el envío gratis de esta
+   * publicación, según su peso. ML lo cotiza con `free_shipping=true` aunque no esté activado.
+   */
+  costoEnvio?: number | null;
+  /** `INSTALLMENTS_CAMPAIGN` de ML: "3x_campaign" = 3 cuotas sin interés. */
+  campaniaCuotas?: string | null;
 }
 
 interface ItemMl {
@@ -42,6 +58,10 @@ interface ItemMl {
   price?: number;
   catalog_listing?: boolean;
   variations?: Array<{ id: number; price: number }>;
+  listing_type_id?: string;
+  category_id?: string;
+  shipping?: { free_shipping?: boolean };
+  sale_terms?: Array<{ id: string; value_name: string | null }>;
 }
 
 interface PreciosMl {
@@ -111,11 +131,12 @@ export async function leerPreciosMl(tenantId: string): Promise<{ leidas: number;
   for (let i = 0; i < ids.length; i += 20) {
     const r = await mlFetch<Array<{ code: number; body: ItemMl }>>(
       tenantId,
-      `/items?ids=${ids.slice(i, i + 20).join(",")}&attributes=id,status,sub_status,price,catalog_listing,variations`
+      `/items?ids=${ids.slice(i, i + 20).join(",")}&attributes=id,status,sub_status,price,catalog_listing,variations,listing_type_id,category_id,shipping,sale_terms`
     );
     for (const x of r) if (x.code === 200) items.set(x.body.id, x.body);
   }
 
+  const cuenta = await getMlAccount(tenantId);
   const errores: Array<{ mla: string; error: string }> = [];
   const leidas = await enTandas(ids, 10, async (mla) => {
     const item = items.get(mla);
@@ -124,9 +145,15 @@ export async function leerPreciosMl(tenantId: string): Promise<{ leidas: number;
       return null;
     }
     try {
-      const [{ standard, promos }, venta] = await Promise.all([
+      const envioGratis = !!item.shipping?.free_shipping;
+      const [{ standard, promos }, venta, envio] = await Promise.all([
         preciosDe(tenantId, mla),
         mlFetch<SalePriceMl>(tenantId, `/items/${mla}/sale_price?context=channel_marketplace`).catch(() => null),
+        // Lo que cuesta, o costaría, el envío gratis: una llamada por publicación. Para la opción 2
+        // de un producto que hoy no tiene envío gratis (spec 006).
+        cuenta
+          ? mlFetch<{ coverage?: { all_country?: { list_cost?: number } } }>(tenantId, `/users/${cuenta.mlUserId}/shipping_options/free?item_id=${mla}&free_shipping=true`).catch(() => null)
+          : Promise.resolve(null),
       ]);
       // La promoción que gana es la del precio que paga el cliente.
       const ganadora = promos.find((p) => venta && Math.abs(p.amount - venta.amount) < 0.01) ?? promos[0];
@@ -146,6 +173,11 @@ export async function leerPreciosMl(tenantId: string): Promise<{ leidas: number;
         automatizada: auto ? auto.has(mla) : null,
         variaciones: item.variations?.length ?? 0,
         catalogo: !!item.catalog_listing,
+        tipo: item.listing_type_id ?? null,
+        categoria: item.category_id ?? null,
+        envioGratis,
+        costoEnvio: envio?.coverage?.all_country?.list_cost ?? null,
+        campaniaCuotas: item.sale_terms?.find((t) => t.id === "INSTALLMENTS_CAMPAIGN")?.value_name ?? null,
       };
       return { mla, precio: standard ?? item.price ?? null, lectura };
     } catch (e) {
@@ -166,6 +198,13 @@ export async function leerPreciosMl(tenantId: string): Promise<{ leidas: number;
         FROM jsonb_to_recordset(${JSON.stringify(filas)}::jsonb) AS x(id text, precio double precision, lectura jsonb)
        WHERE m.id = x.id AND m.tenant_id = ${tenantId}`;
   }
+  // Las tarifas de las categorías leídas (comisión, cargo fijo, recargo por cuotas), la más usada
+  // primero: con ella se buscan los tramos del cargo fijo.
+  const usos = new Map<string, number>();
+  for (const x of porMla.values()) if (x.lectura.categoria) usos.set(x.lectura.categoria, (usos.get(x.lectura.categoria) ?? 0) + 1);
+  await actualizarTarifas(tenantId, [...usos].sort((a, b) => b[1] - a[1]).map(([c]) => c)).catch((e) =>
+    errores.push({ mla: "tarifas", error: e instanceof Error ? e.message : String(e) })
+  );
   return { leidas: porMla.size, errores };
 }
 

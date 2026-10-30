@@ -96,6 +96,15 @@ model Modelo {
   consolidadoEnId   String?  @map("consolidado_en_id")
   /// Una pieza que no se vende sola y que consumen las recetas (las fundas). docs/sdd/004, spec 006.
   esInsumo          Boolean  @default(false) @map("es_insumo")
+  /// Política de precio propia (docs/sdd/006, spec 002). null = la general de config_precios.
+  margen            Float?
+  promoMl           Float?   @map("promo_ml")
+  redondeo          String?
+  /// Lo que se publica en ML en la opción 1, fijado a mano (spec 002). null = el de la fórmula.
+  precioMlFijo      Float?   @map("precio_ml_fijo")
+  /// La categoría de ML para la comisión (spec 004) y de dónde salió: publicacion · heredada · predicha · manual.
+  categoriaMl       String?  @map("categoria_ml")
+  categoriaMlOrigen String?  @map("categoria_ml_origen")
   tenantId          String   @default("sendero3d") @map("tenant_id")
   creadoEn          DateTime @default(now()) @map("creado_en")
   updatedAt         DateTime @updatedAt @map("updated_at")
@@ -712,6 +721,42 @@ model CambioPrecio {
   @@map("cambios_precio")
 }
 
+/// La última lectura de promos de una publicación de ML (docs/sdd/006, spec 010).
+model PromoMlLectura {
+  tenantId String   @map("tenant_id")
+  mla      String
+  /// PromoDePublicacion[] (src/lib/promos-ml-reglas.ts)
+  promos   Json
+  error    String?
+  leidoEn  DateTime @default(now()) @map("leido_en")
+
+  @@id([tenantId, mla])
+  @@map("promos_ml_lectura")
+}
+
+/// Cada promo de ML que se prende, cambia o saca desde el ERP (docs/sdd/006, spec 010, REQ-7).
+model CambioPromo {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  mla           String
+  combinacionId String?  @map("combinacion_id")
+  /// "sumar" | "cambiar" | "sacar"
+  accion        String
+  promocionId   String?  @map("promocion_id")
+  promocionTipo String   @map("promocion_tipo")
+  antes         Json?
+  despues       Json?
+  /// "aplicado" | "sin_efecto" | "rechazado" | "error"
+  estado        String
+  respuesta     Json?
+  usuario       String?
+  creadoEn      DateTime @default(now()) @map("creado_en")
+
+  @@index([tenantId, creadoEn])
+  @@index([tenantId, mla, creadoEn])
+  @@map("cambios_promos")
+}
+
 /// Cada cambio en Product Ads de ML, desde la página o desde Claude (docs/sdd/005, spec 002, REQ-4).
 model CambioPublicidad {
   id         String   @id @default(cuid())
@@ -729,4 +774,28 @@ model CambioPublicidad {
 
   @@index([tenantId, tipo, objetivoId, creadoEn])
   @@map("cambios_publicidad")
+}
+
+/// La configuración general de precios (docs/sdd/006, spec 001). Antes vivía en Bodega.
+model ConfigPrecios {
+  tenantId      String   @id @map("tenant_id")
+  /// Las claves de GastosVenta (src/lib/precios-formula.ts) más "redondeo".
+  gastos        Json
+  actualizadoEn DateTime @default(now()) @map("actualizado_en")
+  usuario       String?
+
+  @@map("config_precios")
+}
+
+/// Cada cambio de la configuración de precios (docs/sdd/006, spec 001, REQ-3).
+model CambioConfigPrecios {
+  id       String   @id @default(cuid())
+  tenantId String   @map("tenant_id")
+  antes    Json?
+  despues  Json
+  usuario  String?
+  creadoEn DateTime @default(now()) @map("creado_en")
+
+  @@index([tenantId, creadoEn])
+  @@map("cambios_config_precios")
 }

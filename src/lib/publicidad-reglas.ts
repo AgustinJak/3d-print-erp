@@ -1,4 +1,4 @@
-import type { GastosVenta } from "@/lib/precios-bodega";
+import type { GastosVenta } from "@/lib/precios-formula";
 
 /**
  * Las reglas de Publicidad que valen igual en la página, en el servidor y en el MCP de Claude

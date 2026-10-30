@@ -1,13 +1,12 @@
 /**
- * La fórmula de precios de Bodega, copiada tal cual (docs/sdd/003, TASK-007).
+ * La fórmula de precios. Es del ERP desde docs/sdd/006 (2026-10-29).
  *
- * Copia de Bodega 2.35.0: `src/renderer/src/lib/precios.ts` entero salvo `preciosDeImpresion`
- * (el atajo desde gramos y horas; acá la fabricación ya viene de `costos-bodega.ts`) y, al final,
- * la política del modelo y `tresPrecios` de `src/renderer/src/lib/politica.ts`.
+ * Nació como copia de la calculadora de Bodega 2.35.0 (docs/sdd/003, TASK-007): `precios.ts`
+ * entero salvo `preciosDeImpresion`, y la política y `tresPrecios` de `politica.ts`. Hasta la
+ * 006 se mantenía igual a la de Bodega con dos scripts; desde ahí el precio se decide sólo en el
+ * ERP y Bodega deja de calcularlo, así que esta es la única fórmula y se edita acá.
  *
- * No se edita a mano: lo arma `scripts/sdd-003-copiar-formula.ts`, con el estilo de Bodega para
- * que un diff contra el original muestre sólo lo que cambió allá. Después de copiar se corre
- * `npx tsx scripts/sdd-003-comparar-formula.ts`, que falla si las dos dan distinto.
+ * Conserva el estilo de Bodega (sin punto y coma) para que la historia se lea de corrido.
  */
 
 /**
@@ -79,6 +78,12 @@ export interface GastosVenta {
   webEnvioGratisDesde: number
   /** Lo que nos cuesta mandarlo. */
   webEnvioCosto: number
+  /**
+   * La reserva para el envío gratis, en % de cada precio de la web (docs/sdd/006, spec 009): los
+   * carritos que pasan `webEnvioGratisDesde` no pagan el envío, y eso lo pagan un poco todos los
+   * precios, como una comisión. Se mide con los pedidos: envío absorbido / lo vendido.
+   */
+  webEnvioReservaPct?: number
 
   /** IIBB Convenio Multilateral, efectivo sobre la base declarada. */
   iibbPct: number
@@ -237,9 +242,14 @@ export const TOLERANCIA_MARGEN = 2
  * cliente, así que la cuenta del margen no cambia.
  *
  * Se redondea al peso **hacia arriba**, para que el precio final quede igual o
- * apenas por encima del calculado, nunca por debajo. Salvo que eso empuje el
- * final por encima del umbral del envío: en ese caso se baja lo justo. Se
- * asume que ML mira el umbral sobre el precio con el descuento aplicado.
+ * apenas por encima del calculado, nunca por debajo.
+ *
+ * Si el producto está debajo del umbral del envío (`techo` = el umbral − 1) y
+ * el inflado lo publicaría por encima, **no se aplica la promo**: se publica el
+ * precio final tal cual. Un producto de $28.000 publicado a $31.112 "con 10 %
+ * off" se ve como uno de más de $30.000 (decisión de Agustín, 2026-10-30;
+ * docs/sdd/006, spec 003). Antes se bajaba el publicado hasta el techo y el
+ * cliente terminaba pagando menos de lo calculado.
  */
 export function precioConPromo(
   final: number,
@@ -250,8 +260,8 @@ export function precioConPromo(
     return { publicado: final, final }
   }
   const f = 1 - promoPct / 100
-  let publicado = Math.ceil(final / f)
-  if (techo != null && publicado * f > techo) publicado = Math.floor(techo / f)
+  const publicado = Math.ceil(final / f)
+  if (techo != null && publicado > techo) return { publicado: final, final }
   return { publicado, final: publicado * f }
 }
 
@@ -302,7 +312,7 @@ export function redondear(precio: number, modo: Redondeo, techo?: number): numbe
 
 const pctDeCanal = (g: GastosVenta, canal: Canal): number => {
   if (canal === 'ml') return g.mlComisionPct + g.mlPublicidadPct + g.mlCuotasPct + g.mlOtrosPct + g.iibbPct
-  if (canal === 'web') return g.webCobroPct + g.webPublicidadPct + g.iibbPct
+  if (canal === 'web') return g.webCobroPct + g.webPublicidadPct + g.iibbPct + (g.webEnvioReservaPct ?? 0)
   return 0 // personalizado: sin impuestos ni comisiones
 }
 
@@ -534,6 +544,135 @@ export function preciosMayoristas(
 }
 
 /**
+ * El precio de la web (docs/sdd/006, spec 009): margen sobre el precio, con la reserva para el envío
+ * gratis, redondeado. Si el producto solo ya pasa el umbral del envío gratis, el envío va adentro de
+ * su precio, explícito, y la reserva sobra: se calcula sin ella.
+ */
+export function precioWeb(g: GastosVenta, fabricacion: number, insumos: number, redondeo: Redondeo): number {
+  const visible = (gx: GastosVenta) => {
+    const crudo = precioConMargen(gx, 'web', fabricacion, insumos).recomendado.precio
+    return redondear(crudo, redondeo, techoDeRedondeo(gx, 'web', crudo))
+  }
+  const conReserva = visible(g)
+  if (!g.webEnvioReservaPct || g.webEnvioGratisDesde <= 0 || conReserva < g.webEnvioGratisDesde) return conReserva
+  const sinReserva = visible({ ...g, webEnvioReservaPct: 0 })
+  // Sin la reserva puede quedar debajo del umbral: ahí no paga su envío y le toca la reserva.
+  return sinReserva >= g.webEnvioGratisDesde ? sinReserva : conReserva
+}
+
+/**
+ * Los descuentos por cantidad de la web, uno para todos los productos como los tiene el Shop, y el
+ * margen que cada tramo no puede perforar (decisión de Agustín, 2026-10-30; docs/sdd/006, spec 009).
+ *
+ * Primero se pidieron metas de 30 / 25 / 20 %. Con el envío gratis desde $40.000 también en los
+ * pedidos por cantidad, ningún juego único de tramos las cumple en todos los productos (daba
+ * 0 / 4 / 10 %): el envío de un pedido de 5 unidades se come más que la diferencia entre 35 y 30 %.
+ * Se eligieron los tramos y el piso pasó a ser lo que dejan en el peor producto.
+ */
+export const TRAMOS_WEB = [
+  { desde: 5, descuento: 8, piso: 18 },
+  { desde: 10, descuento: 12, piso: 17 },
+  { desde: 20, descuento: 18, piso: 14 }
+] as const
+
+export interface MargenDeTramo {
+  desde: number
+  descuento: number
+  piso: number
+  precioUnitario: number
+  /** El envío que absorbemos, por unidad: el pedido mínimo del tramo pasa el envío gratis. */
+  envioPorUnidad: number
+  ganancia: number
+  margen: number
+  /** true si el margen no perfora el piso del tramo. */
+  llega: boolean
+}
+
+/**
+ * Lo que deja cada tramo de la web con su descuento, en el pedido mínimo del tramo (el peor caso:
+ * si pasa el envío gratis, el envío se reparte en menos unidades). La reserva para el envío no es un
+ * gasto de este pedido: el envío se cuenta de verdad.
+ */
+export function margenesDeTramos(
+  g: GastosVenta,
+  precioLista: number,
+  fabricacion: number,
+  insumos: number,
+  tramos: ReadonlyArray<{ desde: number; descuento: number; piso: number }> = TRAMOS_WEB
+): MargenDeTramo[] {
+  const pct = (pctDeCanal(g, 'web') - (g.webEnvioReservaPct ?? 0)) / 100
+  const envioInfo = umbralEnvio(g, 'web')
+  return tramos.map((t) => {
+    const precioUnitario = precioLista * (1 - t.descuento / 100)
+    const envioPorUnidad = envioInfo && precioUnitario * t.desde >= envioInfo.desde ? envioInfo.costo / t.desde : 0
+    const ganancia = precioUnitario * (1 - pct) - fabricacion - insumos - envioPorUnidad
+    const margen = precioUnitario > 0 ? (ganancia / precioUnitario) * 100 : 0
+    return { desde: t.desde, descuento: t.descuento, piso: t.piso, precioUnitario, envioPorUnidad, ganancia, margen, llega: margen >= t.piso - 0.5 }
+  })
+}
+
+export interface DescuentoParaMargen {
+  desde: number
+  /** El margen que se le pide al tramo. */
+  meta: number
+  /** El descuento entero más grande que todavía llega a la meta; 0 si ni sin descuento llega. */
+  descuento: number
+  precioUnitario: number
+  ganancia: number
+  margen: number
+  /** El envío que absorbemos, por unidad: el pedido del tramo cruza el envío gratis de la web. */
+  envioPorUnidad: number
+  /** false si ni sin descuento llega a la meta: pasa cuando el envío del pedido se come el margen. */
+  llega: boolean
+}
+
+/**
+ * Qué descuento ponerle a cada tramo de la web para que deje su meta.
+ *
+ * Una compra por cantidad en la web paga lo mismo que una suelta (cobro,
+ * publicidad, IIBB), así que con gastos sólo porcentuales el descuento sería
+ * igual para todos los productos: 1 − (1 − gastos − 35 %) / (1 − gastos − meta).
+ * Lo que lo cambia de un producto a otro es el envío: el pedido mínimo del
+ * tramo puede cruzar el envío gratis de la web, y ese envío se reparte entre
+ * las unidades del pedido mínimo (el peor caso del tramo). También el
+ * redondeo del precio de lista, que deja un poco más de margen.
+ *
+ *     precio unitario = (fabricación + insumos + envío / unidades) / (1 − gastos − meta)
+ *     descuento = 1 − precio unitario / precio de lista, redondeado para abajo
+ */
+export function descuentosParaMargen(
+  g: GastosVenta,
+  precioLista: number,
+  fabricacion: number,
+  insumos: number,
+  metas: ReadonlyArray<{ desde: number; margen: number }>
+): DescuentoParaMargen[] {
+  const pct = (pctDeCanal(g, 'web') - (g.webEnvioReservaPct ?? 0)) / 100
+  const envioInfo = umbralEnvio(g, 'web')
+  return metas.map((t) => {
+    const divisor = 1 - pct - t.margen / 100
+    const necesario = (envio: number) => (divisor > 0 ? (fabricacion + insumos + envio / t.desde) / divisor : Infinity)
+    let envio = 0
+    let minimo = necesario(0)
+    if (envioInfo && minimo * t.desde >= envioInfo.desde) {
+      envio = envioInfo.costo
+      minimo = necesario(envio)
+    }
+    const medir = (d: number) => {
+      const precioUnitario = precioLista * (1 - d / 100)
+      const envioPorUnidad = envioInfo && precioUnitario * t.desde >= envioInfo.desde ? envioInfo.costo / t.desde : 0
+      const ganancia = precioUnitario * (1 - pct) - fabricacion - insumos - envioPorUnidad
+      return { precioUnitario, envioPorUnidad, ganancia, margen: precioUnitario > 0 ? (ganancia / precioUnitario) * 100 : 0 }
+    }
+    let descuento = precioLista > 0 && Number.isFinite(minimo) ? Math.max(0, Math.floor((1 - minimo / precioLista) * 100)) : 0
+    // Con el descuento ya entero, el pedido puede quedar del otro lado del umbral: se baja hasta llegar.
+    while (descuento > 0 && medir(descuento).margen < t.margen) descuento--
+    const r = medir(descuento)
+    return { desde: t.desde, meta: t.margen, descuento, ...r, llega: r.margen >= t.margen }
+  })
+}
+
+/**
  * El descuento máximo que todavía deja el margen pedido, sobre un precio de
  * lista. Si ni con 0 % de descuento se llega, devuelve 0.
  */
@@ -591,6 +730,7 @@ export function desgloseEn(g: GastosVenta, canal: Canal, precio: number): Gasto[
   } else if (canal === 'web') {
     if (g.webCobroPct) gastos.push({ concepto: 'Comisión de cobro', monto: pct(g.webCobroPct), porcentual: true })
     if (g.webPublicidadPct) gastos.push({ concepto: 'Publicidad', monto: pct(g.webPublicidadPct), porcentual: true })
+    if (g.webEnvioReservaPct) gastos.push({ concepto: 'Reserva para envío gratis', monto: pct(g.webEnvioReservaPct), porcentual: true })
   }
   // Personalizados va sin impuestos: es el número crudo, a pedido.
   if (canal !== 'personalizado') gastos.push({ concepto: 'IIBB', monto: pct(g.iibbPct), porcentual: true })
@@ -616,7 +756,7 @@ export function techoDeRedondeo(g: GastosVenta, canal: Canal, precio: number): n
 export function gastosFromMap(map: Record<string, string>): GastosVenta {
   const num = (k: keyof GastosVenta) => {
     const v = parseFloat(map[`precio_${k}`])
-    return Number.isFinite(v) ? v : GASTOS_MEDIDOS[k]
+    return Number.isFinite(v) ? v : (GASTOS_MEDIDOS[k] ?? 0)
   }
   return {
     mlComisionPct: num('mlComisionPct'),
@@ -657,7 +797,10 @@ export function precioConGanancia(
   canal: Canal,
   fabricacion: number,
   insumos: number,
-  ganancia: number
+  ganancia: number,
+  // Sólo la web lleva piso mayorista. Desde docs/sdd/006 el precio de la web sale
+  // del margen y los descuentos por cantidad salen del precio, no al revés.
+  conPiso: boolean = canal === 'web'
 ): PrecioSugerido {
   const pct = pctDeCanal(g, canal) / 100
   const neto = 1 - pct
@@ -675,7 +818,7 @@ export function precioConGanancia(
   // La web además tiene que aguantar el descuento por cantidad. Con la misma
   // ganancia que ML casi nunca manda, pero se respeta igual.
   const precioMinorista = precio
-  const piso = canal === 'web' ? pisoPorMayorista(g, fabricacion, insumos) : 0
+  const piso = conPiso ? pisoPorMayorista(g, fabricacion, insumos) : 0
   const manda: 'minorista' | 'mayorista' = piso > precio ? 'mayorista' : 'minorista'
   if (manda === 'mayorista') {
     precio = piso
@@ -720,16 +863,28 @@ export function precioConGanancia(
  * quedaba trabada en $29.990 dejando 26 % cuando el objetivo era 55 %.
  */
 export function precioMl(g: GastosVenta, fabricacion: number, insumos: number): PrecioSugerido {
-  const pct = pctDeCanal(g, 'ml') / 100
+  return precioConMargen(g, 'ml', fabricacion, insumos)
+}
+
+/**
+ * Lo mismo que `precioMl` en cualquier canal: el margen sobre el precio, con la
+ * regla del umbral del envío. La web lo usa desde docs/sdd/006 (35 % en los dos
+ * canales), sin piso mayorista: los descuentos por cantidad salen del precio,
+ * con `descuentosParaMargen`.
+ */
+export function precioConMargen(g: GastosVenta, canal: Canal, fabricacion: number, insumos: number): PrecioSugerido {
+  const pct = pctDeCanal(g, canal) / 100
   const m = g.margenMinorista / 100
-  const fijo = fabricacion + insumos + g.mlCargoFijo
+  const fijo = fabricacion + insumos + (canal === 'ml' ? g.mlCargoFijo : 0)
   const divisor = 1 - pct - m
-  if (divisor <= 0) return precioPara(g, 'ml', fabricacion, insumos) // sin precio posible
+  if (divisor <= 0) return precioPara(g, canal, fabricacion, insumos) // sin precio posible
 
   const ganancia = m * (fijo / divisor)
-  const p = precioConGanancia(g, 'ml', fabricacion, insumos, ganancia)
-  const envioInfo = umbralEnvio(g, 'ml')
-  if (!envioInfo || p.envio === 0) return p
+  const p = precioConGanancia(g, canal, fabricacion, insumos, ganancia, false)
+  const envioInfo = umbralEnvio(g, canal)
+  // Con el umbral en 0 el envío se paga siempre y va adentro del precio, sin margen: es la web
+  // con envío gratis para todos (decisión de Agustín, 2026-10-30). No hay "abajo" donde quedarse.
+  if (!envioInfo || p.envio === 0 || envioInfo.desde <= 0) return p
 
   const neto = 1 - pct
   const pAbajo = envioInfo.desde - 1

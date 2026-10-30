@@ -18,7 +18,7 @@ import { resolve } from "path";
 import { pathToFileURL } from "url";
 import { prisma } from "@/lib/prisma";
 import { costosPorFilaDeStock, type CostoDeFila } from "@/lib/costos-bodega";
-import * as copia from "@/lib/precios-bodega";
+import * as copia from "@/lib/precios-formula";
 import {
   cargarContextoDePrecios,
   gastosDe,
@@ -122,10 +122,12 @@ function ca3() {
     const r = precioDeClave({ ...p, politica: { ...p.politica, redondeo } }, "shop", n, g);
     ok(r === esperado, `pack de ${n} (${redondeo}) = ${esperado}`, r);
   }
-  // En ML, con promo: el total se redondea y después se infla para publicar.
+  // En ML, con promo: el total se redondea y después se infla para publicar, salvo que el inflado
+  // pase los $30.000 (docs/sdd/006, spec 003 RN-6): el pack de 10 a $27.990 se publica sin promo.
   const conPromo = { ...p, politica: { ...p.politica, promo: 10 } };
   const r = precioDeClave(conPromo, "mercadolibre", 10, g);
-  ok(r === copia.precioConPromo(copia.redondear(10 * 3490 * 0.8, "noventa"), 10).publicado, "pack de 10 en ML con 10 % de promo", r);
+  const total = copia.redondear(10 * 3490 * 0.8, "noventa");
+  ok(r === copia.precioConPromo(total, 10, copia.techoDeRedondeo(g, "ml", total)).publicado, "pack de 10 en ML con 10 % de promo", r);
   ok(precioDeClave({ ...p, precios: null }, "shop", 10, g) === null, "sin precio no hay precio de pack");
   console.log(`  · pack de 10 a $2.800: ${precioDeClave(p, "shop", 10, g)}`);
 }
