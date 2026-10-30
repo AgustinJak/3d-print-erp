@@ -49,6 +49,11 @@ export interface LecturaMl {
   costoEnvio?: number | null;
   /** `INSTALLMENTS_CAMPAIGN` de ML: "3x_campaign" = 3 cuotas sin interés. */
   campaniaCuotas?: string | null;
+  /**
+   * Flex (envío en el día con logística propia; docs/sdd/006, spec 007): la publicación tiene la
+   * etiqueta `self_service_in` en su envío. Coincide con `GET /flex/sites/MLA/items/{id}/v2`.
+   */
+  flex?: boolean;
 }
 
 interface ItemMl {
@@ -60,7 +65,7 @@ interface ItemMl {
   variations?: Array<{ id: number; price: number }>;
   listing_type_id?: string;
   category_id?: string;
-  shipping?: { free_shipping?: boolean };
+  shipping?: { free_shipping?: boolean; tags?: string[] };
   sale_terms?: Array<{ id: string; value_name: string | null }>;
 }
 
@@ -178,6 +183,7 @@ export async function leerPreciosMl(tenantId: string): Promise<{ leidas: number;
         envioGratis,
         costoEnvio: envio?.coverage?.all_country?.list_cost ?? null,
         campaniaCuotas: item.sale_terms?.find((t) => t.id === "INSTALLMENTS_CAMPAIGN")?.value_name ?? null,
+        flex: !!item.shipping?.tags?.includes("self_service_in"),
       };
       return { mla, precio: standard ?? item.price ?? null, lectura };
     } catch (e) {

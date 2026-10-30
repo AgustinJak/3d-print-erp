@@ -179,6 +179,7 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
       if (lectura?.estado === "paused") etiquetas.push("pausada");
       if (lectura?.catalogo) etiquetas.push("catálogo");
       if (lectura?.promo) etiquetas.push("en campaña");
+      if (lectura?.flex) etiquetas.push("Flex");
       if (m.unidades > 1) etiquetas.push(`pack de ${m.unidades}`);
       if (lecturaShop?.ignorada) etiquetas.push("ignorada por el Shop");
 
