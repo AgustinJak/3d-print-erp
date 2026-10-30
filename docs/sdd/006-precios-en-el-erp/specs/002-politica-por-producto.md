@@ -19,6 +19,15 @@ aplica a toda combinación que se vende con esa pieza. El 2026-10-28 la tenían 
   general" o un valor, con el precio resultante al lado.
 - **REQ-2** Migración única de las 16 piezas con política propia al producto del ERP que las usa.
 
+## Implementado (2026-10-30)
+
+- Sección "Política de precio" en la página del producto: margen (% sobre el precio de ML), promo
+  de ML, redondeo y precio de ML fijo. Vacío = el general. `PATCH /api/modelos/[id]` con `margen`,
+  `promoMl`, `redondeo`, `precioMlFijo`; la ficha los trae junto con la política general.
+- Con la configuración del ERP, el motor toma la política del producto del ERP; de Bodega sólo el
+  redondeo y la promo de la pieza mientras el producto no tenga los suyos (el margen de Bodega era
+  sobre otra cuenta).
+
 ## Reglas de negocio
 
 - **RN-1** Si una pieza la usan productos distintos, cada uno recibe la política de la pieza. Si un

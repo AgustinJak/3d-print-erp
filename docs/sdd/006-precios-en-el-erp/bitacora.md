@@ -192,3 +192,18 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
   bola de JoJo's $22.290 → $8.190, Yamato sin funda $48.890 → $29.290). Con margen 35 % sobre el
   precio y 13,6 % de gastos, una venta en la web deja un tercio de los pesos que deja en ML. Antes
   (SDD 003) la web dejaba los mismos pesos que ML. **No se aplicó: lo decide Agustín.**
+- (2026-10-30) Agustín eligió que la web deje los mismos pesos que ML. Se sumó el piso del margen
+  (35 %) para los productos con precio de ML fijo, y lo mismo para personalizados. Con eso la web
+  queda 32–48 % más barata que ML (collar $4.890 contra $7.990 en ML; Yamato sin funda $34.190
+  contra $55.090), y los tramos 8 / 12 / 18 no perforan el piso en ningún producto. Ojo: la web hoy
+  lleva $6.315 de envío adentro de todo precio (Bodega tiene el umbral en 0), así que baja contra lo
+  que propone Precios; con el envío gratis desde $40.000 el cliente paga el envío debajo.
+- Agustín: hay productos, como el collar, que con 35 % dejan poco: pidió poder subir el margen por
+  producto desde el ERP. Sección "Política de precio" en la página del producto (spec 002). Commit
+  1e42102. El deploy de 9b38573 falló en Vercel por no poder bajar la fuente de Google
+  (`next/font/google`, JetBrains Mono), no por el código; 1e42102 lo incluye.
+- (2026-10-30) Con 1e42102 en producción, `scripts/sdd-006-migrar.ts --aplicar` creó
+  `config_precios` (margen 35, promo 10, envío gratis web desde $40.000, reserva 3 %). Precios
+  calcula con el motor del ERP: 90 publicaciones de ML y 45 claves del Shop con propuesta, nada
+  aplicado (el último cambio publicado es del 28/10). Agustín: **nada automático**, él acepta los
+  precios y la creación en ML (spec 008, RN-6).

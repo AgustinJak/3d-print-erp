@@ -41,6 +41,9 @@ Hoy lo crea a mano en ML y después hay que mapearlo.
   crea y se dice por qué.
 - **RN-4** Después de crear, el ERP no toca título, descripción ni fotos: eso lo edita Agustín en
   ML. El ERP sigue manejando precio, stock y (spec 007) Flex.
+- **RN-6** **Nada automático** (Agustín, 2026-10-30): el ERP nunca crea una publicación solo, ni
+  cuando aparece un producto nuevo. Se crea sólo cuando Agustín toca el botón y acepta la vista
+  previa, y los precios con que se crea los acepta ahí mismo.
 - **RN-5** Crear en ML es público: la primera vez, un solo producto elegido por Agustín, y cada
   creación queda registrada.
 

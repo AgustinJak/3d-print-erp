@@ -114,6 +114,14 @@ Detalle en las specs. Las de fondo:
   por cantidad, una **reserva de 3 %** en cada precio de la web para pagarlo, y **tramos 8 / 12 / 18 %**
   con pisos 18 / 17 / 14 % (2026-10-30). Las metas 30 / 25 / 20 no se pueden cumplir con un solo juego
   de tramos y el envío gratis.
+- **Nada automático** (2026-10-30): el ERP propone precios y no los publica; se publican con
+  "Aplicar" en Precios, y las promos y la creación en ML también se confirman a mano.
+- **La web y personalizados dejan los mismos pesos que ML, y nunca menos que el margen** (2026-10-30):
+  con 35 % parejo una venta en la web dejaba un tercio de lo que deja en ML (la web paga 13,6 % de
+  gastos, ML casi 40 %). Así la web queda 32–48 % más barata que ML dejando lo mismo.
+- **El margen se puede subir por producto desde el ERP** (2026-10-30): sección "Política de precio"
+  de la página del producto (margen, promo, redondeo, precio de ML fijo). Para los que quedan
+  baratos con el 35 %, como el collar.
 - **Sin promo si la promo publica arriba de $30.000** (2026-10-30, spec 003 RN-6).
 - Precio de ML fijo por producto cuando conviene no cruzar los $30.000: los porta auriculares
   (Angel, Nube, AC/DC, Demonio) en $29.434 publicado (2026-10-29).

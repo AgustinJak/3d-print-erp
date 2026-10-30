@@ -13,7 +13,7 @@
     "approvedAt": "2026-10-29",
     "notes": "\"Dale\", con los agregados de las specs 006 y 007."
   },
-  "updatedAt": "2026-10-30T04:52:46.829Z",
+  "updatedAt": "2026-10-30T18:05:33.863Z",
   "tasks": [
     {
       "id": "TASK-001",
@@ -125,7 +125,7 @@
       "title": "Configuración y política desde el ERP",
       "description": "leerGastosDeVenta y la política salen de config_precios y modelos; nada de bodega.cost_settings.gastos_venta ni bodega.models.precios.",
       "component": "api",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-001",
@@ -140,8 +140,8 @@
         "src/lib/precios-combinacion.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-30",
+      "notes": "2026-10-30: leerGastosDeVenta lee config_precios; política del producto desde modelos del ERP. Commits 9b38573 y 1e42102."
     },
     {
       "id": "TASK-007",
@@ -171,7 +171,7 @@
       "title": "Propuesta por publicación y para publicar",
       "description": "armarPropuesta usa precioDePublicacion por clave de ML y suma los precios para publicar de lo que no tiene publicaciones.",
       "component": "api",
-      "status": "pending",
+      "status": "in-progress",
       "origin": "plan",
       "dependencies": [
         "TASK-005",
@@ -188,14 +188,14 @@
       ],
       "blockedReason": null,
       "completedAt": null,
-      "notes": null
+      "notes": "2026-10-30: la propuesta usa el motor del ERP por publicación. Falta mostrar en la fila el porqué (tipo, cuotas, envío, cuánto se lleva ML)."
     },
     {
       "id": "TASK-009",
       "title": "Migración",
       "description": "scripts/sdd-006-migrar-precios.ts con modo de prueba e informe de precios antes y después; promo general 10 %.",
       "component": "database",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-001",
@@ -211,8 +211,8 @@
         "scripts/sdd-006-migrar-precios.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-10-30",
+      "notes": "2026-10-30: config_precios creada (margen 35, promo 10, envío gratis web desde 40.000, reserva 3). Las políticas de las piezas de Bodega no se copian: el margen era sobre otra cuenta; redondeo y promo se siguen leyendo de Bodega."
     },
     {
       "id": "TASK-010",
