@@ -207,3 +207,22 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
   calcula con el motor del ERP: 90 publicaciones de ML y 45 claves del Shop con propuesta, nada
   aplicado (el último cambio publicado es del 28/10). Agustín: **nada automático**, él acepta los
   precios y la creación en ML (spec 008, RN-6).
+
+## 2026-10-30 · Claude (sesión del inventario) — Configuración, ganancia por fila, margen masivo
+
+- a04d3fe: Precios › Configuración (valores generales con ayuda, "Ver cómo queda" con tres
+  productos elegidos por costo y los tramos de la web, guardar con historial); el porqué de cada
+  publicación de ML; un precio de ML fijo queda exacto en su publicación de la opción 1 (el Angel
+  proponía $29.545 en vez de $29.434).
+- 679532b: pedidos de Agustín mientras se trabajaba:
+  - "El número de ganancia abajo": cada fila de ML, web y ERP dice lo que deja a lo publicado y a
+    lo propuesto.
+  - "Un modificador de márgenes masivo": en Combinaciones se tildan productos y se les cambia el
+    margen, con vista previa (el collar al 40 %: ML $8.878 → $10.434, deja $2.809 → $3.782).
+  - "(margen X % propio)" sólo cuando el margen es del producto.
+- TASK-007: la categoría de ML de 28 de los 29 productos sin publicar (el LightStick Huntrix no
+  tuvo propuesta). Heredar exige que el 60 % de los hermanos coincida: "Deco/Hogar" mandaba una
+  jabonera a "Soportes para Auriculares". Dudosas, para revisar al crear: Saja Boys, Dumpling
+  Clicker, Lucero de Alba, Mate Copa del mundo, tapa damian, Exhibidor giratorio.
+- Agustín ya está aplicando: el collar está publicado en la web a $4.890 y el Sauce tiene margen
+  propio de 50 %.

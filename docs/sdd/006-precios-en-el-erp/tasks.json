@@ -13,7 +13,7 @@
     "approvedAt": "2026-10-29",
     "notes": "\"Dale\", con los agregados de las specs 006 y 007."
   },
-  "updatedAt": "2026-10-30T18:05:33.863Z",
+  "updatedAt": "2026-10-30T20:00:55.312Z",
   "tasks": [
     {
       "id": "TASK-001",
@@ -148,7 +148,7 @@
       "title": "Categoría de ML de cada producto",
       "description": "Heredada, predicha (domain_discovery) o manual; endpoint del predictor.",
       "component": "api",
-      "status": "pending",
+      "status": "in-progress",
       "origin": "plan",
       "dependencies": [
         "TASK-001",
@@ -164,14 +164,14 @@
       ],
       "blockedReason": null,
       "completedAt": null,
-      "notes": null
+      "notes": "2026-10-30: categorias-ml.ts (heredada con 60 % de acuerdo, predicha, manual), completada en 28 productos. Falta elegirla a mano desde la página del producto."
     },
     {
       "id": "TASK-008",
       "title": "Propuesta por publicación y para publicar",
       "description": "armarPropuesta usa precioDePublicacion por clave de ML y suma los precios para publicar de lo que no tiene publicaciones.",
       "component": "api",
-      "status": "in-progress",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-005",
@@ -187,8 +187,8 @@
         "src/lib/precios-propuesta.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": "2026-10-30: la propuesta usa el motor del ERP por publicación. Falta mostrar en la fila el porqué (tipo, cuotas, envío, cuánto se lleva ML)."
+      "completedAt": "2026-10-30",
+      "notes": "2026-10-30: la propuesta usa el motor del ERP por publicación. Falta mostrar en la fila el porqué (tipo, cuotas, envío, cuánto se lleva ML). 2026-10-30: cada fila de ML con su porqué y lo que deja a lo de hoy y a lo propuesto. Para publicar: queda en TASK-017."
     },
     {
       "id": "TASK-009",
@@ -219,7 +219,7 @@
       "title": "Pantallas",
       "description": "Precios › Configuración; filas de ML con tipo, cuotas, envío y comisión; para publicar; sección Precio en la página del producto.",
       "component": "ui",
-      "status": "pending",
+      "status": "in-progress",
       "origin": "plan",
       "dependencies": [
         "TASK-008"
@@ -237,7 +237,7 @@
       ],
       "blockedReason": null,
       "completedAt": null,
-      "notes": null
+      "notes": "2026-10-30: Precios › Configuración (a04d3fe), filas con porqué y ganancia, sección Política de precio en el producto, margen de varios productos a la vez (679532b). Falta la categoría a mano."
     },
     {
       "id": "TASK-011",
