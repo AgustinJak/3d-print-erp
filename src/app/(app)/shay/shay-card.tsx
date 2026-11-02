@@ -12,9 +12,11 @@ import { toast } from "sonner";
 /**
  * Reparto de la cuenta de Mercado Libre compartida con Shay Juguetes.
  *
- * Lo que se sabe de quién es se imputa directo: la comisión de cada venta y las
- * campañas de publicidad. Lo que no —percepciones, convenio, monotributo— se
- * carga una vez con el total del mes y se reparte según cuánto vendió cada uno.
+ * Lo que se sabe de quién es se imputa directo: la comisión de cada venta, el
+ * envío que cobra ML y las campañas de publicidad. Lo que no —percepciones,
+ * convenio, monotributo— se carga una vez con el total del mes y se reparte por
+ * bruto sobre todo lo vendido en el mes, en ML y fuera de ML (ver
+ * `lib/ventas-terceros`).
  *
  * El cálculo de ventas va contra la API de ML y tarda unos segundos, así que se
  * guarda: la tarjeta lee el cierre guardado y sólo se recalcula a pedido.
@@ -32,6 +34,7 @@ interface PedidoTercero {
   bruto: number;
   comision: number;
   neto: number;
+  envio?: number;
   comprador: string | null;
 }
 
@@ -50,9 +53,11 @@ interface Cierre {
   bruto: number;
   comision: number;
   neto: number;
+  envio: number;
   unidadesPropias: number;
   brutoPropio: number;
   netoPropio: number;
+  brutoOtros: number;
   proporcion: number;
   publicidad: number;
   compartidos: GastosCompartidos;
@@ -140,6 +145,9 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
   const totalCompartido = cierre
     ? cierre.compartidos.percepciones + cierre.compartidos.iibb + cierre.compartidos.monotributo
     : 0;
+
+  // Un cierre guardado antes del 2026-11-02 no tiene el envío: hay que recalcularlo.
+  const sinEnvio = !!cierre && cierre.pedidos.some((p) => p.envio === undefined);
 
   const setCierre = (c: Cierre) => setCargado((prev) => (prev ? { ...prev, cierre: c } : prev));
 
@@ -265,19 +273,22 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
     fila("Bruto", Math.round(cierre.bruto));
     fila("Comision ML", Math.round(cierre.comision));
     fila("Neto", Math.round(cierre.neto));
+    fila("Envios que cobro ML", Math.round(cierre.envio));
     L.push("");
     fila("Publicidad (sus campanas)", Math.round(cierre.publicidad));
     fila("Percepciones del mes (total)", Math.round(cierre.compartidos.percepciones));
     fila("Convenio multilateral del mes (total)", Math.round(cierre.compartidos.iibb));
     fila("Monotributo del mes (total)", Math.round(cierre.compartidos.monotributo));
-    fila("Proporcion de Shay sobre el neto", pct(cierre.proporcion));
+    fila("Ventas de Sendero en ML (bruto)", Math.round(cierre.brutoPropio));
+    fila("Ventas de Sendero fuera de ML (bruto)", Math.round(cierre.brutoOtros));
+    fila("Proporcion de Shay sobre todo lo vendido", pct(cierre.proporcion));
     fila("Su parte de esos gastos", Math.round(cierre.parteCompartidos));
     L.push("");
     fila("A PASARLE", Math.round(cierre.aPasar));
     L.push("");
     L.push(
       ["Fecha", "N de venta", "ID de orden", "Publicacion", "MLA", "Comprador",
-       "Cantidad", "Precio unitario", "Bruto", "Comision", "Neto", "Estado"].join(sep)
+       "Cantidad", "Precio unitario", "Bruto", "Comision", "Neto", "Envio", "Estado"].join(sep)
     );
     for (const p of cierre.pedidos) {
       L.push([
@@ -293,6 +304,7 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
         Math.round(p.bruto),
         Math.round(p.comision),
         Math.round(p.neto),
+        Math.round(p.envio ?? 0),
         p.estado,
       ].join(sep));
     }
@@ -342,7 +354,7 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
         ) : (
           <>
             {/* Lo que vendió */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-3">
               <div>
                 <p className="text-xs text-muted-foreground">Bruto</p>
                 <p className="text-xl font-semibold tabular-nums">{money(cierre.bruto)}</p>
@@ -355,10 +367,12 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
                 </p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Neto</p>
-                <p className="text-xl font-semibold tabular-nums">{money(cierre.neto)}</p>
+                <p className="text-xs text-muted-foreground">Envíos que cobró ML</p>
+                <p className="text-xl font-semibold tabular-nums text-muted-foreground">
+                  −{money(cierre.envio)}
+                </p>
                 <p className="text-[11px] text-muted-foreground">
-                  {pct(cierre.proporcion)} del neto de la cuenta
+                  {sinEnvio ? "recalculá para sumarlos" : "envío gratis de sus ventas"}
                 </p>
               </div>
               <div className="flex items-end">
@@ -447,7 +461,10 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
                     Gastos del mes — total de la cuenta
                   </p>
                   <p className="text-[11px] text-muted-foreground">
-                    Se cargan enteros; a Shay le toca el {pct(cierre.proporcion)}, que es lo que vendió
+                    Se cargan enteros; a Shay le toca el {pct(cierre.proporcion)}: su parte de todo lo
+                    vendido en el mes ({money(cierre.bruto)} de{" "}
+                    {money(cierre.bruto + cierre.brutoPropio + cierre.brutoOtros)}, contando las ventas
+                    de Sendero en ML y fuera de ML)
                   </p>
                 </div>
                 {previo && totalCompartido === 0 && (
@@ -495,6 +512,7 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
               </div>
               <p className="text-[11px] text-muted-foreground text-right">
                 {money(cierre.neto)} neto
+                {cierre.envio > 0 && <> − {money(cierre.envio)} envíos</>}
                 {cierre.publicidad > 0 && <> − {money(cierre.publicidad)} publicidad</>}
                 {cierre.parteCompartidos > 0 && <> − {money(cierre.parteCompartidos)} de gastos</>}
               </p>
@@ -511,7 +529,8 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
                       <th className="text-right font-normal py-1 pr-3">Cant.</th>
                       <th className="text-right font-normal py-1 pr-3">Bruto</th>
                       <th className="text-right font-normal py-1 pr-3">Comisión</th>
-                      <th className="text-right font-normal py-1">Neto</th>
+                      <th className="text-right font-normal py-1 pr-3">Neto</th>
+                      <th className="text-right font-normal py-1">Envío</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -535,7 +554,10 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
                         <td className="py-1 pr-3 text-right tabular-nums text-muted-foreground">
                           −{money(p.comision)}
                         </td>
-                        <td className="py-1 text-right tabular-nums font-medium">{money(p.neto)}</td>
+                        <td className="py-1 pr-3 text-right tabular-nums font-medium">{money(p.neto)}</td>
+                        <td className="py-1 text-right tabular-nums text-muted-foreground">
+                          {p.envio ? `−${money(p.envio)}` : "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -548,7 +570,7 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
               {new Date(cierre.calculadoEn).toLocaleString("es-AR", {
                 day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
               })}
-              {" · "}no incluye envíos ni ventas canceladas
+              {" · "}no incluye ventas canceladas
             </p>
           </>
         )}

@@ -590,6 +590,7 @@ model VentaTercero {
   bruto    Float  @default(0) // lo que pagó el comprador por el producto
   comision Float  @default(0) // lo que se llevó ML
   neto     Float  @default(0) // bruto - comisión
+  envio    Float  @default(0) // lo que ML cobró por sus envíos (envío gratis); desde 2026-11-02
   pedidos  Json // detalle: una fila por item vendido
 
   // El otro lado de la misma cuenta: lo que vendió Sendero ese mes. Sale de la
@@ -599,6 +600,9 @@ model VentaTercero {
   brutoPropio     Float @default(0) @map("bruto_propio")
   comisionPropia  Float @default(0) @map("comision_propia")
   netoPropio      Float @default(0) @map("neto_propio")
+  // Lo que vendió Sendero fuera de ML ese mes (pedidos del ERP de otros canales).
+  // Entra en la base del prorrateo: los impuestos son del CUIT entero.
+  brutoOtros      Float @default(0) @map("bruto_otros")
 
   // La publicidad se imputa directo, no se prorratea: se sabe de quién es cada
   // campaña. Ver `lib/ml-publicidad`.

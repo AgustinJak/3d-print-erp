@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getMlAccount, searchOrders, type MlOrder } from "@/lib/mercadolibre";
+import { getMlAccount, getShipmentCosts, searchOrders, type MlOrder } from "@/lib/mercadolibre";
 import type { Prisma } from "@/generated/prisma";
 
 /**
@@ -10,17 +10,25 @@ import type { Prisma } from "@/generated/prisma";
  * el mes desde la API de ML — los dos lados en la misma pasada — y guarda el
  * cierre.
  *
- * Cómo se reparte cada cosa:
+ * Cómo se reparte cada cosa (desde el 2026-11-02):
  *
  *   comisión de ML   directo, por venta: ML ya la cobra sobre cada item
+ *   envío            directo, por envío: lo que ML le cobra al vendedor
+ *                    (envío gratis); en un paquete con cosas de los dos, por bruto
  *   publicidad       directo, por campaña: se sabe de quién es cada una
- *   percepciones     prorrateado por neto
- *   convenio         prorrateado por neto
- *   monotributo      prorrateado por neto
+ *   percepciones     prorrateado por bruto sobre todas las ventas del mes
+ *   convenio         prorrateado por bruto sobre todas las ventas del mes
+ *   monotributo      prorrateado por bruto sobre todas las ventas del mes
  *
  * Lo prorrateado se carga una sola vez con el total del mes
  * (`GastoCompartido`) y cada tienda se hace cargo de lo que le toca según
  * cuánto vendió. Nadie carga dos veces el mismo número.
+ *
+ * Por qué bruto y todas las ventas: esos impuestos son del CUIT entero y se
+ * calculan sobre lo vendido, no sobre lo que queda después de la comisión. Las
+ * ventas de Sendero fuera de ML (la web, las de a mano) también los generan.
+ * Hasta el 2026-11-02 se prorrateaba por neto contra las ventas de ML solas, y
+ * el envío no se descontaba: lo absorbía Sendero.
  *
  * Se guarda calculado porque son ~5 llamadas a ML por mes: demasiado lento para
  * rehacerlo en cada carga de Finanzas.
@@ -39,7 +47,8 @@ export interface PedidoTercero {
   precioUnitario: number;
   bruto: number;         // precioUnitario × cantidad
   comision: number;      // lo que se llevó ML
-  neto: number;
+  neto: number;          // bruto − comisión
+  envio?: number;        // su parte de lo que ML cobró por el envío (cierres desde 2026-11-02)
   comprador: string | null;
 }
 
@@ -64,18 +73,20 @@ export interface CierreTercero {
   bruto: number;
   comision: number;
   neto: number;         // bruto − comisión de ML
+  envio: number;        // lo que ML cobró por sus envíos, imputación directa
 
   // el otro lado de la cuenta, para poder repartir
   unidadesPropias: number;
   brutoPropio: number;
   netoPropio: number;
+  brutoOtros: number;   // ventas de Sendero fuera de ML en el mes (pedidos del ERP)
 
-  proporcion: number;   // neto del socio sobre el neto total (0 a 1)
+  proporcion: number;   // bruto del socio sobre el bruto de todas las ventas (0 a 1)
 
   publicidad: number;   // sus campañas, imputación directa
   compartidos: GastosCompartidos;   // totales del mes, sin repartir
   parteCompartidos: number;         // lo que le toca de esos totales
-  aPasar: number;       // neto − publicidad − parteCompartidos
+  aPasar: number;       // neto − envío − publicidad − parteCompartidos
 
   notas: string | null;
   pedidos: PedidoTercero[];
@@ -172,14 +183,35 @@ export async function calcularCierreTercero(
 
   pedidos.sort((a, b) => a.fecha.localeCompare(b.fecha));
 
+  // El envío que paga el vendedor (envío gratis) sale de la cuenta compartida:
+  // cada uno se hace cargo del de sus ventas. Hay un envío por paquete; si el
+  // paquete lleva cosas de los dos, se reparte por bruto.
+  const brutoPorEnvio = new Map<number, number>();
+  const envioDe = new Map<string, number>(); // id de orden → id de envío
+  for (const o of ordenes) {
+    const sid = o.shipping?.id;
+    if (o.status === "cancelled" || !sid) continue;
+    envioDe.set(String(o.id), sid);
+    brutoPorEnvio.set(sid, (brutoPorEnvio.get(sid) ?? 0) + o.order_items.reduce((a, it) => a + it.unit_price * it.quantity, 0));
+  }
+  const envios = [...new Set(pedidos.flatMap((p) => envioDe.get(p.idMl) ?? []))];
+  const costoDe = await costosDeEnvio(tenantId, envios);
+  for (const p of pedidos) {
+    const sid = envioDe.get(p.idMl);
+    const total = sid != null ? (brutoPorEnvio.get(sid) ?? 0) : 0;
+    p.envio = sid != null && total > 0 ? (costoDe.get(sid) ?? 0) * (p.bruto / total) : 0;
+  }
+  const brutoOtros = await ventasFueraDeMl(tenantId, desde, hasta);
+
   const totales = pedidos.reduce(
     (acc, p) => ({
       unidades: acc.unidades + p.cantidad,
       bruto: acc.bruto + p.bruto,
       comision: acc.comision + p.comision,
       neto: acc.neto + p.neto,
+      envio: acc.envio + (p.envio ?? 0),
     }),
-    { unidades: 0, bruto: 0, comision: 0, neto: 0 }
+    { unidades: 0, bruto: 0, comision: 0, neto: 0, envio: 0 }
   );
 
   const fila = await prisma.ventaTercero.upsert({
@@ -191,12 +223,53 @@ export async function calcularCierreTercero(
       mes,
       ...totales,
       ...propio,
+      brutoOtros,
       pedidos: pedidos as unknown as Prisma.InputJsonValue,
     },
-    update: { ...totales, ...propio, pedidos: pedidos as unknown as Prisma.InputJsonValue },
+    update: { ...totales, ...propio, brutoOtros, pedidos: pedidos as unknown as Prisma.InputJsonValue },
   });
 
   return armarCierre(fila, pedidos, await leerCompartidos(tenantId, anio, mes));
+}
+
+/**
+ * Lo que ML le cobró al vendedor por cada envío (`senders[].cost`, ya con las
+ * bonificaciones). De a 10 y con un reintento; un envío que no se puede leer
+ * corta el cálculo: mejor no guardar el cierre que guardarlo con un envío en cero.
+ */
+async function costosDeEnvio(tenantId: string, ids: number[]): Promise<Map<number, number>> {
+  const out = new Map<number, number>();
+  const leer = async (sid: number): Promise<number> => {
+    try {
+      const c = await getShipmentCosts(tenantId, sid).catch(() => getShipmentCosts(tenantId, sid));
+      return (c.senders ?? []).reduce((a, x) => a + (x.cost ?? 0), 0);
+    } catch (e) {
+      throw new Error(`No se pudo leer el costo del envío ${sid} en ML: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+  for (let i = 0; i < ids.length; i += 10) {
+    await Promise.all(ids.slice(i, i + 10).map(async (sid) => out.set(sid, await leer(sid))));
+  }
+  return out;
+}
+
+/**
+ * Lo que vendió Sendero fuera de ML en el mes: los pedidos del ERP de otros
+ * canales (la web, los de a mano), sin los cancelados ni los que esperan el pago.
+ */
+async function ventasFueraDeMl(tenantId: string, desde: string, hasta: string): Promise<number> {
+  const items = await prisma.itemPedido.findMany({
+    where: {
+      pedido: {
+        tenantId,
+        canalVenta: { not: "mercadolibre" },
+        estado: { notIn: ["CANCELADO", "PENDIENTE_PAGO"] },
+        fechaPedido: { gte: new Date(desde), lt: new Date(hasta) },
+      },
+    },
+    select: { cantidad: true, precioUnitario: true },
+  });
+  return items.reduce((a, i) => a + i.cantidad * i.precioUnitario, 0);
 }
 
 interface FilaCierre {
@@ -207,9 +280,11 @@ interface FilaCierre {
   bruto: number;
   comision: number;
   neto: number;
+  envio: number;
   unidadesPropias: number;
   brutoPropio: number;
   netoPropio: number;
+  brutoOtros: number;
   publicidad: number;
   notas: string | null;
   calculadoEn: Date;
@@ -218,18 +293,19 @@ interface FilaCierre {
 /**
  * Arma el cierre con el reparto ya hecho.
  *
- * La proporción se calcula sobre el neto (después de la comisión de ML), que es
- * la plata que realmente entró por cada lado. Si en el mes no vendió nadie, no
- * hay proporción posible y no se reparte nada: mejor cero que un número
- * inventado.
+ * La proporción es el bruto del socio sobre el bruto de todo lo vendido en el
+ * mes: lo suyo, lo de Sendero en ML y lo de Sendero fuera de ML. Es la base
+ * sobre la que se calculan los impuestos que se reparten. Si en el mes no
+ * vendió nadie, no hay proporción posible y no se reparte nada: mejor cero que
+ * un número inventado.
  */
 function armarCierre(
   fila: FilaCierre,
   pedidos: PedidoTercero[],
   compartidos: GastosCompartidos
 ): CierreTercero {
-  const netoTotal = fila.neto + fila.netoPropio;
-  const proporcion = netoTotal > 0 ? fila.neto / netoTotal : 0;
+  const brutoTotal = fila.bruto + fila.brutoPropio + fila.brutoOtros;
+  const proporcion = brutoTotal > 0 ? fila.bruto / brutoTotal : 0;
   const totalCompartido = compartidos.percepciones + compartidos.iibb + compartidos.monotributo;
   const parteCompartidos = totalCompartido * proporcion;
 
@@ -241,14 +317,16 @@ function armarCierre(
     bruto: fila.bruto,
     comision: fila.comision,
     neto: fila.neto,
+    envio: fila.envio,
     unidadesPropias: fila.unidadesPropias,
     brutoPropio: fila.brutoPropio,
     netoPropio: fila.netoPropio,
+    brutoOtros: fila.brutoOtros,
     proporcion,
     publicidad: fila.publicidad,
     compartidos,
     parteCompartidos,
-    aPasar: fila.neto - fila.publicidad - parteCompartidos,
+    aPasar: fila.neto - fila.envio - fila.publicidad - parteCompartidos,
     notas: fila.notas,
     pedidos,
     calculadoEn: fila.calculadoEn.toISOString(),
