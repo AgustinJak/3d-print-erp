@@ -78,3 +78,10 @@ Se saca con `PUT /items/{id}` mandando `value_id` y `value_name` en null.
   inmediata con Flex, como estaba, y también quedó bien.
 - En la prueba se cambió por error la Shinobu a "a pedido" (se buscó el Carrete en `cambios_flex` y la
   prueba del 2026-10-30 no estaba ahí); se volvió enseguida a inmediata con Flex.
+
+## En Productos, y nunca automático (2026-11-02)
+
+Agustín evaluó que la entrega siguiera sola al stock del ERP y lo descartó: la cambia él. Además de
+Precios, la barra de Productos (productos tildados) tiene "Con stock: Flex" y "Sin stock: a pedido"
+sobre sus publicaciones activas y pausadas (`GET /api/modelos/canales` trae `mlas` y cuántas tienen
+Flex o están a pedido). Las lecturas guardadas se completaron con `flex` y `disponibilidad` ese día.

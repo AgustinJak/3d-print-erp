@@ -9,6 +9,12 @@ import { NextResponse } from "next/server";
 export interface CanalesDeModelo {
   /** Publicaciones de ML por estado, según la última lectura de precios. */
   ml: { activas: number; pausadas: number; otras: number };
+  /**
+   * Las publicaciones activas y pausadas, para cambiarles la entrega (Flex o a pedido) en cantidad.
+   * Con la entrega según la última lectura: cuántas tienen Flex y cuántas están a pedido.
+   */
+  mlas: string[];
+  entrega: { flex: number; aPedido: number };
   /** Claves del Shop enlazadas. */
   web: number;
   /** Combinaciones activas que no tienen publicación de ML: las que se pueden crear. */
@@ -30,7 +36,7 @@ export async function GET() {
       prisma.combinacion.findMany({ where: { tenantId, activo: true }, select: { id: true, nombre: true, modeloId: true } }),
     ]);
     const out: Record<string, CanalesDeModelo> = {};
-    const de = (id: string) => (out[id] ??= { ml: { activas: 0, pausadas: 0, otras: 0 }, web: 0, sinMl: [] });
+    const de = (id: string) => (out[id] ??= { ml: { activas: 0, pausadas: 0, otras: 0 }, mlas: [], entrega: { flex: 0, aPedido: 0 }, web: 0, sinMl: [] });
     const conMl = new Set<string>();
     const vistas = new Set<string>();
     for (const m of mapeos) {
@@ -45,10 +51,14 @@ export async function GET() {
       const mla = m.clave.split("|")[0];
       if (vistas.has(`${m.combinacion.modeloId}|${mla}`)) continue;
       vistas.add(`${m.combinacion.modeloId}|${mla}`);
-      const estado = (m.precioLectura as unknown as LecturaMl | null)?.estado;
+      const lectura = m.precioLectura as unknown as LecturaMl | null;
+      const estado = lectura?.estado;
       if (estado === "active") c.ml.activas++;
       else if (estado === "paused") c.ml.pausadas++;
       else c.ml.otras++;
+      if (estado === "active" || estado === "paused") c.mlas.push(mla);
+      if (lectura?.flex) c.entrega.flex++;
+      if (lectura?.disponibilidad) c.entrega.aPedido++;
     }
     for (const c of combinaciones) if (!conMl.has(c.id)) de(c.modeloId).sinMl.push({ id: c.id, nombre: c.nombre });
     return NextResponse.json(out);

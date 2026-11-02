@@ -23,6 +23,7 @@ import { PiezasNuevas } from "@/components/producto/piezas-nuevas";
 import { costoModelo } from "@/lib/costos";
 import { CrearMlMasivo, type ItemACrear } from "@/components/producto/crear-ml-masivo";
 import type { CanalesDeModelo } from "@/app/api/modelos/canales/route";
+import { ConfirmarFlex } from "@/components/precios/confirmar-flex";
 
 /* ─── Types ────────────────────────────────────────────── */
 
@@ -165,6 +166,11 @@ function EstadoMl({ c }: { c: CanalesDeModelo | undefined }) {
   return (
     <span className="text-xs">
       {partes.join(" · ")}
+      {(c!.entrega.flex > 0 || c!.entrega.aPedido > 0) && (
+        <span className="block text-muted-foreground">
+          {[c!.entrega.flex ? `${c!.entrega.flex} con Flex` : null, c!.entrega.aPedido ? `${c!.entrega.aPedido} a pedido` : null].filter(Boolean).join(" · ")}
+        </span>
+      )}
       {c!.sinMl.length > 0 && <span className="block text-amber-600 dark:text-amber-400">{c!.sinMl.length} sin publicar</span>}
     </span>
   );
@@ -223,7 +229,7 @@ export default function ModelosPage() {
   const [filterMl, setFilterMl] = useState<"todos" | "publicados" | "pausados" | "sin">("todos");
   const [filterWeb, setFilterWeb] = useState<"todos" | "si" | "no">("todos");
   const [elegidos, setElegidos] = useState<Set<string>>(new Set());
-  const [masivo, setMasivo] = useState<"crear" | "activar" | "desactivar" | null>(null);
+  const [masivo, setMasivo] = useState<"crear" | "activar" | "desactivar" | "inmediata" | "a_pedido" | null>(null);
   const [aplicandoMasivo, setAplicandoMasivo] = useState(false);
 
   /* ─── Fetch ───────────────────────────────────────── */
@@ -306,6 +312,9 @@ export default function ModelosPage() {
 
   // Las combinaciones sin publicar en ML de los productos elegidos.
   const itemsACrear: ItemACrear[] = [...elegidos].flatMap((id) => (canales[id]?.sinMl ?? []).map((c) => ({ modeloId: id, combinacionId: c.id, nombre: c.nombre })));
+
+  // Las publicaciones de ML (activas y pausadas) de los productos elegidos, para la entrega.
+  const mlasElegidas = [...new Set([...elegidos].flatMap((id) => canales[id]?.mlas ?? []))];
 
   const cambiarActivo = async () => {
     const activo = masivo === "activar";
@@ -570,6 +579,12 @@ export default function ModelosPage() {
           <Button size="sm" onClick={() => setMasivo("crear")} disabled={!itemsACrear.length} title={!itemsACrear.length ? "Todos ya están publicados en ML" : undefined}>
             Crear en ML ({itemsACrear.length})
           </Button>
+          <Button size="sm" variant="outline" onClick={() => setMasivo("inmediata")} disabled={!mlasElegidas.length} title="En ML: sin tiempo de disponibilidad y con Flex">
+            Con stock: Flex ({mlasElegidas.length})
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setMasivo("a_pedido")} disabled={!mlasElegidas.length} title="En ML: sin Flex y con días de disponibilidad">
+            Sin stock: a pedido ({mlasElegidas.length})
+          </Button>
           <Button size="sm" variant="outline" onClick={() => setMasivo("activar")}>
             Activar
           </Button>
@@ -820,6 +835,20 @@ export default function ModelosPage() {
                 fetchModelos();
               }}
             />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={masivo === "inmediata" || masivo === "a_pedido"} onOpenChange={(o) => !o && setMasivo(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {masivo === "inmediata" ? "Entrega inmediata con Flex" : "A pedido, sin Flex"}: {mlasElegidas.length} {mlasElegidas.length === 1 ? "publicación" : "publicaciones"}
+            </DialogTitle>
+            <DialogDescription>Las publicaciones de ML de los productos elegidos, como están hoy. No se manda nada hasta que confirmes.</DialogDescription>
+          </DialogHeader>
+          {(masivo === "inmediata" || masivo === "a_pedido") && (
+            <ConfirmarFlex mlas={mlasElegidas} inmediata={masivo === "inmediata"} onCerrar={() => setMasivo(null)} onHecho={fetchModelos} />
           )}
         </DialogContent>
       </Dialog>

@@ -250,3 +250,5 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
 - (2026-11-02) Probado "Sin stock: a pedido" con el Carrete (MLA3189980034): sin Flex y 15 días, garantía,
   cuotas y stock intactos; vuelto a inmediata con Flex. Tarda ~15 s por publicación: se manda de a 2. Por error
   la Shinobu pasó un momento a "a pedido"; se restauró. Spec 007 completa.
+- (2026-11-02) Entrega también desde Productos (barra en cantidad). Automatizarla con el stock: descartado por
+  Agustín. Stock: carga más rápida (número al instante, clics agrupados, Enter a la fila siguiente).
