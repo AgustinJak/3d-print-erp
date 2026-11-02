@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Boxes, Search, Printer, Check, AlertTriangle, Minus, Plus, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -105,24 +105,68 @@ export default function StockPage() {
   // Se actualiza sola cuando entra un pedido o cambia el stock desde otro lado.
   useDatosEnVivo(fetchStock);
 
+  // Cargar stock tiene que ser rápido: el número cambia en pantalla al
+  // instante, los clics seguidos en +/− salen como un solo ajuste, y la lista
+  // entera (reservas, pedidos esperando) se relee una sola vez, cuando se deja
+  // de cargar. El reparto entre pedidos lo hace el servidor después de
+  // contestar.
+  const deltas = useRef(new Map<string, { suma: number; timer: ReturnType<typeof setTimeout> }>());
+  const relectura = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const releerDespues = useCallback(() => {
+    clearTimeout(relectura.current);
+    relectura.current = setTimeout(fetchStock, 4000);
+  }, [fetchStock]);
+  useEffect(() => () => clearTimeout(relectura.current), []);
+
+  /** Lo que se ve ya, antes de que conteste el servidor. */
+  const local = (id: string, cambio: { cantidad?: number; minimo?: number }) =>
+    setStock((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s;
+        const cantidad = cambio.cantidad ?? s.cantidad;
+        const minimo = cambio.minimo ?? s.minimo;
+        const disponible = cantidad - s.reservado;
+        const falta = Math.max(0, minimo - disponible);
+        return { ...s, cantidad, minimo, disponible, falta, costoFaltante: s.costoUnitario * falta };
+      })
+    );
+
   const guardar = async (id: string, campo: "cantidad" | "minimo" | "delta", valor: number) => {
     const res = await fetch("/api/stock", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, [campo]: valor }),
-    });
-    if (!res.ok) {
+    }).catch(() => null);
+    if (!res?.ok) {
       toast.error("No se pudo guardar");
+      fetchStock();
       return;
     }
-    // El conteo se guarda siempre; lo que puede fallar es el reparto entre
-    // pedidos. Se avisa en vez de dejarlo pasar: si no, el pedido seguiría
-    // diciendo que falta stock que ya está.
-    const data = await res.json().catch(() => null);
-    if (data?.repartoError) {
-      toast.warning("Se guardó el conteo, pero no se pudo repartir entre los pedidos");
-    }
-    fetchStock();
+    releerDespues();
+  };
+
+  const sumar = (s: UnidadStock, d: number) => {
+    const pend = deltas.current.get(s.id);
+    if (pend) clearTimeout(pend.timer);
+    const suma = (pend?.suma ?? 0) + d;
+    local(s.id, { cantidad: s.cantidad + d });
+    deltas.current.set(s.id, {
+      suma,
+      timer: setTimeout(() => {
+        deltas.current.delete(s.id);
+        if (suma !== 0) guardar(s.id, "delta", suma);
+      }, 600),
+    });
+  };
+
+  /** Enter pasa a la cantidad de la fila de abajo, para cargar de corrido. */
+  const siguiente = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter") return;
+    const todos = [...document.querySelectorAll<HTMLInputElement>("input[data-cantidad]")];
+    const i = todos.indexOf(e.currentTarget);
+    e.currentTarget.blur();
+    todos[i + 1]?.focus();
+    todos[i + 1]?.select();
   };
 
   const visibles = stock.filter((s) => {
@@ -302,19 +346,26 @@ export default function StockPage() {
                           size="icon"
                           variant="outline"
                           className="h-7 w-7"
-                          onClick={() => guardar(s.id, "delta", -1)}
+                          onClick={() => sumar(s, -1)}
                         >
                           <Minus className="h-3 w-3" />
                         </Button>
                         <Input
                           className={`h-7 w-14 text-center tabular-nums ${s.cantidad < 0 ? "text-red-600 font-semibold" : ""}`}
+                          data-cantidad
+                          inputMode="numeric"
                           value={editando[s.id] ?? String(s.cantidad)}
+                          onFocus={(e) => e.currentTarget.select()}
+                          onKeyDown={siguiente}
                           onChange={(e) => setEditando((p) => ({ ...p, [s.id]: e.target.value }))}
                           onBlur={() => {
                             const v = editando[s.id];
                             if (v !== undefined && v !== String(s.cantidad)) {
                               const n = parseInt(v, 10);
-                              if (!Number.isNaN(n)) guardar(s.id, "cantidad", n);
+                              if (!Number.isNaN(n)) {
+                                local(s.id, { cantidad: Math.max(0, n) });
+                                guardar(s.id, "cantidad", n);
+                              }
                             }
                             setEditando((p) => { const c = { ...p }; delete c[s.id]; return c; });
                           }}
@@ -323,7 +374,7 @@ export default function StockPage() {
                           size="icon"
                           variant="outline"
                           className="h-7 w-7"
-                          onClick={() => guardar(s.id, "delta", 1)}
+                          onClick={() => sumar(s, 1)}
                         >
                           <Plus className="h-3 w-3" />
                         </Button>
@@ -346,7 +397,10 @@ export default function StockPage() {
                         defaultValue={s.minimo}
                         onBlur={(e) => {
                           const n = parseInt(e.target.value, 10);
-                          if (!Number.isNaN(n) && n !== s.minimo) guardar(s.id, "minimo", n);
+                          if (!Number.isNaN(n) && n !== s.minimo) {
+                            local(s.id, { minimo: Math.max(0, n) });
+                            guardar(s.id, "minimo", n);
+                          }
                         }}
                       />
                     </TableCell>

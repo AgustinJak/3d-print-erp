@@ -12,7 +12,7 @@ import {
   reasignarReservas,
   reasignarSiElStockCambio,
 } from "@/lib/reservas";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 
 const MESES_DEMANDA = 6;
 
@@ -31,35 +31,30 @@ export async function GET() {
   try {
     const { tenantId } = await getAuthenticatedTenantNonDemo();
 
-    // Bodega suma lo que produce hablándole directo a Postgres, sin pasar por
-    // esta API. Si eso movió la pila hay que repartirla antes de contar quién
-    // espera, o un pedido figura en falta con la pieza ya hecha.
-    try {
-      await reasignarSiElStockCambio(tenantId);
-    } catch (err) {
-      // Leer no puede fallar por esto: se muestra el reparto viejo y listo.
-      console.error("[api/stock] no se pudo repartir antes de leer:", err);
-    }
-
-    // Una pieza nueva en Bodega aparece acá sola, con su fila de stock ya
-    // mapeada, así lo que se produzca cuenta desde el primer día. Sólo trae lo
-    // que nació después de encender esto: el backlog viejo de Bodega se revisa
-    // aparte, en Integraciones.
-    try {
-      await altasAutomaticas(tenantId);
-    } catch (err) {
-      console.error("[api/stock] no se pudieron dar de alta modelos de Bodega:", err);
-    }
-    try {
-      await aplicarCostosSiCambio(tenantId);
-    } catch (err) {
-      console.error("[api/stock] no se pudieron aplicar los costos de Bodega:", err);
-    }
+    // Las tres puestas al día con Bodega van en paralelo: no dependen una de
+    // otra y de a una sumaban casi un segundo cada una a cada lectura.
+    // Ninguna puede hacer fallar la lectura: si algo falla, se muestra lo de
+    // antes y lo corrige la próxima.
+    const [reparto, altas, costos] = await Promise.allSettled([
+      // Bodega suma lo que produce hablándole directo a Postgres, sin pasar
+      // por esta API. Si eso movió la pila hay que repartirla antes de contar
+      // quién espera, o un pedido figura en falta con la pieza ya hecha.
+      reasignarSiElStockCambio(tenantId),
+      // Una pieza nueva en Bodega aparece acá sola, con su fila de stock ya
+      // mapeada, así lo que se produzca cuenta desde el primer día. Sólo trae
+      // lo que nació después de encender esto: el backlog viejo de Bodega se
+      // revisa aparte, en Integraciones.
+      altasAutomaticas(tenantId),
+      aplicarCostosSiCambio(tenantId),
+    ]);
+    if (reparto.status === "rejected") console.error("[api/stock] no se pudo repartir antes de leer:", reparto.reason);
+    if (altas.status === "rejected") console.error("[api/stock] no se pudieron dar de alta modelos de Bodega:", altas.reason);
+    if (costos.status === "rejected") console.error("[api/stock] no se pudieron aplicar los costos de Bodega:", costos.reason);
 
     const desde = new Date();
     desde.setMonth(desde.getMonth() - MESES_DEMANDA);
 
-    const [filas, items, reservas] = await Promise.all([
+    const [filas, items, reservas, abiertos] = await Promise.all([
       prisma.stock.findMany({
         where: { tenantId },
         include: {
@@ -87,6 +82,30 @@ export async function GET() {
         by: ["stockId"],
         where: { tenantId, estado: "RESERVADA" },
         _sum: { cantidad: true },
+      }),
+      // Qué pedidos están esperando cada pieza (se usa más abajo).
+      prisma.pedido.findMany({
+        where: { tenantId, estado: { in: [...ESTADOS_QUE_RESERVAN] as never } },
+        select: {
+          id: true,
+          estado: true,
+          ordenProduccion: true,
+          prioridad: true,
+          canalVenta: true,
+          fechaEntrega: true,
+          fechaPedido: true,
+          cliente: { select: { nombre: true } },
+          items: {
+            select: {
+              id: true,
+              modeloId: true,
+              descripcion: true,
+              cantidad: true,
+              variantesInfo: true,
+              combinacion: { select: { modeloId: true, variantes: true } },
+            },
+          },
+        },
       }),
     ]);
 
@@ -162,29 +181,6 @@ export async function GET() {
 
     // ── Qué pedidos están esperando cada pieza ──────────────────────────────
     // Es la razón por la que hay que imprimir hoy y no la semana que viene.
-    const abiertos = await prisma.pedido.findMany({
-      where: { tenantId, estado: { in: [...ESTADOS_QUE_RESERVAN] as never } },
-      select: {
-        id: true,
-        estado: true,
-        ordenProduccion: true,
-        prioridad: true,
-        canalVenta: true,
-        fechaEntrega: true,
-        fechaPedido: true,
-        cliente: { select: { nombre: true } },
-        items: {
-          select: {
-            id: true,
-            modeloId: true,
-            descripcion: true,
-            cantidad: true,
-            variantesInfo: true,
-            combinacion: { select: { modeloId: true, variantes: true } },
-          },
-        },
-      },
-    });
     const cobertura = await coberturaDePedidos(tenantId, abiertos);
 
     const esperanPorStock = new Map<string, { unidades: number; pedidos: Set<string> }>();
@@ -339,19 +335,21 @@ export async function PATCH(request: NextRequest) {
 
     // Cambió la pila: hay que repartirla de nuevo entre los pedidos abiertos.
     //
-    // Si el reparto falla, el conteo YA quedó guardado y no se pierde: se avisa
-    // y listo. El próximo reparto (otro ajuste, un pedido nuevo, el cron)
-    // corrige todo, porque se recalcula entero cada vez.
-    let reparto = null;
-    let repartoError: string | null = null;
-    try {
-      reparto = await reasignarReservas(tenantId);
-    } catch (err) {
-      repartoError = err instanceof Error ? err.message : "error";
-      console.error("[api/stock] no se pudo repartir el stock:", err);
+    // Va después de contestar: el reparto se recalcula entero y era lo que hacía
+    // esperar cada +1 al cargar stock. Si falla, el conteo YA quedó guardado; lo
+    // corrige el próximo reparto (otro ajuste, la próxima lectura de Stock, un
+    // pedido nuevo, el cron), porque se recalcula entero cada vez.
+    if (delta !== 0) {
+      after(async () => {
+        try {
+          await reasignarReservas(tenantId);
+        } catch (err) {
+          console.error("[api/stock] no se pudo repartir el stock:", err);
+        }
+      });
     }
 
-    return NextResponse.json({ ok: true, stock: actualizado, reparto, repartoError });
+    return NextResponse.json({ ok: true, stock: actualizado });
   } catch (e) {
     if (e instanceof NextResponse) return e;
     const msg = e instanceof Error ? e.message : "error";
