@@ -214,14 +214,16 @@ export function pctDeCombinacion(cx: ContextoDePrecios, combinacionId: string, m
 
 /** Todo lo que hace falta para calcular cualquier combinación del tenant, de una vez. */
 export async function cargarContextoDePrecios(tenantId: string): Promise<ContextoDePrecios> {
-  const [general, reservas, costos, filas, piezas] = await Promise.all([
+  const [general, reservas, costos, filas] = await Promise.all([
     leerGastosDeVenta(tenantId),
     cargarContexto(prisma, tenantId),
     costosPorFilaDeStock(tenantId),
     prisma.stock.findMany({ where: { tenantId }, select: { id: true, bodegaModelId: true } }),
-    leerPiezasDeBodega(),
   ]);
+  // Con la configuración del ERP, de Bodega no se lee nada de precios (docs/sdd/006, spec 005):
+  // Bodega dejó de subirlos y lo que quedó en sus columnas está congelado.
   const erp = general.origen === "erp" ? await cargarDelErp(tenantId) : null;
+  const piezas = erp ? new Map<string, DeBodega>() : await leerPiezasDeBodega();
   return { general, reservas, costos, bodegaDeFila: new Map(filas.map((f) => [f.id, f.bodegaModelId])), piezas, erp };
 }
 
@@ -272,15 +274,11 @@ export function precioDeCombinacion(
   }
 
   const deBodega = pieza ? cx.piezas.get(pieza.bodegaModelId) : undefined;
-  // Con la configuración del ERP manda la política del producto en el ERP. De Bodega se sigue
-  // tomando el redondeo y la promo de la pieza, no el margen: era sobre otra cuenta (spec 002).
+  // Con la configuración del ERP manda sólo la política del producto en el ERP. La promo distinta
+  // que tenía una pieza en Bodega (Funda Yamato 95cm, 0 %) se pasó al producto el 2026-11-02.
   const delErp = cx.erp?.modelos.get(c.modeloId);
   const propiaPolitica: Politica = cx.erp
-    ? {
-        margen: delErp?.politica.margen ?? null,
-        redondeo: delErp?.politica.redondeo ?? deBodega?.politica.redondeo ?? null,
-        promo: delErp?.politica.promo ?? deBodega?.politica.promo ?? null,
-      }
+    ? (delErp?.politica ?? { margen: null, redondeo: null, promo: null })
     : (deBodega?.politica ?? { margen: null, redondeo: null, promo: null });
   const p = aplicarPolitica(cx.general.gastos, cx.general.redondeo, propiaPolitica);
   const politica = {

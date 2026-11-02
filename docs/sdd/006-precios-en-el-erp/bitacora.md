@@ -253,3 +253,8 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
 - (2026-11-02) Entrega también desde Productos (barra en cantidad). Automatizarla con el stock: descartado por
   Agustín. Stock: carga más rápida (número al instante, clics agrupados, Enter a la fila siguiente).
 - (2026-11-02) "A pedido" arranca con 2 días (antes 15 o los de la mayoría), a pedido de Agustín.
+- (2026-11-02) TASK-011, Bodega sin precios (spec 005). ERP: con `config_precios` ya no lee nada de precios de
+  Bodega (la promo de 18 piezas era respaldo; sólo la Funda Yamato 95cm difería, 0 % contra 10 %, y se pasó al
+  producto). Nueva página `/piezas/[id]` para el link desde Bodega. Bodega 2.36: calculadora sólo de costos,
+  ficha sin precios con "Ver precios en el ERP" (IPC `erp:abrirPieza`), sync sin `gastos_venta`, política ni
+  foto. Publicar primero el ERP y después Bodega (RN-1).
