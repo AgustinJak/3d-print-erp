@@ -219,7 +219,7 @@
       "title": "Pantallas",
       "description": "Precios › Configuración; filas de ML con tipo, cuotas, envío y comisión; para publicar; sección Precio en la página del producto.",
       "component": "ui",
-      "status": "in-progress",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-008"
@@ -236,8 +236,8 @@
         "src/app/(app)/modelos/[id]/page.tsx"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": "2026-10-30: Precios › Configuración (a04d3fe), filas con porqué y ganancia, sección Política de precio en el producto, margen de varios productos a la vez (679532b). Falta la categoría a mano."
+      "completedAt": "2026-11-02",
+      "notes": "2026-10-30: Precios › Configuración (a04d3fe), filas con porqué y ganancia, sección Política de precio en el producto, margen de varios productos a la vez (679532b). 2026-11-02: categoría a mano (selector en Política de precio), Productos con filtros por canal y acciones en cantidad (crear en ML, entrega, activar)."
     },
     {
       "id": "TASK-011",
@@ -407,7 +407,7 @@
       "title": "Promos de ML desde el ERP",
       "description": "Avisos (sin promo, promo distinta, de más, sin campaña), campañas por publicación con lo que deja cada una, y prender/cambiar/sacar promos en cantidad, a mano, con vista previa y registro. Nunca automático.",
       "component": "lib",
-      "status": "in-progress",
+      "status": "completed",
       "origin": "spec",
       "dependencies": [
         "TASK-008"
@@ -432,8 +432,8 @@
         "scripts/sdd-006-probar-promos.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": "2026-10-30: construido; primer envío desde la pantalla OK (Ichigo a Q4). Verificación con sale_price y con la lista de promos. Falta desplegar."
+      "completedAt": "2026-11-02",
+      "notes": "2026-10-30: construido; primer envío desde la pantalla OK (Ichigo a Q4). Desplegado y en uso: selección masiva, buscador y quitar filas con aviso en la vista previa."
     },
     {
       "id": "TASK-016",
