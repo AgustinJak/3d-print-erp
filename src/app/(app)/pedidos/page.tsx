@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronRight, AlertTriangle, ShoppingCart, GripVertical, CalendarClock, Clock, Copy, PackageCheck, Printer } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -176,10 +177,12 @@ function getCanalLabel(value: string) {
   return canal ? canal.label : value;
 }
 
-export default function PedidosPage() {
+function PedidosContenido() {
+  // Las tarjetas del panel abren la lista filtrada: /pedidos?estado=CONFIRMADO.
+  const searchParams = useSearchParams();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [search, setSearch] = useState("");
-  const [filterEstado, setFilterEstado] = useState<string>("todos");
+  const [filterEstado, setFilterEstado] = useState<string>(() => searchParams.get("estado") ?? "todos");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingPedido, setEditingPedido] = useState<Pedido | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -1078,5 +1081,13 @@ export default function PedidosPage() {
         onSaved={handleSaved}
       />
     </div>
+  );
+}
+
+export default function PedidosPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Cargando…</div>}>
+      <PedidosContenido />
+    </Suspense>
   );
 }

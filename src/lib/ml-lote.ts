@@ -159,6 +159,23 @@ export interface ResultadoLiquidaciones {
 }
 
 /**
+ * Pasa a COMPLETADO los pedidos de ML cuya liquidación ya llegó, con esa fecha como fecha
+ * de completado: es cuando se cobra. Antes lo hacía sólo el panel al abrirse, así que si
+ * nadie lo abría no pasaba, y la fecha quedaba la del día en que se abrió. Ahora lo corre
+ * también el cron diario. Devuelve cuántos completó.
+ */
+export async function completarLiquidados(tenantId: string, ahora = new Date()): Promise<number> {
+  return prisma.$executeRaw`
+    UPDATE pedidos
+    SET estado = 'COMPLETADO'::"EstadoPedido", completado_en = fecha_liquidacion_ml, updated_at = NOW()
+    WHERE tenant_id = ${tenantId}
+      AND estado = 'ESPERANDO_LIQUIDACION_ML'::"EstadoPedido"
+      AND fecha_liquidacion_ml IS NOT NULL
+      AND fecha_liquidacion_ml <= ${ahora}
+  `;
+}
+
+/**
  * Revisa los pedidos de ML que todavía no tienen la liquidación resuelta y les
  * asigna fecha + estado según el envío. Es lo que hace avanzar un pedido a
  * "esperando liquidación" cuando el paquete sale — y lo que descuenta su stock.

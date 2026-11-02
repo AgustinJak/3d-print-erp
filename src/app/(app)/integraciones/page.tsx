@@ -172,6 +172,12 @@ function IntegracionesContent() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  // El aviso del panel abre directo en Mapeo (?tab=mapeo).
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    if (t === "estado" || t === "mercadolibre" || t === "mapeo" || t === "logs" || t === "revision") setTab(t);
+  }, [searchParams]);
+
   // Resultado del callback de OAuth (?ml=ok|error&tab=mercadolibre)
   useEffect(() => {
     const ml = searchParams.get("ml");

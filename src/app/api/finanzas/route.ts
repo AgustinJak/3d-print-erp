@@ -2,11 +2,13 @@ export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenant } from "@/lib/tenant";
+import { saldoBilletera, yaOcurrio as yaOcurrioHoy } from "@/lib/billeteras";
 import { NextRequest, NextResponse } from "next/server";
 
 type PedidoConItems = {
   fechaPedido: Date;
   updatedAt: Date;
+  completadoEn: Date | null;
   precioEnvio: number;
   senia: number;
   items: {
@@ -38,7 +40,7 @@ export async function GET(request: NextRequest) {
       where: {
         tenantId,
         estado: "COMPLETADO",
-        updatedAt: { gte: inicioMes, lt: finMes },
+        completadoEn: { gte: inicioMes, lt: finMes },
       },
       include: { items: true },
     });
@@ -46,7 +48,7 @@ export async function GET(request: NextRequest) {
       where: {
         tenantId,
         estado: "COMPLETADO",
-        updatedAt: { gte: inicioAnio, lt: finAnio },
+        completadoEn: { gte: inicioAnio, lt: finAnio },
       },
       include: { items: true },
     });
@@ -103,16 +105,7 @@ export async function GET(request: NextRequest) {
         .filter((g) => !billetera || g.billetera === billetera)
         .reduce((s, g) => s + g.monto, 0);
 
-    // Compara dos fechas a nivel de día. Necesario porque los gastos se
-    // guardan al mediodía local (T12:00) y `ahora` puede ser anterior — sin
-    // esto, un gasto creado hoy temprano queda como "futuro".
-    const inicioDia = (d: Date) => {
-      const n = new Date(d);
-      n.setHours(0, 0, 0, 0);
-      return n.getTime();
-    };
-    const hoyInicio = inicioDia(ahora);
-    const yaOcurrio = (fecha: Date) => inicioDia(fecha) <= hoyInicio;
+    const yaOcurrio = (fecha: Date) => yaOcurrioHoy(fecha, ahora);
 
     // Solo cuenta gastos cuya fecha ya pasó (o es hoy). Las cuotas futuras
     // NO se descuentan de la billetera hasta que llega su fecha.
@@ -133,39 +126,27 @@ export async function GET(request: NextRequest) {
     const gastosMesEmp = sumGastosEjecutados(gastosMes, "empresarial");
     const gastosAnioTotal = sumGastosEjecutados(gastosAnio);
 
-    // ─── Billetera Fabricación (acumulado histórico) ──────
-    // El "disponible" solo cuenta cosas que ya pasaron: pedidos completados,
-    // gastos con fecha <= hoy, y transferencias ya hechas. Las cuotas futuras
-    // se ven en "Cuotas en curso" pero no descuentan de la disponibilidad.
+    // ─── Billeteras (acumulado histórico) ─────────────────
+    // La misma cuenta que el panel (src/lib/billeteras.ts). El "disponible" solo cuenta
+    // cosas que ya pasaron: pedidos completados, gastos con fecha <= hoy y transferencias
+    // ya hechas. Las cuotas futuras se ven en "Cuotas en curso" pero no descuentan.
     const totalCompletados = calcularTotales(todosCompletados);
-    const billeteraFabIngresos = totalCompletados.costoFab; // costo_fab de TODOS los completados
-    const billeteraFabGastosEjecutados = sumGastosEjecutados(todosGastos, "fabricacion");
-    const billeteraFabGastosTodos = sumGastos(todosGastos, "fabricacion"); // total comprometido (incluye futuras)
-    const transfeHaciaFab = todasTransferencias
-      .filter((t) => t.hacia === "fabricacion" && yaOcurrio(t.fecha))
-      .reduce((s, t) => s + t.monto, 0);
-    const transfeDesdeFab = todasTransferencias
-      .filter((t) => t.desde === "fabricacion" && yaOcurrio(t.fecha))
-      .reduce((s, t) => s + t.monto, 0);
-    const billeteraFabDisponible =
-      billeteraFabIngresos + transfeHaciaFab - billeteraFabGastosEjecutados - transfeDesdeFab;
-
-    // ─── Billetera Empresarial (acumulado histórico) ──────
-    const billeteraEmpIngresos = totalCompletados.ganancia; // ganancia neta de TODOS los completados
-    const billeteraEmpGastosEjecutados = sumGastosEjecutados(todosGastos, "empresarial");
-    const billeteraEmpGastosTodos = sumGastos(todosGastos, "empresarial");
-    const transfeHaciaEmp = todasTransferencias
-      .filter((t) => t.hacia === "empresarial" && yaOcurrio(t.fecha))
-      .reduce((s, t) => s + t.monto, 0);
-    const transfeDesdeEmp = todasTransferencias
-      .filter((t) => t.desde === "empresarial" && yaOcurrio(t.fecha))
-      .reduce((s, t) => s + t.monto, 0);
-    const billeteraEmpDisponible =
-      billeteraEmpIngresos + transfeHaciaEmp - billeteraEmpGastosEjecutados - transfeDesdeEmp;
+    const fab = saldoBilletera("fabricacion", totalCompletados.costoFab, todosGastos, todasTransferencias, ahora);
+    const emp = saldoBilletera("empresarial", totalCompletados.ganancia, todosGastos, todasTransferencias, ahora);
+    const billeteraFabIngresos = fab.entra;
+    const billeteraFabGastosEjecutados = fab.gastado;
+    const transfeHaciaFab = fab.transferidoHacia;
+    const transfeDesdeFab = fab.transferidoDesde;
+    const billeteraFabDisponible = fab.disponible;
+    const billeteraEmpIngresos = emp.entra;
+    const billeteraEmpGastosEjecutados = emp.gastado;
+    const transfeHaciaEmp = emp.transferidoHacia;
+    const transfeDesdeEmp = emp.transferidoDesde;
+    const billeteraEmpDisponible = emp.disponible;
 
     // Compromisos futuros (cuotas + gastos con fecha posterior a hoy)
-    const compromisosFuturosFab = billeteraFabGastosTodos - billeteraFabGastosEjecutados;
-    const compromisosFuturosEmp = billeteraEmpGastosTodos - billeteraEmpGastosEjecutados;
+    const compromisosFuturosFab = fab.comprometido - fab.gastado;
+    const compromisosFuturosEmp = emp.comprometido - emp.gastado;
 
     // ─── Aportado al mes seleccionado ─────────────────────
     let billeteraFabMes = 0;
@@ -191,7 +172,7 @@ export async function GET(request: NextRequest) {
       const inicio = new Date(anioNum, m, 1);
       const fin = new Date(anioNum, m + 1, 1);
       const pedidosM = pedidosAnio.filter(
-        (p) => new Date(p.updatedAt) >= inicio && new Date(p.updatedAt) < fin
+        (p) => p.completadoEn != null && p.completadoEn >= inicio && p.completadoEn < fin
       );
       const gastosM = gastosAnio.filter(
         (g) => new Date(g.fecha) >= inicio && new Date(g.fecha) < fin
@@ -372,7 +353,7 @@ export async function GET(request: NextRequest) {
       const totalPedido = aporteFab + aporteEmp;
       movimientos.push({
         id: `p-${p.id}`,
-        fecha: p.updatedAt,
+        fecha: p.completadoEn ?? p.updatedAt,
         tipo: "pedido",
         descripcion: `Pedido completado${p.externoId ? ` ${p.externoId}` : ""}`,
         billetera: "ambos",

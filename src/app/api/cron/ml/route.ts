@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { esBaseCaida, MENSAJE_BASE_CAIDA } from "@/lib/base-caida";
 import { altasAutomaticas } from "@/lib/altas-bodega";
 import { aplicarCostosSiCambio } from "@/lib/sincronizar-costos";
-import { actualizarLiquidaciones, sincronizarOrdenes } from "@/lib/ml-lote";
+import { actualizarLiquidaciones, completarLiquidados, sincronizarOrdenes } from "@/lib/ml-lote";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -69,6 +69,11 @@ export async function GET(request: NextRequest) {
         evento: "cron_liquidaciones",
         presupuestoMs: restante(0),
       });
+      // Lo que ML ya liquidó se cobra hoy: pasa a completado aunque nadie abra el panel.
+      const completados = await completarLiquidados(tenantId).catch((e) => {
+        console.error("[cron/ml] completar liquidados:", e);
+        return null;
+      });
       // Un modelo nuevo de Bodega también entra por acá. Las otras dos puertas
       // —los GET de /api/stock y /api/cambios— dependen de que alguien tenga el
       // ERP abierto: una pieza creada a la noche se quedaba esperando hasta que
@@ -89,6 +94,7 @@ export async function GET(request: NextRequest) {
         tenantId,
         ordenes: ordenes.stats,
         liquidaciones: liquidaciones.stats,
+        completados,
         altasBodega: altas ? altas.creados.length + altas.mapeados.length : null,
       });
     } catch (e) {

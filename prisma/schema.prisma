@@ -181,6 +181,8 @@ model Pedido {
   senia              Float        @default(0)
   comprobanteUrl     String?      @map("comprobante_url")
   fechaLiquidacionMl DateTime?    @map("fecha_liquidacion_ml")
+  /// Cuándo pasó a COMPLETADO (se cobró). La pone un trigger (prisma/sql/pedidos-completado-en.sql).
+  completadoEn       DateTime?    @map("completado_en")
   idMercadolibre     String?      @map("id_mercadolibre")
   contacto           String?
   notas              String?
