@@ -12,7 +12,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +21,8 @@ import { TableSkeleton } from "@/components/data-loading";
 import { EmptyState } from "@/components/empty-state";
 import { PiezasNuevas } from "@/components/producto/piezas-nuevas";
 import { costoModelo } from "@/lib/costos";
+import { CrearMlMasivo, type ItemACrear } from "@/components/producto/crear-ml-masivo";
+import type { CanalesDeModelo } from "@/app/api/modelos/canales/route";
 
 /* ─── Types ────────────────────────────────────────────── */
 
@@ -155,6 +157,19 @@ function CategoryFilter({
 
 /* ─── Category Badges ──────────────────────────────────── */
 
+/** Cómo está el producto en Mercado Libre: publicaciones activas, pausadas, o sin publicar. */
+function EstadoMl({ c }: { c: CanalesDeModelo | undefined }) {
+  const total = c ? c.ml.activas + c.ml.pausadas + c.ml.otras : 0;
+  if (!total) return <span className="text-xs text-muted-foreground">Sin publicar</span>;
+  const partes = [c!.ml.activas ? `${c!.ml.activas} activa${c!.ml.activas === 1 ? "" : "s"}` : null, c!.ml.pausadas ? `${c!.ml.pausadas} pausada${c!.ml.pausadas === 1 ? "" : "s"}` : null, c!.ml.otras ? `${c!.ml.otras} sin leer` : null].filter(Boolean);
+  return (
+    <span className="text-xs">
+      {partes.join(" · ")}
+      {c!.sinMl.length > 0 && <span className="block text-amber-600 dark:text-amber-400">{c!.sinMl.length} sin publicar</span>}
+    </span>
+  );
+}
+
 function CategoriaBadges({ categorias }: { categorias: Modelo["categorias"] }) {
   if (!categorias || categorias.length === 0) return <span className="text-muted-foreground text-sm">—</span>;
   return (
@@ -193,7 +208,7 @@ export default function ModelosPage() {
   const [filterCategoriaIds, setFilterCategoriaIds] = useState<string[]>([]);
   const [filterEstado, setFilterEstado] = useState<"todos" | "activos" | "inactivos" | "insumos">("activos");
   const [filterExtras, setFilterExtras] = useState<{ con3mf: boolean; conImagen: boolean; conVariantes: boolean }>({ con3mf: false, conImagen: false, conVariantes: false });
-  const [sortBy, setSortBy] = useState<"nuevo" | "antiguo" | "az" | "za" | "precioAsc" | "precioDesc" | "margen">("nuevo");
+  const [sortBy, setSortBy] = useState<"nuevo" | "antiguo" | "az" | "za">("nuevo");
   const [showExtraFilters, setShowExtraFilters] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   // "Nuevo producto": sólo el nombre; el resto se completa en su página (docs/sdd/004, spec 001).
@@ -202,13 +217,22 @@ export default function ModelosPage() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [mostrarConsolidados, setMostrarConsolidados] = useState(false);
   const [filterSku, setFilterSku] = useState<"todos" | "con" | "sin">("todos");
+  // Dónde está publicado cada producto, y lo que se hace en cantidad (Agustín, 2026-11-02). Los
+  // precios se manejan en Precios: acá no se muestran ni se ordena por ellos.
+  const [canales, setCanales] = useState<Record<string, CanalesDeModelo>>({});
+  const [filterMl, setFilterMl] = useState<"todos" | "publicados" | "pausados" | "sin">("todos");
+  const [filterWeb, setFilterWeb] = useState<"todos" | "si" | "no">("todos");
+  const [elegidos, setElegidos] = useState<Set<string>>(new Set());
+  const [masivo, setMasivo] = useState<"crear" | "activar" | "desactivar" | null>(null);
+  const [aplicandoMasivo, setAplicandoMasivo] = useState(false);
 
   /* ─── Fetch ───────────────────────────────────────── */
 
   const fetchModelos = useCallback(async () => {
     const consolidados = mostrarConsolidados ? "incluir" : "ocultar";
-    const res = await fetch(`/api/modelos?consolidados=${consolidados}`);
+    const [res, can] = await Promise.all([fetch(`/api/modelos?consolidados=${consolidados}`), fetch("/api/modelos/canales")]);
     setModelos(await res.json());
+    if (can.ok) setCanales(await can.json());
   }, [mostrarConsolidados]);
 
   const fetchCategorias = useCallback(async () => {
@@ -260,20 +284,43 @@ export default function ModelosPage() {
         filterSku === "todos" ? true :
         filterSku === "con" ? !!m.sku :
         !m.sku;
-      return matchSearch && matchCategoria && matchEstado && match3mf && matchImagen && matchVariantes && matchSku;
+      const c = canales[m.id];
+      const matchMl =
+        filterMl === "todos" ? true :
+        filterMl === "publicados" ? (c?.ml.activas ?? 0) > 0 :
+        filterMl === "pausados" ? (c?.ml.pausadas ?? 0) > 0 :
+        !c || c.ml.activas + c.ml.pausadas + c.ml.otras === 0 || c.sinMl.length > 0;
+      const matchWeb = filterWeb === "todos" ? true : filterWeb === "si" ? (c?.web ?? 0) > 0 : !c || c.web === 0;
+      return matchSearch && matchCategoria && matchEstado && match3mf && matchImagen && matchVariantes && matchSku && matchMl && matchWeb;
     })
     .sort((a, b) => {
       switch (sortBy) {
         case "az": return a.nombre.localeCompare(b.nombre, "es");
         case "za": return b.nombre.localeCompare(a.nombre, "es");
-        case "precioAsc": return a.precioVenta - b.precioVenta;
-        case "precioDesc": return b.precioVenta - a.precioVenta;
-        case "margen":
-          return (b.precioVenta - costoModelo(b)) - (a.precioVenta - costoModelo(a));
         case "antiguo": return new Date(a.creadoEn).getTime() - new Date(b.creadoEn).getTime();
         default: return new Date(b.creadoEn).getTime() - new Date(a.creadoEn).getTime();
       }
     });
+
+  /* ─── En cantidad ────────────────────────────────── */
+
+  // Las combinaciones sin publicar en ML de los productos elegidos.
+  const itemsACrear: ItemACrear[] = [...elegidos].flatMap((id) => (canales[id]?.sinMl ?? []).map((c) => ({ modeloId: id, combinacionId: c.id, nombre: c.nombre })));
+
+  const cambiarActivo = async () => {
+    const activo = masivo === "activar";
+    setAplicandoMasivo(true);
+    let ok = 0;
+    for (const id of elegidos) {
+      const r = await fetch(`/api/modelos/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ activo }) });
+      if (r.ok) ok++;
+    }
+    setAplicandoMasivo(false);
+    toast.success(`${ok} ${ok === 1 ? "producto" : "productos"} ${activo ? "activado" : "desactivado"}${ok === 1 ? "" : "s"}`);
+    setMasivo(null);
+    setElegidos(new Set());
+    fetchModelos();
+  };
 
   /* ─── Alta ───────────────────────────────────────── */
 
@@ -334,9 +381,6 @@ export default function ModelosPage() {
               <option value="antiguo">⬆ Más antiguo</option>
               <option value="az">A → Z</option>
               <option value="za">Z → A</option>
-              <option value="precioAsc">Precio: menor a mayor</option>
-              <option value="precioDesc">Precio: mayor a menor</option>
-              <option value="margen">Mayor margen</option>
             </select>
             <ArrowUpDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           </div>
@@ -487,6 +531,26 @@ export default function ModelosPage() {
             })()}
           </div>
 
+          {/* Dónde está publicado */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-muted-foreground">Mercado Libre:</span>
+            <div className="inline-flex rounded-md border text-xs overflow-hidden">
+              {([["todos", "Todos"], ["publicados", "Publicados"], ["pausados", "Pausados"], ["sin", "Sin publicar"]] as const).map(([v, t], i) => (
+                <button key={v} type="button" onClick={() => setFilterMl(v)} className={`px-2.5 py-1 transition-colors ${filterMl === v ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"} ${i > 0 ? "border-l" : ""}`}>
+                  {t}
+                </button>
+              ))}
+            </div>
+            <span className="text-xs text-muted-foreground">Web:</span>
+            <div className="inline-flex rounded-md border text-xs overflow-hidden">
+              {([["todos", "Todos"], ["si", "En la web"], ["no", "No está"]] as const).map(([v, t], i) => (
+                <button key={v} type="button" onClick={() => setFilterWeb(v)} className={`px-2.5 py-1 transition-colors ${filterWeb === v ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"} ${i > 0 ? "border-l" : ""}`}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Results count */}
           <span className="text-xs text-muted-foreground ml-auto">
             {filtered.length} producto{filtered.length !== 1 ? "s" : ""}
@@ -496,6 +560,27 @@ export default function ModelosPage() {
 
       {/* Piezas de Bodega que no entraron solas (docs/sdd/004, spec 005) */}
       <PiezasNuevas onCambio={fetchModelos} />
+
+      {/* Lo que se hace en cantidad: tildar productos en la tabla */}
+      {elegidos.size > 0 && (
+        <Card className="flex flex-wrap items-center gap-2 p-3 border-primary/40 sticky top-2 z-10">
+          <span className="text-sm font-medium">
+            {elegidos.size} {elegidos.size === 1 ? "producto elegido" : "productos elegidos"}
+          </span>
+          <Button size="sm" onClick={() => setMasivo("crear")} disabled={!itemsACrear.length} title={!itemsACrear.length ? "Todos ya están publicados en ML" : undefined}>
+            Crear en ML ({itemsACrear.length})
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setMasivo("activar")}>
+            Activar
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setMasivo("desactivar")}>
+            Desactivar
+          </Button>
+          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setElegidos(new Set())}>
+            Limpiar
+          </Button>
+        </Card>
+      )}
 
       {/* Content */}
       {filtered.length === 0 ? (
@@ -555,9 +640,7 @@ export default function ModelosPage() {
                     </Badge>
                   )}
                 </div>
-                <p className="text-lg font-bold text-primary">
-                  {formatPrice(m.precioVenta)}
-                </p>
+                <EstadoMl c={canales[m.id]} />
                 <CategoriaBadges categorias={m.categorias} />
                 {m.consolidadoEn && (
                   <p className="text-xs text-amber-500 truncate">
@@ -574,24 +657,46 @@ export default function ModelosPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8">
+                  <input
+                    type="checkbox"
+                    aria-label="Elegir todos"
+                    checked={filtered.length > 0 && filtered.every((m) => elegidos.has(m.id))}
+                    onChange={(e) => setElegidos(e.target.checked ? new Set(filtered.map((m) => m.id)) : new Set())}
+                  />
+                </TableHead>
                 <TableHead className="w-[60px]">Imagen</TableHead>
                 <TableHead className="min-w-[140px]">Nombre</TableHead>
                 <TableHead>Categorías</TableHead>
-                <TableHead className="text-right">Costo Fab</TableHead>
-                <TableHead className="text-right">Precio Venta</TableHead>
-                <TableHead className="text-right">Precio Crédito</TableHead>
+                <TableHead className="text-right">Costo</TableHead>
+                <TableHead>Mercado Libre</TableHead>
+                <TableHead>Web</TableHead>
                 <TableHead>Estado</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.map((m) => {
-                const precioCredito = m.precioVenta * (1 + m.precioCreditoPorc / 100);
                 return (
                   <TableRow
                     key={m.id}
-                    className="cursor-pointer hover:bg-muted/50"
+                    className={`cursor-pointer hover:bg-muted/50 ${elegidos.has(m.id) ? "bg-primary/5" : ""}`}
                     onClick={() => router.push(`/modelos/${m.id}`)}
                   >
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Elegir ${m.nombre}`}
+                        checked={elegidos.has(m.id)}
+                        onChange={(e) =>
+                          setElegidos((prev) => {
+                            const s = new Set(prev);
+                            if (e.target.checked) s.add(m.id);
+                            else s.delete(m.id);
+                            return s;
+                          })
+                        }
+                      />
+                    </TableCell>
                     <TableCell>
                       {m.imagenUrl ? (
                         <img
@@ -639,8 +744,12 @@ export default function ModelosPage() {
                         </div>
                       )}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums font-medium">{formatPrice(m.precioVenta)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatPrice(precioCredito)}</TableCell>
+                    <TableCell>
+                      <EstadoMl c={canales[m.id]} />
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {(canales[m.id]?.web ?? 0) > 0 ? <span>En la web</span> : <span className="text-muted-foreground">—</span>}
+                    </TableCell>
                     <TableCell>
                       <Badge variant={m.activo ? "default" : "destructive"}>
                         {m.activo ? "Activo" : "Inactivo"}
@@ -681,7 +790,7 @@ export default function ModelosPage() {
                     </Badge>
                   )}
                 </div>
-                <p className="text-lg font-bold text-primary">{formatPrice(m.precioVenta)}</p>
+                <EstadoMl c={canales[m.id]} />
                 <CategoriaBadges categorias={m.categorias} />
                 {m.consolidadoEn && (
                   <p className="text-xs text-amber-500 truncate">
@@ -694,6 +803,49 @@ export default function ModelosPage() {
         </div>
         </div>
       )}
+
+      {/* ─── En cantidad ────────────────────────────── */}
+      <Dialog open={masivo === "crear"} onOpenChange={(o) => !o && setMasivo(null)}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Crear en Mercado Libre ({itemsACrear.length})</DialogTitle>
+            <DialogDescription>Las combinaciones sin publicar de los productos elegidos. No se crea nada hasta que confirmes; quedan pausadas.</DialogDescription>
+          </DialogHeader>
+          {masivo === "crear" && (
+            <CrearMlMasivo
+              items={itemsACrear}
+              onCerrar={() => setMasivo(null)}
+              onHecho={() => {
+                setElegidos(new Set());
+                fetchModelos();
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={masivo === "activar" || masivo === "desactivar"} onOpenChange={(o) => !o && !aplicandoMasivo && setMasivo(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {masivo === "activar" ? "Activar" : "Desactivar"} {elegidos.size} {elegidos.size === 1 ? "producto" : "productos"}
+            </DialogTitle>
+            <DialogDescription>
+              {masivo === "desactivar"
+                ? "Un producto inactivo no aparece para vender en el ERP ni en Precios. No toca sus publicaciones de ML ni de la web."
+                : "Vuelven a aparecer para vender en el ERP y en Precios."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMasivo(null)} disabled={aplicandoMasivo}>
+              Cancelar
+            </Button>
+            <Button onClick={cambiarActivo} disabled={aplicandoMasivo}>
+              {aplicandoMasivo ? "Guardando…" : masivo === "activar" ? "Activar" : "Desactivar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ─── Nuevo producto ─────────────────────────── */}
       <Dialog open={!!nuevo} onOpenChange={(o) => !o && setNuevo(null)}>
