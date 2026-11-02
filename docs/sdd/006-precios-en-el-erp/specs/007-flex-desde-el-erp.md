@@ -53,8 +53,8 @@ publicación con Flex, ML lo borra en segundo plano (warning `delete.item.sale_t
 Se saca con `PUT /items/{id}` mandando `value_id` y `value_name` en null.
 
 - **REQ-4** Los botones pasan a ser dos modos de entrega: "Con stock: Flex" (saca la disponibilidad
-  y prende Flex) y "Sin stock: a pedido" (apaga Flex y pone N días; arranca con los días que ya usa
-  la mayoría de las elegidas, o 15).
+  y prende Flex) y "Sin stock: a pedido" (apaga Flex y pone N días; arranca con 2 días, desde el
+  2026-11-02 a pedido de Agustín; antes, los que usaba la mayoría de las elegidas, o 15).
 - **RN-3** El orden importa: para inmediata, primero se saca la disponibilidad; para a pedido, primero
   se apaga Flex (si no, ML borra los días). Cada paso se verifica releyendo la publicación.
 - **RN-4** El stock de ML (`available_quantity`) no se toca nunca.

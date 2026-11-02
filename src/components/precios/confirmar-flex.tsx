@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { json, pedir } from "@/components/producto/seccion";
-import { DIAS_MAX, pasosPara, type Entrega, type EstadoFlex, type ResultadoFlex } from "@/lib/entrega-ml";
+import { DIAS_MAX, DIAS_POR_DEFECTO, pasosPara, type Entrega, type EstadoFlex, type ResultadoFlex } from "@/lib/entrega-ml";
 
 /**
  * Entrega de varias publicaciones (docs/sdd/006, spec 007), como trabaja Agustín:
@@ -31,7 +31,7 @@ const hoy = (e: EstadoFlex) => (e.flex == null ? "no se pudo leer" : [e.flex ? "
 export function ConfirmarFlex({ mlas, inmediata, onCerrar, onHecho }: { mlas: string[]; inmediata: boolean; onCerrar: () => void; onHecho: () => void }) {
   const [estados, setEstados] = useState<EstadoFlex[] | null>(null);
   const [resultados, setResultados] = useState<ResultadoFlex[] | null>(null);
-  const [dias, setDias] = useState("15");
+  const [dias, setDias] = useState(String(DIAS_POR_DEFECTO));
   const [avance, setAvance] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,11 +43,7 @@ export function ConfirmarFlex({ mlas, inmediata, onCerrar, onHecho }: { mlas: st
         const r = await pedir<{ estados: EstadoFlex[] }>("/api/precios/flex", json("POST", { mlas: mlas.slice(i, i + TANDA), entrega: { modo: "inmediata" } }));
         todos.push(...r.estados);
       }
-      if (!vigente) return;
-      setEstados(todos);
-      // Arranca con los días que ya usa la mayoría de las elegidas, o 15.
-      const usados = todos.map((e) => e.dias).filter((d): d is number => d != null);
-      if (usados.length) setDias(String([...usados].sort((a, b) => usados.filter((x) => x === b).length - usados.filter((x) => x === a).length)[0]));
+      if (vigente) setEstados(todos);
     })().catch((e) => vigente && setError(e instanceof Error ? e.message : String(e)));
     return () => {
       vigente = false;

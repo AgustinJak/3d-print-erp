@@ -4,6 +4,8 @@
  */
 
 export const DIAS_MAX = 60;
+/** Con los que arranca "a pedido" (Agustín, 2026-11-02); se cambian en el diálogo. */
+export const DIAS_POR_DEFECTO = 2;
 
 export interface EstadoFlex {
   mla: string;

@@ -252,3 +252,4 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
   la Shinobu pasó un momento a "a pedido"; se restauró. Spec 007 completa.
 - (2026-11-02) Entrega también desde Productos (barra en cantidad). Automatizarla con el stock: descartado por
   Agustín. Stock: carga más rápida (número al instante, clics agrupados, Enter a la fila siguiente).
+- (2026-11-02) "A pedido" arranca con 2 días (antes 15 o los de la mayoría), a pedido de Agustín.
