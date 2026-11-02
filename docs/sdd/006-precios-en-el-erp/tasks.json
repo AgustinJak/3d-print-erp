@@ -244,7 +244,7 @@
       "title": "Bodega sin precios",
       "description": "Calculadora sólo de costos, ficha sin precios con link al ERP, sync sin gastos_venta ni política. Release después del ERP.",
       "component": "integration",
-      "status": "in-progress",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-009",
@@ -260,8 +260,8 @@
         "Bodega/Bodega3D-App/src/main/sync.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": "2026-11-02: construido en el ERP y en Bodega 2.36 (sin publicar). Falta: deploy del ERP y después release de Bodega."
+      "completedAt": "2026-11-02",
+      "notes": "2026-11-02: ERP publicado (1daeda8) y después Bodega 2.36.0 (release v2.36.0)."
     },
     {
       "id": "TASK-012",

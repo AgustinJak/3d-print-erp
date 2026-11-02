@@ -258,3 +258,4 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
   producto). Nueva página `/piezas/[id]` para el link desde Bodega. Bodega 2.36: calculadora sólo de costos,
   ficha sin precios con "Ver precios en el ERP" (IPC `erp:abrirPieza`), sync sin `gastos_venta`, política ni
   foto. Publicar primero el ERP y después Bodega (RN-1).
+- (2026-11-02) Publicado: el ERP (TASK-011 y el reparto con Shay) y después Bodega 2.36.0. TASK-011 completa.
