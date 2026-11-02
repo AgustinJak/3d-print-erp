@@ -376,11 +376,11 @@ function PantallaPrecios() {
             <>
               <DialogHeader>
                 <DialogTitle>
-                  {flex.prender ? "Prender" : "Apagar"} Flex en {flex.mlas.length} {flex.mlas.length === 1 ? "publicación" : "publicaciones"}
+                  {flex.prender ? "Entrega inmediata con Flex" : "A pedido, sin Flex"}: {flex.mlas.length} {flex.mlas.length === 1 ? "publicación" : "publicaciones"}
                 </DialogTitle>
                 <DialogDescription>Así están hoy en Mercado Libre. No se manda nada hasta que confirmes.</DialogDescription>
               </DialogHeader>
-              <ConfirmarFlex mlas={flex.mlas} prender={flex.prender} onCerrar={() => setFlex(null)} onHecho={cargar} />
+              <ConfirmarFlex mlas={flex.mlas} inmediata={flex.prender} onCerrar={() => setFlex(null)} onHecho={cargar} />
             </>
           )}
         </DialogContent>
@@ -621,11 +621,11 @@ function BarraDeSeleccion({
         </Button>
         {onFlex && (
           <>
-            <Button size="sm" variant="outline" onClick={() => onFlex(true)}>
-              Prender Flex
+            <Button size="sm" variant="outline" onClick={() => onFlex(true)} title="Sin tiempo de disponibilidad y con Flex">
+              Con stock: Flex
             </Button>
-            <Button size="sm" variant="outline" onClick={() => onFlex(false)}>
-              Apagar Flex
+            <Button size="sm" variant="outline" onClick={() => onFlex(false)} title="Sin Flex y con días de disponibilidad">
+              Sin stock: a pedido
             </Button>
           </>
         )}
@@ -654,7 +654,7 @@ function TablaCanal({
   resultados: Map<string, ResultadoFila>;
   onAlternar: (clave: string) => void;
   onAplicar: (filas: FilaDeCanal[]) => void;
-  /** ML: prender o apagar Flex en las publicaciones elegidas (spec 007). */
+  /** ML: entrega inmediata con Flex (true) o a pedido sin Flex (false) en las elegidas (spec 007). */
   onFlex?: (prender: boolean, mlas: string[]) => void;
 }) {
   // En la web cuenta el producto: si alguna de sus combinaciones cambia, se aplica entero.

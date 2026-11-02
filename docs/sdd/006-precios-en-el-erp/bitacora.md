@@ -239,3 +239,8 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
   /items/validate, creación pausada y enlazada). Probado el borrador y la revisión con la Jabonera Ikigai y
   Saja Boys (frenan por falta de foto, como corresponde; la categoría de Saja Boys es dudosa). Vault al
   día: INV - Flujos 10b e índice de endpoints, Flujos del ecosistema 6d.
+
+- (2026-11-02) Flex y tiempo de disponibilidad unidos en "Entrega" (spec 007, REQ-4): "Con stock: Flex" saca
+  los días y prende Flex; "Sin stock: a pedido" apaga Flex y pone N días. El stock de ML no se toca. El stock
+  del ERP se muestra como pista. Construido (`src/lib/entrega-ml.ts`, `flex-ml.ts`, `POST /api/precios/flex`
+  ahora recibe `entrega`); falta la prueba en ML con una publicación que elija Agustín.

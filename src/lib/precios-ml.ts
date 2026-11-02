@@ -54,6 +54,11 @@ export interface LecturaMl {
    * etiqueta `self_service_in` en su envío. Coincide con `GET /flex/sites/MLA/items/{id}/v2`.
    */
   flex?: boolean;
+  /**
+   * Días de disponibilidad de stock (`MANUFACTURING_TIME`): la publicación vende a pedido. ML no
+   * deja tenerlos junto con Flex. null = entrega inmediata.
+   */
+  disponibilidad?: number | null;
 }
 
 interface ItemMl {
@@ -184,6 +189,7 @@ export async function leerPreciosMl(tenantId: string): Promise<{ leidas: number;
         costoEnvio: envio?.coverage?.all_country?.list_cost ?? null,
         campaniaCuotas: item.sale_terms?.find((t) => t.id === "INSTALLMENTS_CAMPAIGN")?.value_name ?? null,
         flex: !!item.shipping?.tags?.includes("self_service_in"),
+        disponibilidad: parseInt(item.sale_terms?.find((t) => t.id === "MANUFACTURING_TIME")?.value_name ?? "", 10) || null,
       };
       return { mla, precio: standard ?? item.price ?? null, lectura };
     } catch (e) {

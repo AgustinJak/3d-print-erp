@@ -38,3 +38,33 @@ Agustín activa Flex a mano en el panel de ML. Pidió poder prenderlo y apagarlo
 - En Precios › Mercado Libre se tildan publicaciones (cualquiera, no sólo las que tienen precio
   nuevo) y "Prender Flex" / "Apagar Flex" muestran cómo están hoy, mandan al confirmar, verifican en
   la publicación y registran en `cambios_flex` (`src/lib/flex-ml.ts`, `POST /api/precios/flex`).
+
+## Flex y tiempo de disponibilidad van juntos (2026-11-02)
+
+Agustín avisó que una publicación con tiempo de disponibilidad no puede tener Flex, y cómo trabaja:
+
+- **Con stock**: disponibilidad en 0 y Flex prendido (entrega en el día).
+- **Sin stock**: Flex apagado y N días de disponibilidad, así las ventas entran igual pero para
+  después. **El stock de ML nunca se deja en 0.**
+
+La doc de ML ("Disponibilidad de stock", en Sincroniza y modifica publicaciones) lo confirma: el
+sale_term `MANUFACTURING_TIME` ("15 días", hasta 60) no es compatible con Flex; si se pone en una
+publicación con Flex, ML lo borra en segundo plano (warning `delete.item.sale_terms.manufacturing_time`).
+Se saca con `PUT /items/{id}` mandando `value_id` y `value_name` en null.
+
+- **REQ-4** Los botones pasan a ser dos modos de entrega: "Con stock: Flex" (saca la disponibilidad
+  y prende Flex) y "Sin stock: a pedido" (apaga Flex y pone N días; arranca con los días que ya usa
+  la mayoría de las elegidas, o 15).
+- **RN-3** El orden importa: para inmediata, primero se saca la disponibilidad; para a pedido, primero
+  se apaga Flex (si no, ML borra los días). Cada paso se verifica releyendo la publicación.
+- **RN-4** El stock de ML (`available_quantity`) no se toca nunca.
+- **RN-5** El stock del ERP se muestra como pista (en ámbar si contradice el modo elegido) pero no
+  decide: el 2026-11-02, 79 publicaciones con Flex tenían stock 0 en el ERP, o sea que el stock del
+  ERP no está al día para todo.
+- Al sacar o poner días se manda la lista entera de sale_terms con sólo ese cambiado, para no perder
+  garantía, factura ni cuotas sea cual sea la forma en que ML aplica el PUT.
+- La fila de Precios muestra "a pedido, N días" (`LecturaMl.disponibilidad`, desde la próxima lectura).
+- Foto del 2026-11-02 (activas): 87 a pedido con stock ERP 0, 79 inmediata+Flex con stock ERP 0,
+  18 inmediata+Flex con stock, 6 a pedido con stock ERP 1 (Shinobu). Ninguna "a pedido" tiene
+  `self_service_available`: falta ver si aparece al sacar los días.
+- **Pendiente**: probar los dos modos con una publicación que elija Agustín.
