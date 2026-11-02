@@ -71,5 +71,10 @@ Se saca con `PUT /items/{id}` mandando `value_id` y `value_name` en null.
   el PUT con `MANUFACTURING_TIME` en null sacó los 15 días y dejó la garantía como estaba; al instante
   apareció `self_service_available` y el POST prendió Flex. El stock de ML (2) no se tocó. La etiqueta
   `self_service_in` tardó unos segundos más que la relectura, así que `cambios_flex` registró "error"
-  aunque quedó bien: desde entonces se relee hasta 5 veces cada 2 s, y la pantalla manda de a 5.
-- **Pendiente**: probar "a pedido" con una publicación que elija Agustín.
+  aunque quedó bien: desde entonces se relee hasta 5 veces cada 2 s.
+- **Probado "a pedido"** con el Carrete (MLA3189980034), a pedido de Agustín, el 2026-11-02: DELETE de Flex,
+  después PUT con "15 días"; garantía y campaña de 3 cuotas intactas, stock de ML (17) sin tocar. Tardó
+  15 s (la etiqueta de Flex apagado tarda), así que la pantalla manda de a 2. Después se volvió a
+  inmediata con Flex, como estaba, y también quedó bien.
+- En la prueba se cambió por error la Shinobu a "a pedido" (se buscó el Carrete en `cambios_flex` y la
+  prueba del 2026-10-30 no estaba ahí); se volvió enseguida a inmediata con Flex.

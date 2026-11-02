@@ -247,3 +247,6 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
 - (2026-11-02) Probado "Con stock: Flex" con la Shinobu Katana Sola (MLA3112623780): sin días y con Flex,
   garantía y stock intactos. La verificación se adelantó a ML (registró error aunque quedó bien): ahora
   relee hasta 5 veces. Falta probar "a pedido".
+- (2026-11-02) Probado "Sin stock: a pedido" con el Carrete (MLA3189980034): sin Flex y 15 días, garantía,
+  cuotas y stock intactos; vuelto a inmediata con Flex. Tarda ~15 s por publicación: se manda de a 2. Por error
+  la Shinobu pasó un momento a "a pedido"; se restauró. Spec 007 completa.

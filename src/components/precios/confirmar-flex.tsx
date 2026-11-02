@@ -14,10 +14,12 @@ import { DIAS_MAX, pasosPara, type Entrega, type EstadoFlex, type ResultadoFlex 
  * - con stock, entrega inmediata: sin tiempo de disponibilidad y con Flex;
  * - sin stock, a pedido: sin Flex y con N días, así las ventas entran para después.
  * Primero cómo está cada una en ML ahora (y el stock del ERP, como pista); después se manda, se
- * verifica en la publicación y queda registrado. De a 5. El stock de ML no se toca.
+ * verifica en la publicación y queda registrado. El stock de ML no se toca.
  */
-// De a 5: cada publicación puede esperar unos segundos a que ML muestre Flex, y el pedido tiene 60 s.
-const TANDA = 5;
+const TANDA = 20;
+// Al mandar, de a 2: cada publicación puede tardar 15 s o más esperando que ML muestre el cambio de
+// Flex (Carrete, 2026-11-02), y el pedido tiene 60 s.
+const TANDA_MANDAR = 2;
 const ESTADO: Record<ResultadoFlex["estado"], { texto: string; clase: string }> = {
   aplicado: { texto: "Listo", clase: "text-emerald-600 dark:text-emerald-400" },
   sin_efecto: { texto: "No cambió", clase: "text-amber-600" },
@@ -63,8 +65,8 @@ export function ConfirmarFlex({ mlas, inmediata, onCerrar, onHecho }: { mlas: st
     const todos: ResultadoFlex[] = [];
     setAvance(0);
     try {
-      for (let i = 0; i < mandar.length; i += TANDA) {
-        const r = await pedir<{ resultados: ResultadoFlex[] }>("/api/precios/flex", json("POST", { mlas: mandar.slice(i, i + TANDA).map((e) => e.mla), entrega, aplicar: true }));
+      for (let i = 0; i < mandar.length; i += TANDA_MANDAR) {
+        const r = await pedir<{ resultados: ResultadoFlex[] }>("/api/precios/flex", json("POST", { mlas: mandar.slice(i, i + TANDA_MANDAR).map((e) => e.mla), entrega, aplicar: true }));
         todos.push(...r.resultados);
         setAvance(todos.length);
       }
