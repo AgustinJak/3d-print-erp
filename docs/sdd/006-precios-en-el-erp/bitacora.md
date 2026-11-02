@@ -244,3 +244,6 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
   los días y prende Flex; "Sin stock: a pedido" apaga Flex y pone N días. El stock de ML no se toca. El stock
   del ERP se muestra como pista. Construido (`src/lib/entrega-ml.ts`, `flex-ml.ts`, `POST /api/precios/flex`
   ahora recibe `entrega`); falta la prueba en ML con una publicación que elija Agustín.
+- (2026-11-02) Probado "Con stock: Flex" con la Shinobu Katana Sola (MLA3112623780): sin días y con Flex,
+  garantía y stock intactos. La verificación se adelantó a ML (registró error aunque quedó bien): ahora
+  relee hasta 5 veces. Falta probar "a pedido".

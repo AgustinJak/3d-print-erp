@@ -14,9 +14,10 @@ import { DIAS_MAX, pasosPara, type Entrega, type EstadoFlex, type ResultadoFlex 
  * - con stock, entrega inmediata: sin tiempo de disponibilidad y con Flex;
  * - sin stock, a pedido: sin Flex y con N días, así las ventas entran para después.
  * Primero cómo está cada una en ML ahora (y el stock del ERP, como pista); después se manda, se
- * verifica en la publicación y queda registrado. De a 20. El stock de ML no se toca.
+ * verifica en la publicación y queda registrado. De a 5. El stock de ML no se toca.
  */
-const TANDA = 20;
+// De a 5: cada publicación puede esperar unos segundos a que ML muestre Flex, y el pedido tiene 60 s.
+const TANDA = 5;
 const ESTADO: Record<ResultadoFlex["estado"], { texto: string; clase: string }> = {
   aplicado: { texto: "Listo", clase: "text-emerald-600 dark:text-emerald-400" },
   sin_efecto: { texto: "No cambió", clase: "text-amber-600" },

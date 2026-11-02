@@ -129,6 +129,14 @@ export async function cambiarEntrega(tenantId: string, mlas: string[], entrega: 
     let motivo: string | null = null;
     const pasos: Array<{ paso: string; respuesta?: unknown; error?: string }> = [];
     const releer = async () => (despues = await leer(tenantId, mla, antes.stockErp));
+    // La etiqueta de Flex a veces tarda unos segundos en aparecer (Shinobu, 2026-11-02): se relee
+    // hasta 5 veces antes de darlo por fallido.
+    const esperar = async (listo: () => boolean) => {
+      for (let i = 0; i < 5 && !listo(); i++) {
+        await new Promise((ok) => setTimeout(ok, 2000));
+        await releer();
+      }
+    };
     try {
       if (antes.flex == null) throw new Error("no se pudo leer la publicación");
       if (!pasosPara(antes, entrega).length) {
@@ -147,6 +155,7 @@ export async function cambiarEntrega(tenantId: string, mlas: string[], entrega: 
           } else {
             pasos.push({ paso: "prender Flex", respuesta: (await mlFetch(tenantId, `/flex/sites/MLA/items/${mla}/v2`, { method: "POST" })) ?? null });
             await releer();
+            await esperar(() => !!despues.flex);
             if (!despues.flex) throw new Error("ML contestó bien pero Flex no se prendió");
           }
         }
@@ -154,6 +163,7 @@ export async function cambiarEntrega(tenantId: string, mlas: string[], entrega: 
         if (despues.flex) {
           pasos.push({ paso: "apagar Flex", respuesta: (await mlFetch(tenantId, `/flex/sites/MLA/items/${mla}/v2`, { method: "DELETE" })) ?? null });
           await releer();
+          await esperar(() => despues.flex === false);
           if (despues.flex) throw new Error("ML contestó bien pero Flex no se apagó");
         }
         if (despues.dias !== entrega.dias) {

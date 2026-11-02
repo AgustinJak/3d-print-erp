@@ -67,4 +67,9 @@ Se saca con `PUT /items/{id}` mandando `value_id` y `value_name` en null.
 - Foto del 2026-11-02 (activas): 87 a pedido con stock ERP 0, 79 inmediata+Flex con stock ERP 0,
   18 inmediata+Flex con stock, 6 a pedido con stock ERP 1 (Shinobu). Ninguna "a pedido" tiene
   `self_service_available`: falta ver si aparece al sacar los días.
-- **Pendiente**: probar los dos modos con una publicación que elija Agustín.
+- **Probado "con stock"** con la Shinobu Katana Sola (MLA3112623780), a pedido de Agustín, el 2026-11-02:
+  el PUT con `MANUFACTURING_TIME` en null sacó los 15 días y dejó la garantía como estaba; al instante
+  apareció `self_service_available` y el POST prendió Flex. El stock de ML (2) no se tocó. La etiqueta
+  `self_service_in` tardó unos segundos más que la relectura, así que `cambios_flex` registró "error"
+  aunque quedó bien: desde entonces se relee hasta 5 veces cada 2 s, y la pantalla manda de a 5.
+- **Pendiente**: probar "a pedido" con una publicación que elija Agustín.
