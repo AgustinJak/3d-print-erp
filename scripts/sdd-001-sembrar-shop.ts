@@ -11,6 +11,9 @@
  *
  * Un grupo "Pack" o "Cantidad" no es una variante: da las unidades de la clave
  * ("10 unidades ($2250u)" = 10) y se deja afuera al deducir (spec 004, RN-8).
+ *
+ * Desde el 2026-11-02 lo mismo lo hace el botón "Sembrar desde el Shop" de Integraciones ›
+ * Mapeo, que lee el catálogo solo (`src/lib/sembrar-shop.ts`).
  */
 import fs from "node:fs";
 import type { Prisma } from "@/generated/prisma";

@@ -281,3 +281,23 @@ commitear ni desplegar al cerrar esta entrada.
 - El 2026-10-18 se había decidido que los personajes del BT21 comparten una fila (spec 004,
   RN-8). Agustín lo cambió el 2026-10-24: son 8 piezas. Quedan como se crearon (8 filas, 8 piezas
   de Bodega). Ver el SDD 004.
+
+## 2026-11-02 · Claude (sesión del inventario) — botón "Sembrar desde el Shop"
+
+**Qué pasó**
+- Agustín no encontraba cómo mapear los kits vaso + llavero de BTS que creó en la web: la siembra
+  del Shop (TASK-013) fue un script de una vez, y un producto nuevo de la web recién aparecía en
+  la cola con su primera venta. Siete productos posteriores a la siembra (cinco kits, el soporte
+  Ángel y el bambú de Nezuko, todos sin opciones ni SKU) se mapearon a mano con un script, como
+  `manual`, al modelo del ERP del mismo nombre.
+- Nuevo botón **Sembrar desde el Shop** en Integraciones › Mapeo
+  (`POST /api/integraciones/mapeos/sembrar-shop`, `src/lib/sembrar-shop.ts`). Lee el catálogo
+  de la base del Shop con su clave publicable: la RLS del Shop sólo deja leer lo activo y no deja
+  escribir. Así, **el ERP ya no necesita el catálogo exportado a mano**. Las claves ya mapeadas
+  se cargan en una sola consulta y no se tocan; desde la PC una consulta por clave tardaba 3
+  minutos y así tarda 13 segundos.
+- La clave publicable va en el código como valor por defecto (no es un secreto), y
+  `SHOP_SUPABASE_URL` / `SHOP_SUPABASE_PUBLISHABLE_KEY` la pisan. El conector de Vercel no tiene
+  permiso para crear variables y la CLI no tiene sesión.
+- Simulado contra producción: 56 productos, 142 claves, todas mapeadas; un producto inventado va a
+  la cola, un pack de 10 queda ×10.

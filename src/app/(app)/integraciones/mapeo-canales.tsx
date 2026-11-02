@@ -73,7 +73,7 @@ export function MapeoCanales({ onCambio }: { onCambio?: () => void }) {
   const [soloCola, setSoloCola] = useState(true);
   const [q, setQ] = useState("");
   const [busqueda, setBusqueda] = useState("");
-  const [sembrando, setSembrando] = useState(false);
+  const [sembrando, setSembrando] = useState<"ml" | "shop" | null>(null);
 
   // La búsqueda espera a que se deje de tipear.
   useEffect(() => {
@@ -125,7 +125,7 @@ export function MapeoCanales({ onCambio }: { onCambio?: () => void }) {
 
   const sembrarMl = async () => {
     if (!confirm("Lee cada publicación de Mercado Libre (sin modificarlas) y registra una clave por variación. Tarda uno o dos minutos. ¿Seguir?")) return;
-    setSembrando(true);
+    setSembrando("ml");
     try {
       const r = await pedir<{ claves: number; mapeadas: number; enCola: number; ignoradas: number; errores: unknown[] }>(
         "/api/integraciones/mapeos/sembrar-ml",
@@ -140,7 +140,28 @@ export function MapeoCanales({ onCambio }: { onCambio?: () => void }) {
     } catch (e) {
       toast.error(`No se pudo sembrar: ${e instanceof Error ? e.message : e}`);
     }
-    setSembrando(false);
+    setSembrando(null);
+  };
+
+  const sembrarShop = async () => {
+    if (!confirm("Lee el catálogo de la web (sin modificarlo) y registra una clave por cada producto y combinación de opciones. Lo nuevo que no se resuelva solo queda en la cola. ¿Seguir?")) return;
+    setSembrando("shop");
+    try {
+      const r = await pedir<{ claves: number; mapeadas: number; enCola: number; yaExistian: number; lineasCompletadas: number }>(
+        "/api/integraciones/mapeos/sembrar-shop",
+        { method: "POST" }
+      );
+      const nuevas = r.claves - r.yaExistian;
+      toast.success(
+        `${r.claves} claves del Shop, ${nuevas} ${nuevas === 1 ? "nueva" : "nuevas"}: ${r.mapeadas} mapeadas, ${r.enCola} en la cola` +
+          (r.lineasCompletadas > 0 ? ` · ${r.lineasCompletadas} líneas completadas` : "")
+      );
+      await cargar();
+      onCambio?.();
+    } catch (e) {
+      toast.error(`No se pudo sembrar: ${e instanceof Error ? e.message : e}`);
+    }
+    setSembrando(null);
   };
 
   return (
@@ -152,13 +173,20 @@ export function MapeoCanales({ onCambio }: { onCambio?: () => void }) {
             <p className="text-xs text-muted-foreground">
               Cada publicación de Mercado Libre (con su variación) y cada producto del Shop (con sus opciones) apunta a una
               combinación del catálogo. Lo que no se pudo resolver solo espera acá: elegí su combinación una vez y las ventas
-              siguientes entran solas. Si es un pack, poné cuántas unidades trae.
+              siguientes entran solas. Si es un pack, poné cuántas unidades trae. Cuando cargues un producto nuevo en la web,
+              sembrá desde el Shop para mapearlo antes de que se venda.
             </p>
           </div>
-          <Button size="sm" variant="outline" onClick={sembrarMl} disabled={sembrando}>
-            {sembrando ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sprout className="h-3.5 w-3.5 mr-1.5" />}
-            Sembrar desde Mercado Libre
-          </Button>
+          <div className="flex gap-2 flex-wrap">
+            <Button size="sm" variant="outline" onClick={sembrarShop} disabled={sembrando !== null}>
+              {sembrando === "shop" ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sprout className="h-3.5 w-3.5 mr-1.5" />}
+              Sembrar desde el Shop
+            </Button>
+            <Button size="sm" variant="outline" onClick={sembrarMl} disabled={sembrando !== null}>
+              {sembrando === "ml" ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sprout className="h-3.5 w-3.5 mr-1.5" />}
+              Sembrar desde Mercado Libre
+            </Button>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -216,7 +244,7 @@ export function MapeoCanales({ onCambio }: { onCambio?: () => void }) {
           description={
             soloCola
               ? "Todas las claves conocidas tienen su combinación."
-              : "Las claves aparecen con cada venta, o sembrándolas desde Mercado Libre."
+              : "Las claves aparecen con cada venta, o sembrándolas desde el Shop o Mercado Libre."
           }
         />
       ) : (
