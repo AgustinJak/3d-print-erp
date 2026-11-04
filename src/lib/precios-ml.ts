@@ -220,11 +220,19 @@ export async function leerPreciosMl(tenantId: string): Promise<{ leidas: number;
   return { leidas: porMla.size, errores };
 }
 
+/**
+ * La publicación ya no existe en ML para vender: borrada o inhabilitada. Una pausada sí existe,
+ * por eso no entra acá. Se sigue leyendo, así que si ML la devuelve vuelve a aparecer en Precios.
+ */
+export function publicacionCerrada(lectura: LecturaMl | null): boolean {
+  return lectura?.estado === "closed" || lectura?.estado === "inactive";
+}
+
 /** Por qué no se puede escribir el precio de una publicación; null = se puede (RN-3). */
 export function motivoMl(lectura: LecturaMl | null, leidoEn: Date | null, ahora = Date.now()): string | null {
   if (!lectura || !leidoEn) return "sin leer: tocá «Leer precios de ML»";
   if (ahora - leidoEn.getTime() > LECTURA_VIGENTE_MS) return "lectura de más de una hora: volvé a leer";
-  if (lectura.estado === "closed" || lectura.estado === "inactive") return "publicación cerrada";
+  if (publicacionCerrada(lectura)) return "publicación cerrada";
   if (lectura.estado === "under_review" || lectura.subEstado.some((s) => /review|waiting_for_patch/.test(s))) return "publicación en revisión";
   if (lectura.automatizada === null) return "no se pudo verificar la automatización de precios";
   if (lectura.automatizada) return "tiene automatización de precios: ML no deja cambiarlo";

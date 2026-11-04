@@ -18,6 +18,7 @@ import {
   esErrorDeAutorizacion,
   escribirPrecioMl,
   motivoMl,
+  publicacionCerrada,
   avisoMl,
   pausaEntreEscrituras,
   type LecturaMl,
@@ -154,7 +155,7 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
   const porId = new Map(combinaciones.map((c) => [c.combinacionId, c]));
 
   const canales: FilaDeCanal[] = mapeos
-    .filter((m) => m.canal === "mercadolibre" || m.canal === "shop")
+    .filter((m) => m.canal === "shop" || (m.canal === "mercadolibre" && !publicacionCerrada(m.precioLectura as LecturaMl | null)))
     .map((m) => {
       const canal = m.canal as "mercadolibre" | "shop";
       const p = m.combinacionId ? porId.get(m.combinacionId) : undefined;
