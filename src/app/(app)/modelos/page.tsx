@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
-  Plus, Search, FileBox, LayoutGrid, TableIcon, ChevronDown, SlidersHorizontal, ArrowUpDown, Box, Combine,
+  Plus, Search, FileBox, LayoutGrid, TableIcon, ChevronDown, SlidersHorizontal, ArrowUpDown, Box, Combine, Download, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -220,6 +220,8 @@ export default function ModelosPage() {
   // "Nuevo producto": sólo el nombre; el resto se completa en su página (docs/sdd/004, spec 001).
   const [nuevo, setNuevo] = useState<{ nombre: string; serie: string } | null>(null);
   const [creando, setCreando] = useState(false);
+  const [trayendo, setTrayendo] = useState(false);
+  const [versionPiezas, setVersionPiezas] = useState(0);
   const [initialLoading, setInitialLoading] = useState(true);
   const [mostrarConsolidados, setMostrarConsolidados] = useState(false);
   const [filterSku, setFilterSku] = useState<"todos" | "con" | "sin">("todos");
@@ -352,17 +354,54 @@ export default function ModelosPage() {
     }
   };
 
+  /** Trae ya lo nuevo de Bodega. Si no hay nada, dice de cuándo es lo último que subió. */
+  const traerDeBodega = async () => {
+    setTrayendo(true);
+    try {
+      const res = await fetch("/api/bodega/altas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accion: "traer" }),
+      });
+      const r = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(r?.error || "No se pudo traer");
+      const traidas: string[] = [...(r.creados ?? []), ...(r.mapeados ?? [])].map((x: { nombre: string }) => x.nombre);
+      const omitidas: Array<{ nombre: string; motivo: string }> = r.omitidos ?? [];
+      if (traidas.length > 0) toast.success(`${traidas.length === 1 ? "Traída" : `${traidas.length} traídas`}: ${traidas.join(", ")}`);
+      for (const o of omitidas) toast.error(`${o.nombre}: ${o.motivo}`);
+      if (traidas.length === 0 && omitidas.length === 0) {
+        const fecha = r.ultimaSubida ? new Date(r.ultimaSubida).toLocaleDateString("es-AR", { day: "numeric", month: "numeric" }) : "nunca";
+        toast.info(
+          `No hay piezas nuevas. Lo último que subió Bodega es del ${fecha}. Si creaste una después, abrí Bodega › Configuración y fijate que la sincronización tenga la sesión iniciada.`,
+          { duration: 12000 }
+        );
+      }
+      setVersionPiezas((v) => v + 1);
+      await fetchModelos();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo traer");
+    } finally {
+      setTrayendo(false);
+    }
+  };
+
   /* ─── Render ──────────────────────────────────────── */
 
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h1 className="text-2xl font-bold">Productos</h1>
-        <Button onClick={() => setNuevo({ nombre: "", serie: "" })}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nuevo producto
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={traerDeBodega} disabled={trayendo} title="Trae ya las piezas nuevas que Bodega haya subido">
+            {trayendo ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+            Traer de Bodega
+          </Button>
+          <Button onClick={() => setNuevo({ nombre: "", serie: "" })}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nuevo producto
+          </Button>
+        </div>
       </div>
 
       {/* Toolbar */}
@@ -568,7 +607,7 @@ export default function ModelosPage() {
       </div>
 
       {/* Piezas de Bodega que no entraron solas (docs/sdd/004, spec 005) */}
-      <PiezasNuevas onCambio={fetchModelos} />
+      <PiezasNuevas key={versionPiezas} onCambio={fetchModelos} />
 
       {/* Lo que se hace en cantidad: tildar productos en la tabla */}
       {elegidos.size > 0 && (

@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 
-import { candidatosDeBodega, crearDesdeBodega, descartarDeBodega } from "@/lib/altas-bodega";
+import { altasAutomaticas, candidatosDeBodega, crearDesdeBodega, descartarDeBodega, ultimaSubidaDeBodega } from "@/lib/altas-bodega";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -27,6 +27,13 @@ export async function POST(request: NextRequest) {
   try {
     const { tenantId } = await getAuthenticatedTenantNonDemo();
     const body = await request.json().catch(() => ({}));
+
+    // El botón "Traer de Bodega": lo mismo que pasa solo, ahora, y con el resultado a la vista.
+    if (body?.accion === "traer") {
+      const r = await altasAutomaticas(tenantId);
+      return NextResponse.json({ ok: true, ...r, ultimaSubida: await ultimaSubidaDeBodega() });
+    }
+
     const ids: string[] = Array.isArray(body?.ids) ? body.ids : [];
     if (ids.length === 0) {
       return NextResponse.json({ error: "no se indicó ningún modelo" }, { status: 400 });

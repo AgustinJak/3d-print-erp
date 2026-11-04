@@ -520,6 +520,16 @@ async function hayPendientes(tenantId: string): Promise<{ faltan: number; inicia
 }
 
 /**
+ * Cuándo subió Bodega el último cambio de una pieza. El alta sólo ve lo que Bodega ya subió: si la
+ * app perdió la sesión, una pieza nueva queda en la PC y acá no hay forma de enterarse. Esta fecha
+ * vieja es la pista (pasó del 30/10 al 4/11 de 2026 sin que nadie lo notara).
+ */
+export async function ultimaSubidaDeBodega(): Promise<Date | null> {
+  const filas = await prisma.$queryRaw<Array<{ ultima: Date | null }>>`SELECT max(updated_at) AS ultima FROM bodega.models`;
+  return filas[0]?.ultima ?? null;
+}
+
+/**
  * Trae solo lo que nació en Bodega después de que esto se encendió.
  *
  * La primera vez no crea nada: anota lo que ya existía como "no traer", que es
