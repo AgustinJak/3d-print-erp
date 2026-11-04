@@ -171,6 +171,7 @@ function Formulario({ modeloId, combinacionId, onCerrar, onCreada }: { modeloId:
               {!b.recomendarOpcion2 && ": más del doble que la opción 1, no se va a vender"}
             </p>
           )}
+          {f.opcion2 && <p className="text-xs text-amber-700 dark:text-amber-400">ML la deja en 6 cuotas: después de crearla elegí 3 cuotas en ML. El precio está calculado para 3.</p>}
         </div>
       </div>
 

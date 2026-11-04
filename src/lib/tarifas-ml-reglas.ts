@@ -16,6 +16,12 @@ export interface TarifasMl {
 /** Si nunca hubo ventas Premium con cuotas, lo medido el 2026-10-29. */
 export const RECARGO_CUOTAS_POR_DEFECTO = 8.5;
 
+/**
+ * Una Premium sin campaña de 3 cuotas: ML la deja en 6 y cobra esto (cotizador y pantalla de ML,
+ * 2026-11-04). Pasa con la opción 2 recién creada, hasta que alguien elige 3 cuotas en ML.
+ */
+export const RECARGO_6_CUOTAS = 12.9;
+
 /** El cargo fijo a un precio, con los tramos guardados. */
 export function cargoFijo(t: Pick<TarifasMl, "fijos">, precio: number): number {
   let monto = 0;

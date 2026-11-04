@@ -21,6 +21,9 @@ import { categoriaDeProducto, describirCategoria } from "@/lib/categorias-ml";
  *   bloquean la creación.
  */
 
+/** Lo que hay que hacer a mano después de crear la opción 2: la API no deja elegir las cuotas. */
+export const AVISO_CUOTAS = "ML la deja en 6 cuotas: en ML, Cuotas y cargos, elegí 3 cuotas. El precio está calculado para 3.";
+
 /** Lo que no puede decir una publicación (RN-2; las reglas de cara al cliente de Sendero). */
 const PROHIBIDAS = [/impresi[oó]n\s*3d/i, /\bimprim/i, /\bimpres[oa]s?\b/i, /\bimpresora/i, /\bPLA\b/, /sendero\s*3d/i, /r[eé]plica/i, /\btipo\b/i, /s[ií]mil/i];
 
@@ -128,9 +131,11 @@ function cuerpoDe(p: PedidoDeCreacion, opcion: 1 | 2): Record<string, unknown> {
     available_quantity: Math.max(1, Math.floor(p.stock)),
     buying_mode: "buy_it_now",
     condition: "new",
-    // Opción 1: Clásica sin cuotas, envío según el umbral. Opción 2: Premium (3 cuotas) con envío gratis.
+    // Opción 1: Clásica sin cuotas, envío según el umbral. Opción 2: Premium con envío gratis. Las
+    // 3 cuotas no se pueden pedir acá: `INSTALLMENTS_CAMPAIGN` es de sólo lectura en la API y ML la
+    // deja en 6 (ver AVISO_CUOTAS). Las dos, con retiro en persona.
     listing_type_id: opcion === 1 ? "gold_special" : "gold_pro",
-    ...(opcion === 2 ? { shipping: { mode: "me2", free_shipping: true } } : {}),
+    shipping: { mode: "me2", local_pick_up: true, ...(opcion === 2 ? { free_shipping: true } : {}) },
     pictures: p.fotos.map((source) => ({ source })),
     sale_terms: [
       { id: "WARRANTY_TYPE", value_name: "Garantía de fábrica" },
@@ -207,6 +212,7 @@ export async function crear(tenantId: string, p: PedidoDeCreacion, usuario: stri
     const pausa = await ml(tenantId, "PUT", `/items/${mla}`, { status: "paused" });
     const pausada = pausa.json?.status === "paused";
     const avisos: string[] = pausada ? [] : ["No se pudo pausar: pausala a mano en ML."];
+    if (opcion === 2) avisos.push(AVISO_CUOTAS);
     // Desde acá la publicación ya existe en ML: un error no puede cortar la vuelta, porque la
     // pantalla se quedaría con "Crear pausada" a mano y volver a tocarlo la duplicaría.
     try {

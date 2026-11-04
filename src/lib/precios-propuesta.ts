@@ -180,6 +180,7 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
       if (lectura?.estado === "paused") etiquetas.push("pausada");
       if (lectura?.catalogo) etiquetas.push("catálogo");
       if (lectura?.promo) etiquetas.push("en campaña");
+      if (lectura?.tipo === "gold_pro" && !lectura.campaniaCuotas) etiquetas.push("6 cuotas: pasala a 3 en ML");
       if (lectura?.flex) etiquetas.push("Flex");
       if (lectura?.disponibilidad) etiquetas.push(`a pedido, ${lectura.disponibilidad} días`);
       if (m.unidades > 1) etiquetas.push(`pack de ${m.unidades}`);

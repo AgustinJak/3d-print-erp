@@ -12,7 +12,7 @@ import {
   type Redondeo,
   type TresPrecios,
 } from "@/lib/precios-formula";
-import { cargoFijo, RECARGO_CUOTAS_POR_DEFECTO, type TarifasMl } from "@/lib/tarifas-ml-reglas";
+import { cargoFijo, RECARGO_6_CUOTAS, RECARGO_CUOTAS_POR_DEFECTO, type TarifasMl } from "@/lib/tarifas-ml-reglas";
 import type { LecturaMl } from "@/lib/precios-ml";
 
 /**
@@ -172,8 +172,11 @@ export function costosDeLectura(
   const pctCat = l.categoria ? tarifas?.categorias[l.categoria] : undefined;
   if (pctCat == null) estimado.push("comisión de la categoría");
   const cuotas = tieneCuotas(l);
-  const recargo = cuotas ? (tarifas?.recargoCuotas.porPublicacion[mla] ?? tarifas?.recargoCuotas.general ?? RECARGO_CUOTAS_POR_DEFECTO) : 0;
-  if (cuotas && tarifas?.recargoCuotas.porPublicacion[mla] == null) estimado.push("recargo por cuotas (sin ventas propias)");
+  const sinCampania = l.tipo === "gold_pro" && !l.campaniaCuotas;
+  const recargo = cuotas
+    ? (tarifas?.recargoCuotas.porPublicacion[mla] ?? (sinCampania ? RECARGO_6_CUOTAS : (tarifas?.recargoCuotas.general ?? RECARGO_CUOTAS_POR_DEFECTO)))
+    : 0;
+  if (cuotas && !sinCampania && tarifas?.recargoCuotas.porPublicacion[mla] == null) estimado.push("recargo por cuotas (sin ventas propias)");
   // El costo del envío de esta publicación, lo pague siempre (envío gratis) o sólo si cruza el umbral.
   const costoEnvio = l.costoEnvio ?? g.mlEnvioCosto;
   if (l.costoEnvio == null) estimado.push("costo del envío");

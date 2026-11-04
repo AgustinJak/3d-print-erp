@@ -268,3 +268,9 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
   La opción 2 se creó por script, a pedido de Agustín, con los datos que revisó en la pantalla:
   **MLA4157527850**, $42.878, pausada. La pantalla no deja crear sólo la 2 de un producto que ya
   tiene la 1.
+- (2026-11-04) La opción 2 de la Horda quedó en 6 cuotas. `INSTALLMENTS_CAMPAIGN` tiene `read_only`
+  en `/categories/{id}/sale_terms`, y `/items/validate` la rechaza al crear con
+  `sale_term.not_allowed`, con `value_name`, con `value_id` o con los dos. No se probó un PUT sobre
+  una publicación real. Se elige a mano en ML. Crear avisa, y Precios marca y calcula con 12,9 % una
+  Premium sin campaña. Las publicaciones nuevas salen con `local_pick_up` (validate lo acepta; falta
+  confirmarlo en una creación real).
