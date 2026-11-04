@@ -53,14 +53,21 @@ export async function PUT(request: NextRequest) {
   try {
     const { tenantId } = await getAuthenticatedTenant();
     const body = await request.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "la configuración tiene que ser un objeto" }, { status: 400 });
+    }
 
-    const config = await prisma.configTenant.upsert({
-      where: { tenantId },
-      update: { data: body },
-      create: { tenantId, data: body },
-    });
+    // Se mezcla, no se reemplaza: en `data` también viven las listas de Bodega, las tarifas de ML y
+    // las campañas de Shay. Guardar los socios (lo único que manda Finanzas) las borraba todas.
+    const json = JSON.stringify(body);
+    const filas = await prisma.$queryRaw<Array<{ data: unknown }>>`
+      INSERT INTO public.config_tenant (id, tenant_id, data)
+      VALUES (gen_random_uuid()::text, ${tenantId}, ${json}::jsonb)
+      ON CONFLICT (tenant_id) DO UPDATE SET data = config_tenant.data || ${json}::jsonb
+      RETURNING data
+    `;
 
-    return NextResponse.json(config.data);
+    return NextResponse.json(filas[0]?.data ?? {});
   } catch (e) {
     if (e instanceof NextResponse) return e;
     throw e;

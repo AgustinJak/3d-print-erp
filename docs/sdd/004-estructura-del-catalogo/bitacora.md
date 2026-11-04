@@ -151,3 +151,15 @@ sus datos.
   Asesino de Caballeros 42cm, Collar K4os, katana enma, llavero K4OS, Porta balsamo k4os y
   yamato 95. Con el arreglo se descartan como las demás. Que Bodega avise lo que borra queda como
   propuesta: la cola tiene FK a `bodega_models`, así que no alcanza con borrar la fila.
+
+## 2026-11-04 · Claude (sesión del inventario) — las 17 piezas volvían a aparecer
+
+- Agustín pidió sacar las 17 piezas de Bodega de la lista de Productos: descartarlas no las quitaba.
+  `bodegaDescartadas` no existía en `config_tenant.data`, aunque el arreglo de descartar está en
+  producción desde el 2026-10-27. Se descartaron las 17 con `descartarDeBodega`.
+- Causa probable: `PUT /api/config` reemplazaba `data` entera, y Finanzas manda sólo `{ socios }`.
+  Guardar los socios borraba las listas de Bodega, las tarifas y las campañas de Shay; después el
+  alta volvía a anotar todo en `bodegaSinTraer` y las descartadas reaparecían. No se pudo confirmar
+  con logs (el plan de Vercel no los guarda). Ahora el PUT mezcla.
+- Quedan tres lecturas seguidas de escritura de `data` que pueden pisar un cambio simultáneo:
+  dos en `src/lib/tarifas-ml.ts` y una en `api/finanzas/terceros/publicidad`.
