@@ -130,7 +130,12 @@ interface FinanzasData {
   cuotasPagadasMes: CuotaPagada[];
   transferenciasMes: Transferencia[];
   movimientos: Movimiento[];
-  flex: { bonificado: number; pagadoLogistica: number; sobrante: number };
+  flex: {
+    bonificado: number;
+    pagadoLogistica: number;
+    sobrante: number;
+    semanas: Array<{ desde: string; hasta: string; pago: string; envios: number; bonificado: number; pagado: number }>;
+  };
   datosMensuales: {
     mes: string;
     ingresos: number;
@@ -149,6 +154,12 @@ interface FinanzasData {
 function formatMoney(n: number) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n);
 }
+
+/** "2026-11-02" → "2/11". */
+const diaCorto = (dia: string) => {
+  const [, m, d] = dia.split("-").map(Number);
+  return `${d}/${m}`;
+};
 
 const MESES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -368,11 +379,11 @@ export default function FinanzasPage() {
     fetchData();
   };
 
-  const openFlexGasto = () => {
+  const openFlexGasto = (fecha?: string) => {
     setFlexForm({
       monto: "",
       descripcion: "Pago Flex logística",
-      fecha: new Date().toISOString().slice(0, 10),
+      fecha: fecha ?? new Date().toISOString().slice(0, 10),
       billetera: "empresarial",
     });
     setFlexDialog(true);
@@ -771,15 +782,40 @@ export default function FinanzasPage() {
               </CardContent>
             </Card>
             <Card>
-              <CardContent className="pt-4 pb-4 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium">Flex en {MESES[mes - 1].toLowerCase()}</p>
-                  <Button size="sm" variant="outline" onClick={openFlexGasto} className="gap-1.5"><PlusCircle className="h-3.5 w-3.5" /> Cargar pago</Button>
+              <CardContent className="pt-4 pb-4 space-y-3">
+                <div>
+                  <p className="text-sm font-medium">Flex: pagos de {MESES[mes - 1].toLowerCase()}</p>
+                  <p className="text-xs text-muted-foreground">Se paga los lunes la semana anterior. Es informativo: no suma a las billeteras.</p>
                 </div>
-                <div className="flex items-center justify-between text-sm"><span>Bonificado por ML</span><span className="tabular-nums">{formatMoney(data.flex.bonificado)}</span></div>
-                <div className="flex items-center justify-between text-sm"><span>Pagado a la logística</span><span className="tabular-nums">{formatMoney(data.flex.pagadoLogistica)}</span></div>
-                <div className="flex items-center justify-between text-sm font-medium border-t pt-2"><span>Sobrante</span><span className={`tabular-nums ${data.flex.sobrante < 0 ? "text-red-500" : ""}`}>{formatMoney(data.flex.sobrante)}</span></div>
-                <p className="text-xs text-muted-foreground">Es informativo: no suma a las billeteras.</p>
+                {data.flex.semanas.length === 0 && <p className="text-sm text-muted-foreground">Sin envíos Flex.</p>}
+                <div className="divide-y">
+                  {data.flex.semanas.map((f) => (
+                    <div key={f.desde} className="py-2 space-y-1">
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span>
+                          Semana del {diaCorto(f.desde)} al {diaCorto(f.hasta)}
+                          <span className="text-xs text-muted-foreground"> · {f.envios} {f.envios === 1 ? "envío" : "envíos"}</span>
+                        </span>
+                        <span className="tabular-nums shrink-0">{formatMoney(f.bonificado)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground min-h-7">
+                        <span>Pago del lunes {diaCorto(f.pago)}</span>
+                        {f.pagado > 0 ? (
+                          <span className="tabular-nums">{formatMoney(f.pagado)}</span>
+                        ) : (
+                          <Button size="sm" variant="outline" className="h-7 gap-1" onClick={() => openFlexGasto(f.pago)}>
+                            <PlusCircle className="h-3 w-3" /> Cargar
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="border-t pt-2 space-y-1 text-sm">
+                  <div className="flex items-center justify-between"><span>Bonificado por ML</span><span className="tabular-nums">{formatMoney(data.flex.bonificado)}</span></div>
+                  <div className="flex items-center justify-between"><span>Pagado a la logística</span><span className="tabular-nums">{formatMoney(data.flex.pagadoLogistica)}</span></div>
+                  <div className="flex items-center justify-between font-medium"><span>Sobrante</span><span className={`tabular-nums ${data.flex.sobrante < 0 ? "text-red-500" : ""}`}>{formatMoney(data.flex.sobrante)}</span></div>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -867,8 +903,8 @@ export default function FinanzasPage() {
           </DialogHeader>
           <form onSubmit={submitFlexGasto} className="space-y-4">
             <p className="text-xs text-muted-foreground">
-              Lo que le pagás a la logística por los envíos Flex. Se registra como gasto con categoría
-              &quot;Flex&quot; y aparece en el card de arriba.
+              Lo que le pagás a la logística el lunes por los envíos Flex de la semana anterior. Se registra
+              como gasto con categoría &quot;Flex&quot;.
             </p>
             <div className="space-y-2">
               <Label>Monto *</Label>

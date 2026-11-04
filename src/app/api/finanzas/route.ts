@@ -68,17 +68,50 @@ export async function GET(request: NextRequest) {
     const todosGastos = await prisma.gasto.findMany({ where: { tenantId } });
 
     // ─── Flex: bonificación de ML vs pago a la logística (dato informativo) ───
-    const flexRows = await prisma.$queryRaw<Array<{ bonificado: number }>>`
-      SELECT COALESCE(SUM((origen_externo->>'bonificacion_flex')::numeric), 0)::float8 AS bonificado
+    // A la logística se le paga los lunes, por semana: cada semana de lunes a domingo se paga el
+    // lunes siguiente. El mes muestra las semanas que se pagan en ese mes.
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const masDias = (dia: string, n: number) => iso(new Date(new Date(`${dia}T12:00:00Z`).getTime() + n * 864e5));
+    const lunesDe = (dia: string) => masDias(dia, -((new Date(`${dia}T12:00:00Z`).getUTCDay() + 6) % 7));
+    const finMesIso = iso(new Date(Date.UTC(anioNum, mesNum, 0)));
+    const inicioMesIso = `${anioNum}-${String(mesNum).padStart(2, "0")}-01`;
+    const pagaEnElMes = (pago: string) => pago >= inicioMesIso && pago <= finMesIso;
+
+    // Una venta cancelada no cobra la bonificación.
+    const flexVentas = await prisma.$queryRaw<Array<{ semana: Date; envios: number; bonificado: number }>>`
+      SELECT date_trunc('week', fecha_pedido - interval '3 hours')::date AS semana,
+             COUNT(*)::int AS envios,
+             COALESCE(SUM((origen_externo->>'bonificacion_flex')::numeric), 0)::float8 AS bonificado
       FROM pedidos
       WHERE tenant_id = ${tenantId}
         AND origen_externo->>'es_flex' = 'true'
-        AND fecha_pedido >= ${inicioMes} AND fecha_pedido < ${finMes}
+        AND estado <> 'CANCELADO'::"EstadoPedido"
+        AND fecha_pedido >= ${new Date(inicioMes.getTime() - 15 * 864e5)} AND fecha_pedido < ${finMes}
+      GROUP BY 1
     `;
-    const flexBonificado = flexRows[0]?.bonificado || 0;
-    const flexPagadoLogistica = gastosMes
-      .filter((g) => /flex/i.test(g.categoria))
-      .reduce((s, g) => s + g.monto, 0);
+    const semanasFlex = new Map<string, { desde: string; hasta: string; pago: string; envios: number; bonificado: number; pagado: number }>();
+    const semanaFlex = (desde: string) => {
+      const pago = masDias(desde, 7);
+      if (!pagaEnElMes(pago)) return null;
+      if (!semanasFlex.has(desde)) semanasFlex.set(desde, { desde, hasta: masDias(desde, 6), pago, envios: 0, bonificado: 0, pagado: 0 });
+      return semanasFlex.get(desde)!;
+    };
+    for (const v of flexVentas) {
+      const f = semanaFlex(iso(v.semana));
+      if (f) {
+        f.envios = v.envios;
+        f.bonificado = v.bonificado;
+      }
+    }
+    // Un pago cuenta para la semana anterior a la de su fecha.
+    for (const g of todosGastos) {
+      if (!/flex/i.test(g.categoria)) continue;
+      const f = semanaFlex(masDias(lunesDe(iso(g.fecha)), -7));
+      if (f) f.pagado += g.monto;
+    }
+    const flexSemanas = [...semanasFlex.values()].sort((a, b) => a.desde.localeCompare(b.desde));
+    const flexBonificado = flexSemanas.reduce((s, f) => s + f.bonificado, 0);
+    const flexPagadoLogistica = flexSemanas.reduce((s, f) => s + f.pagado, 0);
 
     // ─── Transferencias ───────────────────────────────────
     const todasTransferencias = await prisma.transferencia.findMany({
@@ -474,6 +507,7 @@ export async function GET(request: NextRequest) {
         bonificado: flexBonificado,
         pagadoLogistica: flexPagadoLogistica,
         sobrante: flexBonificado - flexPagadoLogistica,
+        semanas: flexSemanas,
       },
     });
   } catch (e) {
