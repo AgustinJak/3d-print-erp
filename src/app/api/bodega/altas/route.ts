@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { altasAutomaticas, candidatosDeBodega, crearDesdeBodega, descartarDeBodega, ultimaSubidaDeBodega } from "@/lib/altas-bodega";
+import { aplicarCostosSiCambio } from "@/lib/sincronizar-costos";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -29,9 +30,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
 
     // El botón "Traer de Bodega": lo mismo que pasa solo, ahora, y con el resultado a la vista.
+    // Los costos también: una pieza recién traída entra con lo que sabía Bodega en ese momento.
     if (body?.accion === "traer") {
       const r = await altasAutomaticas(tenantId);
-      return NextResponse.json({ ok: true, ...r, ultimaSubida: await ultimaSubidaDeBodega() });
+      const costos = await aplicarCostosSiCambio(tenantId);
+      return NextResponse.json({ ok: true, ...r, costosActualizados: costos.modelos, ultimaSubida: await ultimaSubidaDeBodega() });
     }
 
     const ids: string[] = Array.isArray(body?.ids) ? body.ids : [];

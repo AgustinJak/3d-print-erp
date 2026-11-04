@@ -369,7 +369,9 @@ export default function ModelosPage() {
       const omitidas: Array<{ nombre: string; motivo: string }> = r.omitidos ?? [];
       if (traidas.length > 0) toast.success(`${traidas.length === 1 ? "Traída" : `${traidas.length} traídas`}: ${traidas.join(", ")}`);
       for (const o of omitidas) toast.error(`${o.nombre}: ${o.motivo}`);
-      if (traidas.length === 0 && omitidas.length === 0) {
+      const costos: number = r.costosActualizados ?? 0;
+      if (costos > 0) toast.success(`Costos actualizados desde Bodega: ${costos} ${costos === 1 ? "producto" : "productos"}`);
+      if (traidas.length === 0 && omitidas.length === 0 && costos === 0) {
         const fecha = r.ultimaSubida ? new Date(r.ultimaSubida).toLocaleDateString("es-AR", { day: "numeric", month: "numeric" }) : "nunca";
         toast.info(
           `No hay piezas nuevas. Lo último que subió Bodega es del ${fecha}. Si creaste una después, abrí Bodega › Configuración y fijate que la sincronización tenga la sesión iniciada.`,

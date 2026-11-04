@@ -7,6 +7,7 @@ import { cargarContexto, componentesDeItem, type Componente } from "@/lib/reserv
 import { leerGastosDeVenta, preciosDeCombinaciones } from "@/lib/precios-combinacion";
 import { categoriaDeProducto } from "@/lib/categorias-ml";
 import { PREFIJO_FALTA, textoDeFalta } from "@/lib/precios-reglas";
+import { aplicarCostosSiCambio } from "@/lib/sincronizar-costos";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -113,6 +114,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   try {
     const { tenantId } = await getAuthenticatedTenant();
     const { id } = await params;
+
+    // La página del producto no consulta `/api/cambios`: sin esto mostraba el costo de la última
+    // vez que alguien abrió Pedidos o Stock. Es una consulta si Bodega no cambió nada.
+    await aplicarCostosSiCambio(tenantId).catch((e) => console.error("[api/modelos/ficha] costos de Bodega:", e));
 
     const m = await prisma.modelo.findFirst({
       where: { id, tenantId },
