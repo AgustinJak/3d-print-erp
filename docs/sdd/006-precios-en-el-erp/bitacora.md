@@ -259,3 +259,12 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
   ficha sin precios con "Ver precios en el ERP" (IPC `erp:abrirPieza`), sync sin `gastos_venta`, política ni
   foto. Publicar primero el ERP y después Bodega (RN-1).
 - (2026-11-02) Publicado: el ERP (TASK-011 y el reparto con Shay) y después Bodega 2.36.0. TASK-011 completa.
+- (2026-11-04) Primera creación real con el botón "Crear pausada" (Porta auricular Horda): ML la
+  creó, **MLA2259427269**, pero `cambios_precio` no aceptaba el estado `creada` y el error cortó la
+  vuelta, así que la opción 2 no se creó. El Dumpling del 2026-10-30 se había creado por script. Se
+  agregó el estado a la restricción (`prisma/sql/cambios-precio-creada.sql`) y se completó a mano el
+  registro y la categoría del producto. Un error después de crear en ML ya no corta la vuelta: se
+  informa como aviso, porque reintentar duplicaría la publicación.
+  La opción 2 se creó por script, a pedido de Agustín, con los datos que revisó en la pantalla:
+  **MLA4157527850**, $42.878, pausada. La pantalla no deja crear sólo la 2 de un producto que ya
+  tiene la 1.

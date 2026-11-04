@@ -206,15 +206,23 @@ export async function crear(tenantId: string, p: PedidoDeCreacion, usuario: stri
     // ML la crea activa aunque se pida pausada: se pausa enseguida.
     const pausa = await ml(tenantId, "PUT", `/items/${mla}`, { status: "paused" });
     const pausada = pausa.json?.status === "paused";
-    await prisma.mapeoCanal.upsert({
-      where: { tenantId_canal_clave: { tenantId, canal: "mercadolibre", clave: `${mla}|` } },
-      create: { tenantId, canal: "mercadolibre", clave: `${mla}|`, combinacionId: p.combinacionId, unidades: 1, origen: "manual", descripcion: `Creada desde el ERP (opción ${opcion})`, muestra: { titulo: p.nombre } },
-      update: { combinacionId: p.combinacionId },
-    });
-    await prisma.cambioPrecio.create({
-      data: { tenantId, canal: "mercadolibre", clave: `${mla}|`, combinacionId: p.combinacionId, antes: null, despues: precio, estado: "creada", respuesta: { creada: r.json, pausa: pausa.json } as unknown as Prisma.InputJsonValue, usuario },
-    });
-    out.push({ opcion, mla, estado: "creada", pausada, link: typeof r.json?.permalink === "string" ? r.json.permalink : null, motivo: pausada ? null : "No se pudo pausar: pausala a mano en ML." });
+    const avisos: string[] = pausada ? [] : ["No se pudo pausar: pausala a mano en ML."];
+    // Desde acá la publicación ya existe en ML: un error no puede cortar la vuelta, porque la
+    // pantalla se quedaría con "Crear pausada" a mano y volver a tocarlo la duplicaría.
+    try {
+      await prisma.mapeoCanal.upsert({
+        where: { tenantId_canal_clave: { tenantId, canal: "mercadolibre", clave: `${mla}|` } },
+        create: { tenantId, canal: "mercadolibre", clave: `${mla}|`, combinacionId: p.combinacionId, unidades: 1, origen: "manual", descripcion: `Creada desde el ERP (opción ${opcion})`, muestra: { titulo: p.nombre } },
+        update: { combinacionId: p.combinacionId },
+      });
+      await prisma.cambioPrecio.create({
+        data: { tenantId, canal: "mercadolibre", clave: `${mla}|`, combinacionId: p.combinacionId, antes: null, despues: precio, estado: "creada", respuesta: { creada: r.json, pausa: pausa.json } as unknown as Prisma.InputJsonValue, usuario },
+      });
+    } catch (e) {
+      console.error(`[crear-ml] ${mla} se creó en ML pero no se pudo registrar:`, e);
+      avisos.push("Se creó en ML, pero el ERP no la pudo registrar del todo: avisá antes de volver a crearla.");
+    }
+    out.push({ opcion, mla, estado: "creada", pausada, link: typeof r.json?.permalink === "string" ? r.json.permalink : null, motivo: avisos.join(" ") || null });
   }
   // La categoría con que se creó queda como la del producto.
   const modelo = await prisma.combinacion.findUnique({ where: { id: p.combinacionId }, select: { modeloId: true } });
