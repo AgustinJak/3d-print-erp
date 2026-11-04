@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { saldoBilletera, yaOcurrio as yaOcurrioHoy } from "@/lib/billeteras";
+import { cargosPorMes, cargosVacios, ultimaLecturaDeMl } from "@/lib/resultado-mes";
 import { NextRequest, NextResponse } from "next/server";
 
 type PedidoConItems = {
@@ -115,6 +116,16 @@ export async function GET(request: NextRequest) {
         .filter((g) => !billetera || g.billetera === billetera)
         .reduce((s, g) => s + g.monto, 0);
 
+    // ─── Lo que factura ML (docs/sdd/007) ──────────────────
+    const cargosMl = await cargosPorMes(tenantId);
+    const claveMes = (a: number, m: number) => `${a}-${String(m).padStart(2, "0")}`;
+    // Sólo desde que el ERP cuenta ventas: antes habría cargos sin sus ingresos.
+    const primerCompletado = todosCompletados.reduce<Date | null>((min, p) => (p.completadoEn && (!min || p.completadoEn < min) ? p.completadoEn : min), null);
+    const desdeMes = primerCompletado ? claveMes(primerCompletado.getFullYear(), primerCompletado.getMonth() + 1) : "9999-99";
+    const cargosDe = (a: number, m: number) => (claveMes(a, m) >= desdeMes && cargosMl.get(claveMes(a, m))) || cargosVacios(a, m);
+    const cargosDelMes = cargosDe(anioNum, mesNum);
+    const cargosHistoricos = [...cargosMl].filter(([mm]) => mm >= desdeMes).reduce((s, [, c]) => s + c.neto, 0);
+
     // ─── Resúmenes mes/año ────────────────────────────────
     const mesData = calcularTotales(pedidosMes);
     const anioData = calcularTotales(pedidosAnio);
@@ -142,7 +153,7 @@ export async function GET(request: NextRequest) {
     const billeteraEmpGastosEjecutados = emp.gastado;
     const transfeHaciaEmp = emp.transferidoHacia;
     const transfeDesdeEmp = emp.transferidoDesde;
-    const billeteraEmpDisponible = emp.disponible;
+    const billeteraEmpDisponible = emp.disponible - cargosHistoricos;
 
     // Compromisos futuros (cuotas + gastos con fecha posterior a hoy)
     const compromisosFuturosFab = fab.comprometido - fab.gastado;
@@ -184,8 +195,10 @@ export async function GET(request: NextRequest) {
         costoFab: totM.costoFab,
         gastos: sumGastos(gastosM),
         gastosFab: sumGastos(gastosM, "fabricacion"),
-        gastosEmp: sumGastos(gastosM, "empresarial"),
+        gastosEmp: sumGastosEjecutados(gastosM, "empresarial"),
         ganancia: totM.ganancia,
+        cargosMl: cargosDe(anioNum, m + 1).neto,
+        neta: totM.ganancia - cargosDe(anioNum, m + 1).neto - sumGastosEjecutados(gastosM, "empresarial"),
       });
     }
 
@@ -410,7 +423,9 @@ export async function GET(request: NextRequest) {
         gastosFab: gastosMesFab,
         gastosEmp: gastosMesEmp,
         ganancia: mesData.ganancia,
-        gananciaNeta: mesData.ganancia - gastosMesEmp, // después de gastos empresariales
+        // Después de lo que factura ML (lo de Shay ya descontado) y de los gastos empresariales.
+        gananciaNeta: mesData.ganancia - cargosDelMes.neto - gastosMesEmp,
+        cargosMl: cargosDelMes,
         totalPedidos: pedidosMes.length,
       },
       anio: {
@@ -430,12 +445,14 @@ export async function GET(request: NextRequest) {
       },
       billeteraEmp: {
         acumulado: billeteraEmpIngresos + transfeHaciaEmp,
-        gastado: billeteraEmpGastosEjecutados,
+        gastado: billeteraEmpGastosEjecutados + cargosHistoricos,
+        cargosMl: cargosHistoricos,
         compromisosFuturos: compromisosFuturosEmp,
         transferencias: transfeDesdeEmp,
         disponible: billeteraEmpDisponible,
-        mes: billeteraEmpMes,
+        mes: billeteraEmpMes - cargosDelMes.neto,
       },
+      ml: { leidoEn: await ultimaLecturaDeMl(tenantId) },
       gastosPorCategoria,
       datosMensuales,
       mesActual: mesNum,

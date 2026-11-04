@@ -80,7 +80,7 @@ interface Campana {
 type CampoCompartido = "percepciones" | "iibb" | "monotributo";
 
 const COMPARTIDOS: Array<{ campo: CampoCompartido; label: string; ayuda: string }> = [
-  { campo: "percepciones", label: "Percepciones", ayuda: "Percepciones de IVA / IIBB retenidas en el mes" },
+  { campo: "percepciones", label: "Percepciones", ayuda: "La aproximada de la pantalla de ML. Al cerrar el período se reemplaza sola por la que factura ML" },
   { campo: "iibb", label: "Convenio multilateral", ayuda: "IIBB convenio multilateral del mes" },
   { campo: "monotributo", label: "Monotributo", ayuda: "El monotributo del mes, completo" },
 ];
@@ -390,7 +390,7 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
             <div className="mt-4 pt-3 border-t border-pink-500/20">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div>
-                  <p className="text-xs text-muted-foreground">Publicidad de sus campañas</p>
+                  <p className="text-xs text-muted-foreground">Publicidad de sus campañas, con IVA, como la factura ML</p>
                   <p className="text-lg font-semibold tabular-nums">−{money(cierre.publicidad)}</p>
                 </div>
                 <Button variant="outline" size="sm" className="gap-1.5 h-7" onClick={abrirCampanas}>

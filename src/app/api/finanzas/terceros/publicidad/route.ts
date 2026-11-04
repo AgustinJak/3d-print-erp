@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { campanasConCosto, rangoMes } from "@/lib/ml-publicidad";
 import { guardarPublicidad } from "@/lib/ventas-terceros";
+import { publicidadDeCampanas } from "@/lib/facturacion-ml";
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma";
 
@@ -75,9 +76,10 @@ export async function POST(request: NextRequest) {
     const r = await campanasConCosto(tenantId, desde, hasta);
     if (!r.ok) return NextResponse.json({ error: r.motivo }, { status: 400 });
 
-    const total = r.campanas
-      .filter((c) => ids.includes(c.id))
-      .reduce((a, c) => a + c.costo, 0);
+    // Lo que ML factura por esas campañas: con IVA y sin lo anulado. Sin cargos atribuidos todavía
+    // (mes recién empezado), el gasto del panel × 1,21, que es como ML factura cada cargo.
+    const panel = r.campanas.filter((c) => ids.includes(c.id)).reduce((a, c) => a + c.costo, 0);
+    const total = (await publicidadDeCampanas(tenantId, Number(anio), Number(mes), ids)) ?? panel * 1.21;
 
     const cierre = await guardarPublicidad(
       tenantId,

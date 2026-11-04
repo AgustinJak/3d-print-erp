@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { billeteraFabricacion, yaOcurrio } from "@/lib/billeteras";
 import { completarLiquidados } from "@/lib/ml-lote";
+import { cargosPorMes, cargosVacios } from "@/lib/resultado-mes";
 import { NextResponse } from "next/server";
 
 /** Los estados de un pedido que todavía hay que despachar o entregar. */
@@ -62,7 +63,7 @@ export async function GET() {
         }),
         prisma.gasto.findMany({
           where: { tenantId, fecha: { gte: inicioMes, lt: finMes } },
-          select: { fecha: true, monto: true },
+          select: { fecha: true, monto: true, billetera: true },
         }),
         billeteraFabricacion(tenantId, ahora),
         prisma.mapeoCanal.groupBy({
@@ -127,7 +128,11 @@ export async function GET() {
       cobrado += p.precioEnvio;
     }
     // Las cuotas con fecha futura no son gasto del mes todavía (como en Finanzas).
-    const gastos = gastosMes.filter((g) => yaOcurrio(g.fecha, ahora)).reduce((s, g) => s + g.monto, 0);
+    const gastosEmp = gastosMes
+      .filter((g) => g.billetera === "empresarial" && yaOcurrio(g.fecha, ahora))
+      .reduce((s, g) => s + g.monto, 0);
+    const anioMes = `${inicioMes.getFullYear()}-${String(inicioMes.getMonth() + 1).padStart(2, "0")}`;
+    const cargos = (await cargosPorMes(tenantId)).get(anioMes) ?? cargosVacios(inicioMes.getFullYear(), inicioMes.getMonth() + 1);
 
     // ─── Más vendidos (últimos 30 días) ───────────────────
     const hace30Dias = new Date(ahora.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -200,7 +205,11 @@ export async function GET() {
         cobrado,
         costoFab,
         margen: cobrado - costoFab,
-        gastos,
+        // Publicidad, percepciones y otros cargos de ML, sin lo que paga Shay.
+        cargosMl: cargos.neto,
+        percepcionesEstado: cargos.percepciones.estado,
+        gastosEmp,
+        neta: cobrado - costoFab - cargos.neto - gastosEmp,
         pedidosCompletados: pedidosCompletadosMes.length,
       },
       billeteraFab: {

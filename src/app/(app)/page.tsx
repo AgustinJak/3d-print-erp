@@ -34,7 +34,10 @@ interface DashboardData {
     cobrado: number;
     costoFab: number;
     margen: number;
-    gastos: number;
+    cargosMl: number;
+    percepcionesEstado: "ml" | "aproximada" | "pendiente";
+    gastosEmp: number;
+    neta: number;
     pedidosCompletados: number;
   };
   billeteraFab: {
@@ -199,19 +202,28 @@ export default function DashboardPage() {
           detalle={`${finanzasMes.pedidosCompletados} ${finanzasMes.pedidosCompletados === 1 ? "pedido completado" : "pedidos completados"}`}
           icon={<DollarSign className="h-4 w-4" />}
         />
-        <FinanceCard label="Costo fabricación" value={formatMoney(finanzasMes.costoFab)} icon={<Package className="h-4 w-4" />} />
         <FinanceCard
-          label="Margen"
+          label="Ganancia bruta"
           value={formatMoney(finanzasMes.margen)}
-          detalle="Cobrado menos costo de fabricación"
+          detalle={`Costo de fabricación: ${formatMoney(finanzasMes.costoFab)}`}
           icon={<TrendingUp className="h-4 w-4" />}
-          highlight={finanzasMes.margen > 0 ? "text-emerald-500" : "text-red-500"}
         />
         <FinanceCard
-          label="Gastos del mes"
-          value={formatMoney(finanzasMes.gastos)}
-          detalle={`Margen después de gastos: ${formatMoney(finanzasMes.margen - finanzasMes.gastos)}`}
+          label="Cargos de ML"
+          value={formatMoney(finanzasMes.cargosMl)}
+          detalle={
+            finanzasMes.percepcionesEstado === "ml"
+              ? "Publicidad, percepciones y otros, sin lo de Shay"
+              : `Percepciones ${finanzasMes.percepcionesEstado === "aproximada" ? "aproximadas" : "sin informar"}: ML las da al cerrar`
+          }
           icon={<TrendingDown className="h-4 w-4" />}
+        />
+        <FinanceCard
+          label="Ganancia neta"
+          value={formatMoney(finanzasMes.neta)}
+          detalle={`Después de ${formatMoney(finanzasMes.gastosEmp)} de gastos empresariales`}
+          icon={<DollarSign className="h-4 w-4" />}
+          highlight={finanzasMes.neta > 0 ? "text-emerald-500" : "text-red-500"}
         />
         <Link href="/finanzas" className="block">
           <Card className="h-full border-violet-500/30 bg-violet-500/5 hover:bg-violet-500/10 transition-colors">

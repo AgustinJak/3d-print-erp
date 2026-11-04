@@ -62,5 +62,6 @@ propia (`NNN-cambios-en-el-shop.md`) y lo implementa la sesión de ese sistema.
 | 004 | [estructura-del-catalogo](004-estructura-del-catalogo/sdd-funcional.md) | validated (2026-10-24) | `master` |
 | 005 | [publicidad-ml](005-publicidad-ml/sdd-funcional.md) | in-progress (validado el 2026-10-26) | `master` |
 | 006 | [precios-en-el-erp](006-precios-en-el-erp/sdd-funcional.md) | validated (2026-10-29) | `master` |
+| 007 | [ganancia-neta-real](007-ganancia-neta-real/sdd-funcional.md) | in-review (falta verla en producción) | `master` |
 
 `planned` = pedida y descrita en el SDD funcional de la 001 (sección 8), todavía sin carpeta.

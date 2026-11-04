@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/ml",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/facturacion-ml",
+      "schedule": "0 10 * * *"
     }
   ]
 }

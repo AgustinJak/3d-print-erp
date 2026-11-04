@@ -822,3 +822,51 @@ model CambioConfigPrecios {
   @@index([tenantId, creadoEn])
   @@map("cambios_config_precios")
 }
+
+/// Lo que factura ML, línea por línea (docs/sdd/007): publicidad, percepciones y otros cargos.
+/// Lo que ya está en el neto de cada venta (comisión, envío) no se guarda.
+model CargoMl {
+  detalleId    String   @id @map("detalle_id")
+  tenantId     String   @default("sendero3d") @map("tenant_id")
+  /// La clave del período de ML: "2026-10-01" va del 9/9 al 8/10.
+  periodo      String
+  /// "ML" | "MP"
+  grupo        String
+  /// El tipo de ML: PADS, BPAD, CDLIT, IBCF…
+  tipo         String
+  /// "publicidad" | "percepcion" | "otro"
+  clase        String
+  concepto     String
+  bonificacion Boolean  @default(false)
+  /// Siempre positivo; `bonificacion` dice si resta.
+  monto        Float
+  fecha        DateTime
+  /// YYYY-MM-DD. Product Ads: el día anterior al cargo, que es el día del gasto.
+  diaGasto     String   @map("dia_gasto")
+  bonificaId   String?  @map("bonifica_id")
+  campanaId    BigInt?  @map("campana_id")
+  campana      String?
+  creadoEn     DateTime @default(now()) @map("creado_en")
+
+  @@index([tenantId, diaGasto])
+  @@index([tenantId, periodo, clase])
+  @@map("cargos_ml")
+}
+
+/// Lo leído de cada período de facturación de ML, por grupo (docs/sdd/007).
+model PeriodoMl {
+  tenantId    String   @default("sendero3d") @map("tenant_id")
+  clave       String
+  grupo       String
+  /// "OPEN" | "CLOSED"
+  estado      String
+  total       Float    @default(0)
+  resumen     Json?
+  lineasTotal Int      @default(0) @map("lineas_total")
+  /// Cerrado y con todas sus líneas: no se vuelve a leer.
+  completo    Boolean  @default(false)
+  leidoEn     DateTime @default(now()) @map("leido_en")
+
+  @@id([tenantId, clave, grupo])
+  @@map("periodos_ml")
+}

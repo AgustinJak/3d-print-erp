@@ -1,0 +1,25 @@
+{
+  "$schema": "../_plantillas/tasks.schema.json",
+  "featureId": "007-ganancia-neta-real",
+  "epic": "E07-ganancia-neta-real",
+  "version": "1.0.0",
+  "status": "in-review",
+  "branch": "feat/003-precios-desde-bodega",
+  "baseBranch": "master",
+  "pullRequest": null,
+  "validation": {
+    "approved": true,
+    "approvedBy": "Agustín",
+    "approvedAt": "2026-11-04",
+    "notes": "Pedido directo en el chat. Falta verlo en producción: el ERP pide login."
+  },
+  "updatedAt": "2026-11-04",
+  "tasks": [
+    { "id": "TASK-001", "title": "Guardar la facturación de ML línea por línea", "description": "cargos_ml y periodos_ml, con lectura incremental y respetando 5 pedidos por minuto.", "component": "database", "status": "completed", "origin": "plan", "dependencies": [] },
+    { "id": "TASK-002", "title": "Atribuir cada cargo de Product Ads a su campaña", "description": "Coincidencia al centavo con gasto × 1,21; las anulaciones heredan la campaña del cargo.", "component": "backend", "status": "completed", "origin": "plan", "dependencies": ["TASK-001"] },
+    { "id": "TASK-003", "title": "Calcular la ganancia neta en Finanzas y el panel", "description": "Bruta − publicidad − percepciones − otros + Shay − gastos empresariales. También la billetera empresarial.", "component": "backend", "status": "completed", "origin": "plan", "dependencies": ["TASK-001"] },
+    { "id": "TASK-004", "title": "Descontarle a Shay lo suyo con lo facturado", "description": "Sus campañas con IVA y sin lo anulado, y las percepciones reales al cerrar el período.", "component": "backend", "status": "completed", "origin": "plan", "dependencies": ["TASK-002"] },
+    { "id": "TASK-005", "title": "Rediseñar Finanzas", "description": "De lo cobrado a la neta en una columna, billeteras al lado y el resto en pestañas.", "component": "frontend", "status": "completed", "origin": "plan", "dependencies": ["TASK-003"] },
+    { "id": "TASK-006", "title": "Verificar en producción", "description": "Agustín compara con la pantalla de facturación de ML y confirma que la página se entiende.", "component": "frontend", "status": "pending", "origin": "plan", "dependencies": ["TASK-005"] }
+  ]
+}
