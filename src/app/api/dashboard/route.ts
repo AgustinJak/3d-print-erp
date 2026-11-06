@@ -204,12 +204,12 @@ export async function GET() {
       finanzasMes: {
         cobrado,
         costoFab,
-        margen: cobrado - costoFab,
+        margen: cobrado + cargos.flex.ingresos - costoFab,
         // Publicidad, percepciones y otros cargos de ML, sin lo que paga Shay.
         cargosMl: cargos.neto,
         percepcionesEstado: cargos.percepciones.estado,
         gastosEmp,
-        neta: cobrado - costoFab - cargos.neto - gastosEmp,
+        neta: cobrado + cargos.flex.ingresos - costoFab - cargos.neto - gastosEmp,
         pedidosCompletados: pedidosCompletadosMes.length,
       },
       billeteraFab: {

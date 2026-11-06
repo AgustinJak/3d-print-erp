@@ -109,6 +109,22 @@ export function ResultadoDelMes({
 
         <div className="mt-4 divide-y divide-transparent">
           <Fila etiqueta={`Cobrado (${pedidos} ${pedidos === 1 ? "pedido" : "pedidos"})`} monto={cobrado} />
+          <Fila
+            etiqueta="Bonificación Flex"
+            signo="+"
+            monto={cargos.flex.ingresos}
+            extra={
+              cargos.flex.ingresos > 0 && cargos.flex.pagos === 0 ? (
+                <Badge variant="outline" className="h-5 px-1.5 text-[10px] border-amber-500/50 text-amber-600 dark:text-amber-400">
+                  Falta el pago
+                </Badge>
+              ) : null
+            }
+          >
+            <p>Lo que entró a Mercado Pago este mes por tus envíos Flex.</p>
+            {cargos.flex.deOtro > 0 && <p>Aparte, {money(cargos.flex.deOtro)} de envíos que no son de ningún pedido del ERP: no suman.</p>}
+            {cargos.flex.ingresos > 0 && cargos.flex.pagos === 0 && <p>No hay pagos a la logística cargados este mes, así que Flex está sumando de más.</p>}
+          </Fila>
           <Fila etiqueta="Costo de fabricación" signo="−" monto={costoFab} />
           <Fila etiqueta="Ganancia bruta" monto={bruta} fuerte />
 
@@ -180,6 +196,7 @@ export function ResultadoDelMes({
             )}
           </Fila>
 
+          <Fila etiqueta="Pagos a la logística (Flex)" signo="−" monto={cargos.flex.pagos} />
           <Fila etiqueta="Gastos empresariales" signo="−" monto={gastosEmp} />
           <Fila etiqueta="Ganancia neta" monto={neta} fuerte />
         </div>

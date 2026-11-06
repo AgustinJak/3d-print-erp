@@ -88,6 +88,7 @@ interface FinanzasData {
     gastosEmp: number;
     ganancia: number;
     gananciaNeta: number;
+    gastosEmpSinFlex: number;
     cargosMl: CargosDelMes;
     totalPedidos: number;
   };
@@ -500,8 +501,8 @@ export default function FinanzasPage() {
           cobrado={data.mes.ingresos}
           pedidos={data.mes.totalPedidos}
           costoFab={data.mes.costoFab}
-          bruta={data.mes.ganancia}
-          gastosEmp={data.mes.gastosEmp}
+          bruta={data.mes.ganancia + data.mes.cargosMl.flex.ingresos}
+          gastosEmp={data.mes.gastosEmpSinFlex}
           gastosFab={data.mes.gastosFab}
           neta={data.mes.gananciaNeta}
           cargos={data.mes.cargosMl}
@@ -512,14 +513,14 @@ export default function FinanzasPage() {
             <div>
               <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" /> Billetera empresarial</p>
               <p className={`text-2xl font-bold tabular-nums mt-0.5 ${data.billeteraEmp.disponible >= 0 ? "" : "text-red-500"}`}>{formatMoney(data.billeteraEmp.disponible)}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Entró {formatMoney(data.billeteraEmp.acumulado)} · salió {formatMoney(data.billeteraEmp.gastado)}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Entró {formatMoney(data.billeteraEmp.acumulado)} · salió {formatMoney(data.billeteraEmp.gastado)}{data.billeteraEmp.transferencias > 0 ? ` · retiros ${formatMoney(data.billeteraEmp.transferencias)}` : ""}</p>
               {data.billeteraEmp.cargosMl > 0 && <p className="text-xs text-muted-foreground">De lo que salió, {formatMoney(data.billeteraEmp.cargosMl)} son cargos de ML.</p>}
               {data.billeteraEmp.compromisosFuturos > 0 && <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">Cuotas por venir: {formatMoney(data.billeteraEmp.compromisosFuturos)}</p>}
             </div>
             <div className="border-t pt-4">
               <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Factory className="h-3.5 w-3.5" /> Billetera de fabricación</p>
               <p className={`text-2xl font-bold tabular-nums mt-0.5 ${data.billeteraFab.disponible >= 0 ? "" : "text-red-500"}`}>{formatMoney(data.billeteraFab.disponible)}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Entró {formatMoney(data.billeteraFab.acumulado)} · salió {formatMoney(data.billeteraFab.gastado)}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Entró {formatMoney(data.billeteraFab.acumulado)} · salió {formatMoney(data.billeteraFab.gastado)}{data.billeteraFab.transferencias > 0 ? ` · retiros ${formatMoney(data.billeteraFab.transferencias)}` : ""}</p>
               {data.billeteraFab.compromisosFuturos > 0 && <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">Cuotas por venir: {formatMoney(data.billeteraFab.compromisosFuturos)}</p>}
             </div>
             <div className="border-t pt-3 flex gap-1.5 flex-wrap">
@@ -785,7 +786,7 @@ export default function FinanzasPage() {
               <CardContent className="pt-4 pb-4 space-y-3">
                 <div>
                   <p className="text-sm font-medium">Flex: pagos de {MESES[mes - 1].toLowerCase()}</p>
-                  <p className="text-xs text-muted-foreground">Se paga los lunes la semana anterior. Es informativo: no suma a las billeteras.</p>
+                  <p className="text-xs text-muted-foreground">Lo que entró a Mercado Pago cada semana. El lunes se paga a la logística la semana anterior.</p>
                 </div>
                 {data.flex.semanas.length === 0 && <p className="text-sm text-muted-foreground">Sin envíos Flex.</p>}
                 <div className="divide-y">
@@ -794,7 +795,7 @@ export default function FinanzasPage() {
                       <div className="flex items-center justify-between gap-3 text-sm">
                         <span>
                           Semana del {diaCorto(f.desde)} al {diaCorto(f.hasta)}
-                          <span className="text-xs text-muted-foreground"> · {f.envios} {f.envios === 1 ? "envío" : "envíos"}</span>
+                          <span className="text-xs text-muted-foreground"> · {f.envios} {f.envios === 1 ? "bonificación" : "bonificaciones"}</span>
                         </span>
                         <span className="tabular-nums shrink-0">{formatMoney(f.bonificado)}</span>
                       </div>
@@ -812,7 +813,7 @@ export default function FinanzasPage() {
                   ))}
                 </div>
                 <div className="border-t pt-2 space-y-1 text-sm">
-                  <div className="flex items-center justify-between"><span>Bonificado por ML</span><span className="tabular-nums">{formatMoney(data.flex.bonificado)}</span></div>
+                  <div className="flex items-center justify-between"><span>Entró a Mercado Pago</span><span className="tabular-nums">{formatMoney(data.flex.bonificado)}</span></div>
                   <div className="flex items-center justify-between"><span>Pagado a la logística</span><span className="tabular-nums">{formatMoney(data.flex.pagadoLogistica)}</span></div>
                   <div className="flex items-center justify-between font-medium"><span>Sobrante</span><span className={`tabular-nums ${data.flex.sobrante < 0 ? "text-red-500" : ""}`}>{formatMoney(data.flex.sobrante)}</span></div>
                 </div>

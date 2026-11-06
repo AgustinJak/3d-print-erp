@@ -870,3 +870,22 @@ model PeriodoMl {
   @@id([tenantId, clave, grupo])
   @@map("periodos_ml")
 }
+
+/// Una bonificación Flex que entró a Mercado Pago (docs/sdd/007).
+model FlexMl {
+  pagoId    String   @id @map("pago_id")
+  tenantId  String   @default("sendero3d") @map("tenant_id")
+  fecha     DateTime
+  /// YYYY-MM-DD, en hora argentina.
+  dia       String
+  monto     Float
+  envioId   String?  @map("envio_id")
+  pedidoId  String?  @map("pedido_id")
+  /// El envío no es de ningún pedido del ERP: no es plata de Sendero.
+  deOtro    Boolean  @default(false) @map("de_otro")
+  revisado  Boolean  @default(false)
+  creadoEn  DateTime @default(now()) @map("creado_en")
+
+  @@index([tenantId, dia])
+  @@map("flex_ml")
+}

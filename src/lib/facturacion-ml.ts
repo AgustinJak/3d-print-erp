@@ -2,6 +2,7 @@ import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { mlFetch } from "@/lib/mercadolibre";
 import * as ads from "@/lib/publicidad-ml-api";
+import { revisarNetos, sincronizarFlex, type ResultadoNetos } from "@/lib/neto-ml";
 
 /**
  * Lo que factura Mercado Libre, línea por línea (docs/sdd/007).
@@ -25,6 +26,8 @@ const ESPERA_TRAS_LIMITE_MS = 20_000;
 const POR_PAGINA = 100;
 /** Las métricas de publicidad llegan a 90 días atrás. */
 const DIAS_DE_METRICAS = 88;
+/** Un período abierto se relee cada tanto: cambia todos los días, no cada minuto. */
+const RELEER_ABIERTO_MS = 2 * 3600_000;
 
 const DE_VENTA = /^[CB](VF[A-Z]|XD)$/;
 const DE_PUBLICIDAD = new Set(["PADS", "BPAD", "CDLIT", "BDLIT"]);
@@ -36,9 +39,11 @@ const pausa = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * Un pedido a la API de facturación, respetando su límite. Si ML contesta que se pasó, espera y
  * vuelve a probar mientras quede tiempo; `null` = se acabó el tiempo, sigue en la pasada siguiente.
  */
+let ultimoPedido = 0;
 async function pedirFacturacion<T>(tenantId: string, path: string, hayTiempo: () => boolean): Promise<T | null> {
   while (hayTiempo()) {
-    await pausa(PAUSA_MS);
+    await pausa(Math.max(0, ultimoPedido + PAUSA_MS - Date.now()));
+    ultimoPedido = Date.now();
     try {
       return await mlFetch<T>(tenantId, path);
     } catch (e) {
@@ -90,6 +95,8 @@ export interface ResultadoSincronizacion {
   quedan: boolean;
   lineasNuevas: number;
   campanasIdentificadas: number;
+  netos?: ResultadoNetos;
+  flexNuevas?: number;
 }
 
 /**
@@ -112,12 +119,14 @@ export async function sincronizarFacturacion(
   );
   if (!lista) return { ...out, quedan: true };
   const periodos = (lista.results ?? []).filter((p) => p.key).sort((a, b) => a.key.localeCompare(b.key));
-  const ya = await prisma.periodoMl.findMany({ where: { tenantId }, select: { clave: true, grupo: true, completo: true, lineasTotal: true } });
+  const ya = await prisma.periodoMl.findMany({ where: { tenantId }, select: { clave: true, grupo: true, completo: true, leidoEn: true } });
   const de = new Map(ya.map((p) => [`${p.clave}|${p.grupo}`, p]));
 
   for (const p of periodos) {
     for (const grupo of ["ML", "MP"] as const) {
-      if (de.get(`${p.key}|${grupo}`)?.completo) continue;
+      const leido = de.get(`${p.key}|${grupo}`);
+      if (leido?.completo) continue;
+      if (leido && Date.now() - leido.leidoEn.getTime() < RELEER_ABIERTO_MS) continue;
       if (!hayTiempo()) {
         out.quedan = true;
         break;
@@ -133,6 +142,11 @@ export async function sincronizarFacturacion(
   // Lo que sigue no usa la API de facturación: no tiene ese límite.
   out.campanasIdentificadas = await identificarCampanas(tenantId, opts.backfill ? DIAS_DE_METRICAS : 5);
   await aplicarAShay(tenantId);
+  // Lo de Mercado Pago, con el tiempo que quede: tampoco tiene ese límite.
+  const flex = await sincronizarFlex(tenantId, { hasta: fin }).catch(() => ({ nuevas: 0, quedan: true }));
+  out.flexNuevas = flex.nuevas;
+  out.netos = await revisarNetos(tenantId, { hasta: fin }).catch(() => undefined);
+  if (flex.quedan || out.netos?.quedan) out.quedan = true;
   return out;
 }
 

@@ -77,18 +77,8 @@ export async function GET(request: NextRequest) {
     const inicioMesIso = `${anioNum}-${String(mesNum).padStart(2, "0")}-01`;
     const pagaEnElMes = (pago: string) => pago >= inicioMesIso && pago <= finMesIso;
 
-    // Una venta cancelada no cobra la bonificación.
-    const flexVentas = await prisma.$queryRaw<Array<{ semana: Date; envios: number; bonificado: number }>>`
-      SELECT date_trunc('week', fecha_pedido - interval '3 hours')::date AS semana,
-             COUNT(*)::int AS envios,
-             COALESCE(SUM((origen_externo->>'bonificacion_flex')::numeric), 0)::float8 AS bonificado
-      FROM pedidos
-      WHERE tenant_id = ${tenantId}
-        AND origen_externo->>'es_flex' = 'true'
-        AND estado <> 'CANCELADO'::"EstadoPedido"
-        AND fecha_pedido >= ${new Date(inicioMes.getTime() - 15 * 864e5)} AND fecha_pedido < ${finMes}
-      GROUP BY 1
-    `;
+    // Lo que entró de verdad a Mercado Pago, por el día en que entró.
+    const flexEntradas = await prisma.flexMl.findMany({ where: { tenantId, deOtro: false }, select: { dia: true, monto: true } });
     const semanasFlex = new Map<string, { desde: string; hasta: string; pago: string; envios: number; bonificado: number; pagado: number }>();
     const semanaFlex = (desde: string) => {
       const pago = masDias(desde, 7);
@@ -96,11 +86,11 @@ export async function GET(request: NextRequest) {
       if (!semanasFlex.has(desde)) semanasFlex.set(desde, { desde, hasta: masDias(desde, 6), pago, envios: 0, bonificado: 0, pagado: 0 });
       return semanasFlex.get(desde)!;
     };
-    for (const v of flexVentas) {
-      const f = semanaFlex(iso(v.semana));
+    for (const v of flexEntradas) {
+      const f = semanaFlex(lunesDe(v.dia));
       if (f) {
-        f.envios = v.envios;
-        f.bonificado = v.bonificado;
+        f.envios++;
+        f.bonificado += v.monto;
       }
     }
     // Un pago cuenta para la semana anterior a la de su fecha.
@@ -157,7 +147,9 @@ export async function GET(request: NextRequest) {
     const desdeMes = primerCompletado ? claveMes(primerCompletado.getFullYear(), primerCompletado.getMonth() + 1) : "9999-99";
     const cargosDe = (a: number, m: number) => (claveMes(a, m) >= desdeMes && cargosMl.get(claveMes(a, m))) || cargosVacios(a, m);
     const cargosDelMes = cargosDe(anioNum, mesNum);
-    const cargosHistoricos = [...cargosMl].filter(([mm]) => mm >= desdeMes).reduce((s, [, c]) => s + c.neto, 0);
+    const historicos = [...cargosMl].filter(([mm]) => mm >= desdeMes).map(([, c]) => c);
+    const cargosHistoricos = historicos.reduce((s, c) => s + c.neto, 0);
+    const flexHistorico = historicos.reduce((s, c) => s + c.flex.ingresos, 0);
 
     // ─── Resúmenes mes/año ────────────────────────────────
     const mesData = calcularTotales(pedidosMes);
@@ -186,7 +178,7 @@ export async function GET(request: NextRequest) {
     const billeteraEmpGastosEjecutados = emp.gastado;
     const transfeHaciaEmp = emp.transferidoHacia;
     const transfeDesdeEmp = emp.transferidoDesde;
-    const billeteraEmpDisponible = emp.disponible - cargosHistoricos;
+    const billeteraEmpDisponible = emp.disponible + flexHistorico - cargosHistoricos;
 
     // Compromisos futuros (cuotas + gastos con fecha posterior a hoy)
     const compromisosFuturosFab = fab.comprometido - fab.gastado;
@@ -231,7 +223,9 @@ export async function GET(request: NextRequest) {
         gastosEmp: sumGastosEjecutados(gastosM, "empresarial"),
         ganancia: totM.ganancia,
         cargosMl: cargosDe(anioNum, m + 1).neto,
-        neta: totM.ganancia - cargosDe(anioNum, m + 1).neto - sumGastosEjecutados(gastosM, "empresarial"),
+        // Los pagos a la logística ya son gastos de la billetera empresarial.
+        neta: totM.ganancia + cargosDe(anioNum, m + 1).flex.ingresos - cargosDe(anioNum, m + 1).neto - sumGastosEjecutados(gastosM, "empresarial"),
+        flex: cargosDe(anioNum, m + 1).flex.ingresos,
       });
     }
 
@@ -457,7 +451,9 @@ export async function GET(request: NextRequest) {
         gastosEmp: gastosMesEmp,
         ganancia: mesData.ganancia,
         // Después de lo que factura ML (lo de Shay ya descontado) y de los gastos empresariales.
-        gananciaNeta: mesData.ganancia - cargosDelMes.neto - gastosMesEmp,
+        gananciaNeta: mesData.ganancia + cargosDelMes.flex.ingresos - cargosDelMes.neto - gastosMesEmp,
+        // Sin los pagos a la logística, que van en su propio renglón.
+        gastosEmpSinFlex: gastosMesEmp - cargosDelMes.flex.pagos,
         cargosMl: cargosDelMes,
         totalPedidos: pedidosMes.length,
       },
@@ -477,13 +473,13 @@ export async function GET(request: NextRequest) {
         mes: billeteraFabMes,
       },
       billeteraEmp: {
-        acumulado: billeteraEmpIngresos + transfeHaciaEmp,
+        acumulado: billeteraEmpIngresos + flexHistorico + transfeHaciaEmp,
         gastado: billeteraEmpGastosEjecutados + cargosHistoricos,
         cargosMl: cargosHistoricos,
         compromisosFuturos: compromisosFuturosEmp,
         transferencias: transfeDesdeEmp,
         disponible: billeteraEmpDisponible,
-        mes: billeteraEmpMes - cargosDelMes.neto,
+        mes: billeteraEmpMes + cargosDelMes.flex.ingresos - cargosDelMes.neto,
       },
       ml: { leidoEn: await ultimaLecturaDeMl(tenantId) },
       gastosPorCategoria,

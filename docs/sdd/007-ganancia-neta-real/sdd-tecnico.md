@@ -17,6 +17,11 @@ creado: 2026-11-04
 | Las anulaciones de la pantalla son todos los `B*` | −$216.935,97, exacto |
 | Las percepciones aparecen al cerrar; `total_perception` da 0 en el período abierto | Resumen de `2026-11-01` contra la pantalla ($211.097) |
 | `INSTALLMENTS_CAMPAIGN` es de sólo lectura | `/categories/{id}/sale_terms` y `/items/validate` |
+| 149 ventas con comisión $0 y ML les cobró $608.588 | 692 ventas contra `/orders` y `/v1/payments` |
+| Cada venta se leía a los segundos y no se volvía a leer | Venta de las 00:48:53, pedido creado a las 00:48:59; `tieneNeto` frena la relectura. Que `sale_fee` viniera en 0 en ese momento es lo más probable, sin registro que lo confirme |
+| `net_received_amount` a veces descuenta el envío (`shp_*`) y a veces no | Dos ventas comparadas con `/shipments/{id}/costs` |
+| El envío que paga el comprador en Flex entra en el pago | Venta de $8.000: recibió $15.222,50 |
+| Cada `bonificaciones_flex_fc` trae su envío en `reference_id` | Tres transferencias, con `tags: shipping_flex` |
 
 `monthly/periods` trae fechas raras en algunas claves (`2026-10-01`: hasta el 30/10, vence el 1/10).
 No se usan: se toman la clave y la fecha de cada cargo.
@@ -27,6 +32,7 @@ No se usan: se toman la clave y la fecha de cada cargo.
 
 - `cargos_ml`: una fila por cargo o bonificación, con `clase` (`publicidad`, `percepcion`, `otro`),
   `dia_gasto`, `bonifica_id` y la campaña si se pudo atribuir.
+- `flex_ml`: una fila por bonificación Flex que entró a MP, con su envío y su pedido.
 - `periodos_ml`: qué se leyó de cada período y grupo (ML, MP). `completo` = cerrado y con todas sus
   líneas: no se vuelve a pedir.
 
@@ -35,9 +41,10 @@ No se usan: se toman la clave y la fecha de cada cargo.
 | Archivo | Qué hace |
 |---|---|
 | `src/lib/facturacion-ml.ts` | Lee la API, atribuye campañas y lleva lo de Shay a su cierre |
+| `src/lib/neto-ml.ts` | Lee de MP lo que entró por cada venta y por Flex, y corrige las líneas |
 | `src/lib/resultado-mes.ts` | Arma los cargos de cada mes. Una sola cuenta para Finanzas y el panel |
 | `POST /api/finanzas/facturacion-ml` | El botón "Actualizar de ML" |
-| `GET /api/cron/facturacion-ml` | Una vez por día, 10:00 UTC |
+| `GET /api/cron/facturacion-ml` | Dos pasadas por día, 10:00 y 10:05 UTC: en una no entra leer ML y MP |
 | `app/(app)/finanzas/resultado-del-mes.tsx` | De lo cobrado a la neta |
 
 ## Riesgos

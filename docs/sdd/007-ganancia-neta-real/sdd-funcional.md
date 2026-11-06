@@ -40,15 +40,21 @@ cosas"**.
 - **RN-5** Un cargo de Product Ads se atribuye a una campaña sólo si coincide al centavo con su
   gasto de ese día × 1,21. Si no coincide ninguna, queda sin campaña: no se adivina.
 - **RN-6** Una anulación es de la campaña del cargo que anula, y ML dice cuál.
-- **RN-7** La comisión y el envío de cada venta no se traen: ya están en el neto de cada línea de
-  pedido, y traerlos los contaría dos veces.
+- **RN-7** Lo cobrado por cada venta es lo que dice Mercado Pago: `net_received_amount`, menos el
+  envío a cargo del vendedor que ese pago no descontó. Ya incluye comisión, cupones, retenciones y el
+  envío que paga el comprador. Se relee hasta que MP libera la plata.
 - **RN-8** Al cerrar un período, las percepciones de /shay se reemplazan por las de ML, y su
   publicidad por lo facturado de sus campañas. Los meses que las métricas no cubren desde el primer
   día (90 días atrás) no se pisan.
 - **RN-9** Los cargos entran a la billetera empresarial desde el primer mes con ventas en el ERP.
   Antes habría cargos sin sus ingresos.
 
+- **RN-10** La bonificación Flex es lo que entró a MP (`bonificaciones_flex_fc`), por el día en que
+  entró. Suma a la ganancia bruta. Si el envío no es de ningún pedido del ERP, no suma.
+- **RN-11** Los pagos a la logística salen de la billetera empresarial, y son su propio renglón.
+- **RN-12** Si un paquete mezcla productos de Sendero y de Shay, al pedido le toca su parte por lo que
+  vale cada uno, como el envío en el cierre de Shay: ML no separa el pago.
+
 ## Fuera de alcance
 
-- Conciliar el neto de cada venta del ERP contra los cargos por venta de ML.
 - El prorrateo de Mi página y las devoluciones con Shay: hoy los paga Sendero.

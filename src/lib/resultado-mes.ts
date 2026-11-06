@@ -40,6 +40,8 @@ export interface CargosDelMes {
     detalle: LineaDeCargo[];
   };
   otros: { total: number; detalle: LineaDeCargo[] };
+  /** Lo que entró de verdad por Flex y lo pagado a la logística. */
+  flex: { ingresos: number; pagos: number; deOtro: number };
   /** Lo que de todo eso paga Shay: sus campañas y su parte de las percepciones. */
   shay: { publicidad: number; percepciones: number; proporcion: number; hayCierre: boolean; total: number };
   /** Lo que le queda a Sendero: publicidad + percepciones + otros − Shay. */
@@ -58,7 +60,7 @@ const claveDeMes = (anio: number, mes: number) => `${anio}-${String(mes).padStar
 
 /** Los cargos de ML de todos los meses con datos, por "YYYY-MM". */
 export async function cargosPorMes(tenantId: string): Promise<Map<string, CargosDelMes>> {
-  const [lineas, periodos, cierres, compartidos] = await Promise.all([
+  const [lineas, periodos, cierres, compartidos, bonificaciones, pagosFlex] = await Promise.all([
     prisma.cargoMl.findMany({
       where: { tenantId },
       select: { periodo: true, tipo: true, clase: true, concepto: true, bonificacion: true, monto: true, diaGasto: true, campanaId: true },
@@ -69,6 +71,8 @@ export async function cargosPorMes(tenantId: string): Promise<Map<string, Cargos
       select: { anio: true, mes: true, publicidad: true, bruto: true, brutoPropio: true, brutoOtros: true },
     }),
     prisma.gastoCompartido.findMany({ where: { tenantId }, select: { anio: true, mes: true, percepciones: true } }),
+    prisma.flexMl.findMany({ where: { tenantId }, select: { dia: true, monto: true, deOtro: true } }),
+    prisma.gasto.findMany({ where: { tenantId, categoria: { contains: "flex", mode: "insensitive" }, fecha: { lte: new Date() } }, select: { fecha: true, monto: true } }),
   ]);
 
   const completos = new Set(periodos.filter((p) => p.completo).map((p) => p.clave));
@@ -82,6 +86,10 @@ export async function cargosPorMes(tenantId: string): Promise<Map<string, Cargos
     const [a, m] = l.periodo.split("-").map(Number);
     meses.add(m === 1 ? claveDeMes(a - 1, 12) : claveDeMes(a, m - 1));
   }
+
+  for (const b of bonificaciones) meses.add(b.dia.slice(0, 7));
+  const mesDe = (d: Date) => claveDeMes(d.getFullYear(), d.getMonth() + 1);
+  for (const g of pagosFlex) meses.add(mesDe(g.fecha));
 
   const out = new Map<string, CargosDelMes>();
   for (const mm of meses) {
@@ -114,7 +122,14 @@ export async function cargosPorMes(tenantId: string): Promise<Map<string, Cargos
     const shayPerc = percepciones.total * proporcion;
 
     const total = productAds + seguidores - anulaciones;
+    const delFlex = bonificaciones.filter((b) => b.dia.startsWith(mm));
+    const flex = {
+      ingresos: delFlex.filter((b) => !b.deOtro).reduce((s, b) => s + b.monto, 0),
+      deOtro: delFlex.filter((b) => b.deOtro).reduce((s, b) => s + b.monto, 0),
+      pagos: pagosFlex.filter((g) => mesDe(g.fecha) === mm).reduce((s, g) => s + g.monto, 0),
+    };
     out.set(mm, {
+      flex,
       publicidad: { productAds, seguidores, anulaciones, total, sinCampana },
       percepciones,
       otros,
@@ -130,6 +145,7 @@ export function cargosVacios(anio: number, mes: number): CargosDelMes {
     publicidad: { productAds: 0, seguidores: 0, anulaciones: 0, total: 0, sinCampana: 0 },
     percepciones: { total: 0, estado: "pendiente", periodo: periodoDelMes(anio, mes), detalle: [] },
     otros: { total: 0, detalle: [] },
+    flex: { ingresos: 0, pagos: 0, deOtro: 0 },
     shay: { publicidad: 0, percepciones: 0, proporcion: 0, hayCierre: false, total: 0 },
     neto: 0,
   };
