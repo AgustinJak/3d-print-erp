@@ -139,6 +139,9 @@ export async function GET(request: NextRequest) {
         .filter((g) => !billetera || g.billetera === billetera)
         .reduce((s, g) => s + g.monto, 0);
 
+    const cfgBilletera = (await prisma.configTenant.findUnique({ where: { tenantId } }))?.data as { billeteraEmpresarialDesde?: string } | null;
+    const billeteraEmpDesdeMes = cfgBilletera?.billeteraEmpresarialDesde?.slice(0, 7) ?? "0000-00";
+
     // ─── Lo que factura ML (docs/sdd/007) ──────────────────
     const cargosMl = await cargosPorMes(tenantId);
     const claveMes = (a: number, m: number) => `${a}-${String(m).padStart(2, "0")}`;
@@ -147,7 +150,7 @@ export async function GET(request: NextRequest) {
     const desdeMes = primerCompletado ? claveMes(primerCompletado.getFullYear(), primerCompletado.getMonth() + 1) : "9999-99";
     const cargosDe = (a: number, m: number) => (claveMes(a, m) >= desdeMes && cargosMl.get(claveMes(a, m))) || cargosVacios(a, m);
     const cargosDelMes = cargosDe(anioNum, mesNum);
-    const historicos = [...cargosMl].filter(([mm]) => mm >= desdeMes).map(([, c]) => c);
+    const historicos = [...cargosMl].filter(([mm]) => mm >= desdeMes && mm >= billeteraEmpDesdeMes).map(([, c]) => c);
     const cargosHistoricos = historicos.reduce((s, c) => s + c.neto, 0);
     const flexHistorico = historicos.reduce((s, c) => s + c.flex.ingresos, 0);
 
@@ -168,7 +171,19 @@ export async function GET(request: NextRequest) {
     // ya hechas. Las cuotas futuras se ven en "Cuotas en curso" pero no descuentan.
     const totalCompletados = calcularTotales(todosCompletados);
     const fab = saldoBilletera("fabricacion", totalCompletados.costoFab, todosGastos, todasTransferencias, ahora);
-    const emp = saldoBilletera("empresarial", totalCompletados.ganancia, todosGastos, todasTransferencias, ahora);
+    // La empresarial cuenta desde su fecha de inicio, si tiene (config_tenant.billeteraEmpresarialDesde):
+    // Agustín la reinició el 2026-11-06 porque los retiros de antes salían de una ganancia mal calculada.
+    // No se borra nada: lo anterior sigue en Movimientos y en la vista por año.
+    const empDesdeTexto = cfgBilletera?.billeteraEmpresarialDesde ?? null;
+    const empDesde = empDesdeTexto ? new Date(`${empDesdeTexto}T00:00:00`) : null;
+    const contaEmp = (d: Date | null) => !empDesde || (d != null && d >= empDesde);
+    const emp = saldoBilletera(
+      "empresarial",
+      calcularTotales(todosCompletados.filter((p) => contaEmp(p.completadoEn))).ganancia,
+      todosGastos.filter((g) => contaEmp(g.fecha)),
+      todasTransferencias.filter((t) => contaEmp(t.fecha)),
+      ahora
+    );
     const billeteraFabIngresos = fab.entra;
     const billeteraFabGastosEjecutados = fab.gastado;
     const transfeHaciaFab = fab.transferidoHacia;
@@ -473,6 +488,7 @@ export async function GET(request: NextRequest) {
         mes: billeteraFabMes,
       },
       billeteraEmp: {
+        desde: empDesdeTexto,
         acumulado: billeteraEmpIngresos + flexHistorico + transfeHaciaEmp,
         gastado: billeteraEmpGastosEjecutados + cargosHistoricos,
         cargosMl: cargosHistoricos,

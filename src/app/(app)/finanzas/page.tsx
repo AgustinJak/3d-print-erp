@@ -108,6 +108,7 @@ interface FinanzasData {
     mes: number;
   };
   billeteraEmp: {
+    desde: string | null;
     acumulado: number;
     gastado: number;
     cargosMl: number;
@@ -515,6 +516,7 @@ export default function FinanzasPage() {
               <p className={`text-2xl font-bold tabular-nums mt-0.5 ${data.billeteraEmp.disponible >= 0 ? "" : "text-red-500"}`}>{formatMoney(data.billeteraEmp.disponible)}</p>
               <p className="text-xs text-muted-foreground mt-0.5">Entró {formatMoney(data.billeteraEmp.acumulado)} · salió {formatMoney(data.billeteraEmp.gastado)}{data.billeteraEmp.transferencias > 0 ? ` · retiros ${formatMoney(data.billeteraEmp.transferencias)}` : ""}</p>
               {data.billeteraEmp.cargosMl > 0 && <p className="text-xs text-muted-foreground">De lo que salió, {formatMoney(data.billeteraEmp.cargosMl)} son cargos de ML.</p>}
+              {data.billeteraEmp.desde && <p className="text-xs text-muted-foreground">Cuenta desde el {diaCorto(data.billeteraEmp.desde)}. Lo anterior sigue en Movimientos.</p>}
               {data.billeteraEmp.compromisosFuturos > 0 && <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">Cuotas por venir: {formatMoney(data.billeteraEmp.compromisosFuturos)}</p>}
             </div>
             <div className="border-t pt-4">

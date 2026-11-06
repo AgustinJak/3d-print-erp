@@ -55,6 +55,10 @@ cosas"**.
 - **RN-12** Si un paquete mezcla productos de Sendero y de Shay, al pedido le toca su parte por lo que
   vale cada uno, como el envío en el cierre de Shay: ML no separa el pago.
 
+- **RN-13** La billetera empresarial cuenta desde `config_tenant.billeteraEmpresarialDesde`
+  (2026-11-01, pedido de Agustín el 2026-11-06). Esto reemplaza a RN-9 para esa billetera. No se borra
+  nada: con la clave sacada vuelve al acumulado.
+
 ## Fuera de alcance
 
 - El prorrateo de Mi página y las devoluciones con Shay: hoy los paga Sendero.
