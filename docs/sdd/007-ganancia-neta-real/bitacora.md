@@ -20,5 +20,8 @@ lo suyo, simplificar Finanzas, y "todos los números reales que da la plataforma
 - Agustín confirmó: cobrado real de MP, Flex real a la bruta, pagos de logística desde la empresarial.
   Copia de los precios antes de corregir: `copia-pedidos-ml-2026-11-04.json`, en el scratchpad de la
   sesión.
-- A la logística se le paga por transferencia al alias marianotevez.bru. MP no devuelve alias ni nombre
-  del destinatario, sólo un número interno: con un pago de ejemplo se puede identificar.
+- A la logística se le paga por transferencia de MP a Mariano Tevez (2026-11-03, $183.700). Esa
+  transferencia no está en `/v1/payments/search`, buscada de marzo a noviembre: no se pueden traer
+  solas. Se cargan a mano.
+- Los gastos compartidos de octubre estaban en 0 desde el 4/11 a las 7:12, sin causa identificada y
+  sin que Agustín recuerde haberlos borrado. Se restauraron el 2026-11-06 con los valores anteriores.
