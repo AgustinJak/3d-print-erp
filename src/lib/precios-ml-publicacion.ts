@@ -143,6 +143,31 @@ export function precioParaGanancia(
   };
 }
 
+/**
+ * El precio con el envío que cotiza ML (spec 006, RN-4). El envío depende del precio y el precio del
+ * envío, así que se prueba hasta que coincidan, como con el cargo fijo. Si dos tramos se pasan la
+ * pelota se queda el precio más alto: nunca uno que deja menos de lo pedido. Sin cotización,
+ * `calcular(null)` y `envio` en null: quien llama lo marca como estimado.
+ */
+export async function precioConEnvioCotizado(
+  calcular: (costoEnvio: number | null) => PrecioMl,
+  cotizar: (publicado: number) => Promise<number | null>
+): Promise<{ precio: PrecioMl; envio: number | null }> {
+  let precio = calcular(null);
+  let envio: number | null = null;
+  const vistos = new Map<number, PrecioMl>();
+  for (let i = 0; i < 5 && Number.isFinite(precio.publicado); i++) {
+    const costo = await cotizar(precio.publicado);
+    if (costo == null || costo === envio) break;
+    const anterior = vistos.get(costo);
+    if (anterior) return anterior.final > precio.final ? { precio: anterior, envio: costo } : { precio, envio };
+    envio = costo;
+    precio = calcular(costo);
+    vistos.set(costo, precio);
+  }
+  return { precio, envio };
+}
+
 /** Los costos de la opción 1: la Clásica sin cuotas, con el envío según el umbral. */
 export function costosDeOpcionUno(g: GastosVenta, pctDelProducto: number, estimado: string[] = []): CostosMl {
   return { pct: pctDelProducto, recargoCuotas: 0, envioGratis: false, costoEnvio: g.mlEnvioCosto, estimado };

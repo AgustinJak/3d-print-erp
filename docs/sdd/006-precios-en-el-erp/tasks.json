@@ -3,7 +3,7 @@
   "featureId": "006-precios-en-el-erp",
   "epic": "ninguna",
   "version": "1.0.0",
-  "status": "in-progress",
+  "status": "completed",
   "branch": "master",
   "baseBranch": "master",
   "pullRequest": null,
@@ -13,7 +13,7 @@
     "approvedAt": "2026-10-29",
     "notes": "\"Dale\", con los agregados de las specs 006 y 007."
   },
-  "updatedAt": "2026-10-30T22:09:09.000Z",
+  "updatedAt": "2026-11-06T12:00:00.000Z",
   "tasks": [
     {
       "id": "TASK-001",
@@ -312,7 +312,7 @@
       "title": "Costo de envío gratis de un producto sin publicar",
       "description": "Cotizar con peso y medidas si están cargados; si no, el de la configuración, marcado como estimado.",
       "component": "integration",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-003"
@@ -325,8 +325,8 @@
         "src/lib/tarifas-ml.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-11-06",
+      "notes": "ML cotiza por medidas sin publicación (`shipping_options/free?dimensions`): igual al peso en 14 de 14 publicaciones. Medidas del formulario o de la publicación más grande del producto; sin medidas, la configuración, marcada como estimado. Precio y envío se iteran porque ML cobra por tramos de precio. Horda: $46.212, igual a lo publicado."
     },
     {
       "id": "TASK-015",
@@ -380,7 +380,7 @@
       "title": "Precio de la web, envío gratis y tramos por cantidad",
       "description": "precioWeb (margen 35 %, reserva para el envío gratis, envío adentro si el producto solo pasa el umbral); TRAMOS_WEB 8/12/18 con pisos 18/17/14 y margenesDeTramos; mostrar en Precios › Configuración el peor producto y la mediana de cada tramo; comparar la reserva con lo absorbido cada mes.",
       "component": "lib",
-      "status": "in-progress",
+      "status": "completed",
       "origin": "spec",
       "dependencies": [
         "TASK-006"
@@ -399,8 +399,8 @@
         "scripts/sdd-006-informe-precios.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": "2026-10-30: funciones puras, pruebas (28/28) e informe hechos. Pantalla pendiente (TASK-010). En el Shop sólo cambia la configuración del panel (umbral 40.000 y tramos)."
+      "completedAt": "2026-11-06",
+      "notes": "2026-10-30: funciones puras, pruebas (28/28) e informe hechos. Pantalla pendiente (TASK-010). En el Shop sólo cambia la configuración del panel (umbral 40.000 y tramos). 2026-11-06: reserva contra lo absorbido en Precios › Configuración (REQ-5; aproximado, el Shop no guarda el costo del envío gratis) y aviso en el producto si queda debajo del piso (REQ-4)."
     },
     {
       "id": "TASK-019",
@@ -440,7 +440,7 @@
       "title": "Cerebro",
       "description": "INV - Flujos (sección 10), BOD - Flujos, Flujos del ecosistema (contrato 3), backlogs.",
       "component": "docs",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-010",
@@ -455,8 +455,8 @@
       "acceptanceCriteria": [],
       "files": [],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-11-06",
+      "notes": "INV - Flujos 10 y 10b, Flujos del ecosistema 6d. Contrato 3 y BOD - Flujos ya estaban al día desde la 2.36: revisados, sin cambios. Backlogs al día."
     }
   ]
 }

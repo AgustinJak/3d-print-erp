@@ -96,6 +96,12 @@ export function SeccionLoQueSeVende({ ficha, onCambio }: { ficha: Ficha; onCambi
                       {c.precios.mlPublicado !== c.precios.ml && <> (paga {pesos(c.precios.ml)})</>} · Web{" "}
                       <span className="text-foreground">{pesos(c.precios.web)}</span> · Personalizados{" "}
                       <span className="text-foreground">{pesos(c.precios.personalizado)}</span>
+                      {c.precios.tramosDebajo.length > 0 && (
+                        <span className="block text-amber-700 dark:text-amber-400">
+                          Por cantidad en la web:{" "}
+                          {c.precios.tramosDebajo.map((t) => `desde ${t.desde} u deja ${String(t.margen).replace(".", ",")} % (piso ${t.piso} %)`).join(", ")}
+                        </span>
+                      )}
                     </span>
                   ) : (
                     <span>Sin precio: {c.faltaCostear}</span>

@@ -1,10 +1,11 @@
 import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
-import { getValidAccessToken } from "@/lib/mercadolibre";
+import { getValidAccessToken, mlFetch } from "@/lib/mercadolibre";
 import { cargarContextoDePrecios, gastosDe, pctDeCombinacion, preciosDeCombinaciones } from "@/lib/precios-combinacion";
-import { costosDeOpcionDos, costosDeOpcionUno, gastosConCostos, precioParaGanancia } from "@/lib/precios-ml-publicacion";
+import { costosDeOpcionDos, costosDeOpcionUno, gastosConCostos, precioConEnvioCotizado, precioParaGanancia } from "@/lib/precios-ml-publicacion";
 import { margenDe } from "@/lib/precios-formula";
-import { cargoFijo } from "@/lib/tarifas-ml-reglas";
+import { cotizarEnvioGratis } from "@/lib/tarifas-ml";
+import { cargoFijo, paqueteDeItem, type PaqueteMl } from "@/lib/tarifas-ml-reglas";
 import { categoriaDeProducto, describirCategoria } from "@/lib/categorias-ml";
 
 /**
@@ -27,12 +28,7 @@ export const AVISO_CUOTAS = "ML la deja en 6 cuotas: en ML, Cuotas y cargos, ele
 /** Lo que no puede decir una publicación (RN-2; las reglas de cara al cliente de Sendero). */
 const PROHIBIDAS = [/impresi[oó]n\s*3d/i, /\bimprim/i, /\bimpres[oa]s?\b/i, /\bimpresora/i, /\bPLA\b/, /sendero\s*3d/i, /r[eé]plica/i, /\btipo\b/i, /s[ií]mil/i];
 
-export interface Paquete {
-  alto: number;
-  ancho: number;
-  largo: number;
-  peso: number;
-}
+export type Paquete = PaqueteMl;
 
 export interface Borrador {
   combinacionId: string;
@@ -40,14 +36,18 @@ export interface Borrador {
   nombre: string;
   categoria: { id: string; nombre: string; comision: number | null; origen: string } | null;
   costo: number;
-  opcion1: { precio: number; paga: number; ganancia: number; margen: number };
-  /** La opción 2 (3 cuotas y envío gratis) dejando lo mismo; el envío es estimado si no hay cotización. */
-  opcion2: { precio: number; ganancia: number; margen: number; envioEstimado: boolean } | null;
+  /** `envio`: lo que cotizó ML, si la opción paga envío. `envioEstimado`: lo paga y salió de la configuración. */
+  opcion1: { precio: number; paga: number; ganancia: number; margen: number; envio: number | null; envioEstimado: boolean };
+  /** La opción 2 (3 cuotas y envío gratis) dejando lo mismo. */
+  opcion2: { precio: number; ganancia: number; margen: number; envio: number | null; envioEstimado: boolean } | null;
   /** false si la opción 2 sale más del doble que la 1: no se va a vender. */
   recomendarOpcion2: boolean;
   fotos: string[];
   stock: number;
   peso: number | null;
+  /** Las medidas con que se cotizó. `de`: la publicación de la que salieron, si no las cargó nadie acá. */
+  paquete: Paquete | null;
+  paqueteDe: string | null;
 }
 
 export interface PedidoDeCreacion {
@@ -77,17 +77,44 @@ export interface Creada {
   motivo: string | null;
 }
 
-/** Lo que el ERP propone para publicar una combinación. */
-export async function borrador(tenantId: string, modeloId: string, combinacionId: string): Promise<Borrador> {
+/**
+ * Las medidas de otra publicación del producto. Los packs no sirven, porque su paquete es otro, y las
+ * de Shay quedan afuera por `ignorar`. Publicaciones del mismo producto tienen medidas distintas (una
+ * katana con 6x100x6 y otra con 110x15x15): se toma la más grande, para no cotizar de menos.
+ */
+async function paqueteDeSusPublicaciones(tenantId: string, modeloId: string): Promise<{ paquete: Paquete; mla: string } | null> {
+  const mapeos = await prisma.mapeoCanal.findMany({
+    where: { tenantId, canal: "mercadolibre", ignorar: false, unidades: 1, combinacion: { modeloId } },
+    select: { clave: true },
+  });
+  const mlas = [...new Set(mapeos.map((m) => m.clave.split("|")[0]))].slice(0, 10);
+  const leidas = await Promise.all(
+    mlas.map(async (mla) => {
+      const item = await mlFetch<Parameters<typeof paqueteDeItem>[0]>(tenantId, `/items/${mla}?include_attributes=all`).catch(() => null);
+      const paquete = item && paqueteDeItem(item);
+      return paquete ? { paquete, mla } : null;
+    })
+  );
+  const volumen = (p: Paquete) => p.alto * p.ancho * p.largo;
+  return leidas.reduce((mayor, x) => (x && (!mayor || volumen(x.paquete) > volumen(mayor.paquete)) ? x : mayor), null as { paquete: Paquete; mla: string } | null);
+}
+
+/**
+ * Lo que el ERP propone para publicar una combinación. Con `medidas`, o con las de otra publicación
+ * del producto, el envío es el que cotiza ML. Sin ninguna de las dos, el de la configuración, marcado
+ * como estimado (spec 006, RN-4).
+ */
+export async function borrador(tenantId: string, modeloId: string, combinacionId: string, medidas: Paquete | null = null): Promise<Borrador> {
+  // Primero la categoría: si es nueva, guarda su comisión, y el precio se calcula con esa.
+  const cat = await categoriaDeProducto(tenantId, modeloId);
   const cx = await cargarContextoDePrecios(tenantId);
   if (!cx.erp) throw new Error("Crear en ML usa la configuración de precios del ERP.");
   const p = (await preciosDeCombinaciones(tenantId, { modeloIds: [modeloId] }, cx)).find((x) => x.combinacionId === combinacionId);
   if (!p) throw new Error("La combinación no existe o está inactiva.");
   if (!p.precios || !p.costo) throw new Error("La combinación no tiene costo: no hay precio para publicar.");
-  const [modelo, stock, cat] = await Promise.all([
+  const [modelo, stock] = await Promise.all([
     prisma.modelo.findFirst({ where: { id: modeloId, tenantId }, select: { nombre: true, pesoGr: true, imagenUrl: true, imagenesUrls: true } }),
     prisma.stock.findMany({ where: { tenantId, modeloId }, select: { cantidad: true } }),
-    categoriaDeProducto(tenantId, modeloId),
   ]);
   const t = cx.erp.tarifas;
   const g = gastosDe(cx.general.gastos, p.politica);
@@ -98,13 +125,39 @@ export async function borrador(tenantId: string, modeloId: string, combinacionId
     const r = margenDe(gastosConCostos(g, c, t?.fijos.length ? cargoFijo(t, final) : g.mlCargoFijo), "ml", final, fab, ins);
     return { ganancia: Math.round(r.ganancia), margen: Math.round(r.margen * 10) / 10 };
   };
+  const deOtra = medidas ? null : await paqueteDeSusPublicaciones(tenantId, modeloId);
+  const paquete = medidas ?? deOtra?.paquete ?? null;
+  const cotizar = async (publicado: number) => (paquete ? cotizarEnvioGratis(tenantId, paquete, publicado) : null);
+  const redondeo = p.politica.redondeo;
+  const ganancia = p.precios.ganancia;
   const uno = costosDeOpcionUno(g, pct);
-  const op1 = { precio: p.precios.mlPublicado, paga: p.precios.ml, ...deja(p.precios.ml, uno) };
+
+  // La opción 1 paga envío sólo desde el umbral. Se sube hasta dejar la ganancia del producto, igual
+  // que Precios cuando ya está publicada; un precio fijo a mano no se toca, se mide.
+  let precio1 = p.precios.mlPublicado;
+  let paga1 = p.precios.ml;
+  let c1 = uno;
+  let envio1: number | null = null;
+  if (paga1 >= g.mlEnvioDesde) {
+    if (ganancia != null && cx.erp.modelos.get(modeloId)?.precioMlFijo == null) {
+      const r = await precioConEnvioCotizado((costo) => precioParaGanancia(g, fab, ins, redondeo, ganancia, { ...uno, costoEnvio: costo ?? uno.costoEnvio }, t), cotizar);
+      if (r.envio != null && Number.isFinite(r.precio.publicado)) {
+        precio1 = r.precio.publicado;
+        paga1 = r.precio.final;
+        c1 = r.precio.costos;
+        envio1 = r.envio;
+      }
+    } else {
+      envio1 = await cotizar(precio1);
+      if (envio1 != null) c1 = { ...uno, costoEnvio: envio1 };
+    }
+  }
+  const op1 = { precio: precio1, paga: paga1, ...deja(paga1, c1), envio: envio1, envioEstimado: paga1 >= g.mlEnvioDesde && envio1 == null };
+
   let op2: Borrador["opcion2"] = null;
-  if (p.precios.ganancia != null) {
-    const c2 = costosDeOpcionDos(t, g, pct, null);
-    const r = precioParaGanancia(g, fab, ins, p.politica.redondeo, p.precios.ganancia, c2, t);
-    if (Number.isFinite(r.publicado)) op2 = { precio: r.publicado, ...deja(r.final, c2), envioEstimado: c2.estimado.includes("costo del envío") };
+  if (ganancia != null) {
+    const { precio: r, envio } = await precioConEnvioCotizado((costo) => precioParaGanancia(g, fab, ins, redondeo, ganancia, costosDeOpcionDos(t, g, pct, costo), t), cotizar);
+    if (Number.isFinite(r.publicado)) op2 = { precio: r.publicado, ...deja(r.final, r.costos), envio, envioEstimado: envio == null };
   }
   const fotos = [...new Set([...(modelo?.imagenesUrls ?? []), ...(modelo?.imagenUrl ? [modelo.imagenUrl] : [])])];
   return {
@@ -119,6 +172,8 @@ export async function borrador(tenantId: string, modeloId: string, combinacionId
     fotos,
     stock: Math.max(1, stock.reduce((a, s) => a + s.cantidad, 0)),
     peso: modelo?.pesoGr ?? null,
+    paquete,
+    paqueteDe: deOtra?.mla ?? null,
   };
 }
 

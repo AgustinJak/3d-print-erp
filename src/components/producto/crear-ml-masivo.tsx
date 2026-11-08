@@ -11,8 +11,9 @@ import type { Borrador, Creada, Revision } from "@/lib/crear-ml";
 
 /**
  * Crear en Mercado Libre varias combinaciones a la vez desde Productos (docs/sdd/006, spec 008).
- * Cada una con su borrador del ERP; las medidas del paquete se cargan una vez para todas. Se revisa
- * cada una contra ML sin crear nada y se crean, pausadas, sólo las que pasan, al confirmar.
+ * Cada una con su borrador del ERP; las medidas del paquete se cargan una vez para todas. Al revisar,
+ * cada borrador se vuelve a pedir con esas medidas, para que el precio lleve el envío que cotiza ML;
+ * se revisa contra ML sin crear nada y se crean, pausadas, sólo las que pasan, al confirmar.
  */
 
 export interface ItemACrear {
@@ -84,8 +85,10 @@ export function CrearMlMasivo({ items, onCerrar, onHecho }: { items: ItemACrear[
       const f = out[i];
       if (!f.borrador || !f.borrador.categoria) continue;
       try {
-        const r = await pedir<{ revisiones: Revision[] }>(`/api/modelos/${f.modeloId}/crear-ml`, json("POST", pedidoDe(f)));
-        out[i] = { ...f, revision: r.revisiones };
+        const borrador = await pedir<Borrador>(`/api/modelos/${f.modeloId}/crear-ml?combinacion=${f.combinacionId}&alto=${paq.alto}&ancho=${paq.ancho}&largo=${paq.largo}&peso=${paq.peso}`);
+        const cotizada = { ...f, borrador };
+        const r = await pedir<{ revisiones: Revision[] }>(`/api/modelos/${f.modeloId}/crear-ml`, json("POST", pedidoDe(cotizada)));
+        out[i] = { ...cotizada, revision: r.revisiones };
       } catch (e) {
         out[i] = { ...f, revision: [{ opcion: 1, errores: [e instanceof Error ? e.message : String(e)], avisos: [] }] };
       }
@@ -194,7 +197,7 @@ export function CrearMlMasivo({ items, onCerrar, onHecho }: { items: ItemACrear[
           ? "Quedaron pausadas y enlazadas. Fotos, título y descripción se terminan en ML."
           : revisadoCon === clave
             ? `${aptas.length} de ${filas.length} se pueden crear. Las que no, dicen por qué (sin foto, sin categoría, sin costo).`
-            : "Primero revisá en ML: no crea nada."}
+            : "Primero revisá en ML: no crea nada, y ajusta cada precio con el envío que ML cotiza para este paquete."}
       </p>
 
       <DialogFooter>

@@ -449,9 +449,9 @@ function LineaOpciones({ o }: { o: OpcionesMl | undefined }) {
   const falta = o.uno === 0 ? 1 : 2;
   const precio = falta === 1 ? o.precioUno : o.precioDos;
   return (
-    <div className="text-xs text-amber-600 dark:text-amber-400" title={falta === 2 ? "3 cuotas sin interés y envío gratis, dejando lo mismo que la opción 1" : "Clásica, sin cuotas"}>
+    <div className="text-xs text-amber-600 dark:text-amber-400" title={falta === 2 ? "3 cuotas sin interés y envío gratis, dejando lo mismo que la opción 1. Aproximado: el envío depende del precio final" : "Clásica, sin cuotas"}>
       falta la opción {falta}
-      {precio != null && ` · publicaría ${pesos(precio)}`}
+      {precio != null && ` · publicaría ${falta === 2 ? "unos " : ""}${pesos(precio)}`}
     </div>
   );
 }

@@ -20,8 +20,11 @@ import type { Ficha } from "@/app/api/modelos/[id]/ficha/route";
 interface Form {
   nombre: string;
   precio1: string;
+  /** Lo último que propuso el ERP: si el precio sigue igual, no lo editó nadie y se puede actualizar. */
+  propuesto1: string;
   opcion2: boolean;
   precio2: string;
+  propuesto2: string;
   alto: string;
   ancho: string;
   largo: string;
@@ -30,6 +33,8 @@ interface Form {
   fotos: string[];
 }
 
+const numero = (s: string) => Number(s.replace(",", "."));
+
 function Formulario({ modeloId, combinacionId, onCerrar, onCreada }: { modeloId: string; combinacionId: string; onCerrar: () => void; onCreada: () => void }) {
   const [b, setB] = useState<Borrador | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +42,8 @@ function Formulario({ modeloId, combinacionId, onCerrar, onCreada }: { modeloId:
   const [revision, setRevision] = useState<{ clave: string; r: Revision[] } | null>(null);
   const [creadas, setCreadas] = useState<Creada[] | null>(null);
   const [ocupado, setOcupado] = useState<"revisando" | "creando" | null>(null);
+  // Las medidas con que se armó el borrador que se está mostrando.
+  const [cotizadas, setCotizadas] = useState<string | null>(null);
 
   useEffect(() => {
     pedir<Borrador>(`/api/modelos/${modeloId}/crear-ml?combinacion=${combinacionId}`)
@@ -45,22 +52,64 @@ function Formulario({ modeloId, combinacionId, onCerrar, onCreada }: { modeloId:
         setF({
           nombre: x.nombre,
           precio1: String(x.opcion1.precio),
+          propuesto1: String(x.opcion1.precio),
           opcion2: x.recomendarOpcion2,
           precio2: x.opcion2 ? String(x.opcion2.precio) : "",
-          alto: "",
-          ancho: "",
-          largo: "",
-          peso: x.peso ? String(Math.round(x.peso + 30)) : "",
+          propuesto2: x.opcion2 ? String(x.opcion2.precio) : "",
+          alto: x.paquete ? String(x.paquete.alto) : "",
+          ancho: x.paquete ? String(x.paquete.ancho) : "",
+          largo: x.paquete ? String(x.paquete.largo) : "",
+          peso: x.paquete ? String(x.paquete.peso) : x.peso ? String(Math.round(x.peso + 30)) : "",
           stock: String(x.stock),
           fotos: x.fotos.slice(0, 6),
         });
+        if (x.paquete) setCotizadas([x.paquete.alto, x.paquete.ancho, x.paquete.largo, x.paquete.peso].join("x"));
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [modeloId, combinacionId]);
 
+  // Al cargar o cambiar las medidas, ML cotiza el envío y el precio se recalcula. Un precio que se
+  // editó a mano no se pisa.
+  const medidas = f ? [f.alto, f.ancho, f.largo, f.peso].map(numero) : [];
+  const claveMedidas = medidas.length && medidas.every((x) => x > 0) ? medidas.join("x") : null;
+  const cotizando = !!claveMedidas && claveMedidas !== cotizadas;
+  useEffect(() => {
+    if (!claveMedidas || claveMedidas === cotizadas) return;
+    let vigente = true;
+    const [alto, ancho, largo, peso] = claveMedidas.split("x");
+    const espera = setTimeout(() => {
+      pedir<Borrador>(`/api/modelos/${modeloId}/crear-ml?combinacion=${combinacionId}&alto=${alto}&ancho=${ancho}&largo=${largo}&peso=${peso}`)
+        .then((x) => {
+          if (!vigente) return;
+          const nuevo1 = String(x.opcion1.precio);
+          const nuevo2 = x.opcion2 ? String(x.opcion2.precio) : "";
+          setB(x);
+          setF((p) =>
+            p && {
+              ...p,
+              precio1: p.precio1 === p.propuesto1 ? nuevo1 : p.precio1,
+              propuesto1: nuevo1,
+              precio2: p.precio2 === p.propuesto2 ? nuevo2 : p.precio2,
+              propuesto2: nuevo2,
+            }
+          );
+          setCotizadas(claveMedidas);
+        })
+        .catch((e) => {
+          if (!vigente) return;
+          toast.error(e instanceof Error ? e.message : String(e));
+          setCotizadas(claveMedidas);
+        });
+    }, 500);
+    return () => {
+      vigente = false;
+      clearTimeout(espera);
+    };
+  }, [claveMedidas, cotizadas, modeloId, combinacionId]);
+
   const pedido = useMemo(() => {
     if (!f || !b?.categoria) return null;
-    const n = (s: string) => Number(s.replace(",", "."));
+    const n = numero;
     return {
       combinacionId,
       nombre: f.nombre.trim(),
@@ -157,6 +206,8 @@ function Formulario({ modeloId, combinacionId, onCerrar, onCreada }: { modeloId:
           {campo("precio1", "Opción 1: Clásica, sin cuotas", "(publicado)")}
           <p className="text-xs text-muted-foreground">
             Con la promo paga {pesos(b.opcion1.paga)} y te deja {pesos(b.opcion1.ganancia)} ({String(b.opcion1.margen).replace(".", ",")} %)
+            {b.opcion1.envio != null && `, con envío de ${pesos(b.opcion1.envio)}`}
+            {b.opcion1.envioEstimado && " (envío estimado: cargá las medidas)"}
           </p>
         </div>
         <div className="space-y-1">
@@ -167,7 +218,7 @@ function Formulario({ modeloId, combinacionId, onCerrar, onCreada }: { modeloId:
           {b.opcion2 && (
             <p className={`text-xs ${b.recomendarOpcion2 ? "text-muted-foreground" : "text-amber-700 dark:text-amber-400"}`}>
               {pesos(b.opcion2.precio)} deja {pesos(b.opcion2.ganancia)}
-              {b.opcion2.envioEstimado ? " (envío estimado)" : ""}
+              {b.opcion2.envio != null ? `, con envío de ${pesos(b.opcion2.envio)}` : " (envío estimado: cargá las medidas)"}
               {!b.recomendarOpcion2 && ": más del doble que la opción 1, no se va a vender"}
             </p>
           )}
@@ -183,6 +234,11 @@ function Formulario({ modeloId, combinacionId, onCerrar, onCreada }: { modeloId:
           {campo("largo", "Largo", "cm")}
           {campo("peso", "Peso", "g")}
         </div>
+        {cotizando ? (
+          <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Cotizando el envío en ML…</p>
+        ) : (
+          b.paqueteDe && <p className="text-xs text-muted-foreground">Medidas de {b.paqueteDe}, otra publicación del producto. Cambialas si este paquete es distinto.</p>
+        )}
       </div>
 
       <div className="grid grid-cols-[100px_1fr] gap-3 items-start">
@@ -231,10 +287,10 @@ function Formulario({ modeloId, combinacionId, onCerrar, onCreada }: { modeloId:
         <Button variant="outline" onClick={onCerrar} disabled={ocupado === "creando"}>
           Cancelar
         </Button>
-        <Button variant="outline" onClick={revisar} disabled={!pedido || !!ocupado}>
+        <Button variant="outline" onClick={revisar} disabled={!pedido || !!ocupado || cotizando}>
           {ocupado === "revisando" && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Revisar en ML
         </Button>
-        <Button onClick={crear} disabled={!sinErrores || !!ocupado} title={!revisado ? "Primero revisá en ML" : undefined}>
+        <Button onClick={crear} disabled={!sinErrores || !!ocupado || cotizando} title={!revisado ? "Primero revisá en ML" : undefined}>
           {ocupado === "creando" && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Crear pausada
         </Button>
       </DialogFooter>

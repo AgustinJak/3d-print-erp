@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
-import { aplicarCambios, CAMPOS, guardarConfig, historialConfig, leerConfig, simular } from "@/lib/precios-config";
+import { aplicarCambios, CAMPOS, guardarConfig, historialConfig, leerConfig, reservaDeLaWeb, simular } from "@/lib/precios-config";
 import { esRedondeo } from "@/lib/precios-formula";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -11,7 +11,7 @@ import { z } from "zod";
  * Precios › Configuración (docs/sdd/006, spec 001).
  *
  * GET: la configuración, los campos que se editan, cómo quedan tres productos de ejemplo y los
- * tramos de la web, y el historial. POST sin `aplicar`: lo mismo con los cambios pedidos, sin
+ * tramos de la web, la reserva contra lo absorbido en envíos gratis, y el historial. POST sin `aplicar`: lo mismo con los cambios pedidos, sin
  * guardar. Con `aplicar`: guarda y deja el cambio en el historial. No publica ningún precio: los
  * precios nuevos se aplican en Precios.
  */
@@ -25,8 +25,8 @@ export async function GET() {
   try {
     const { tenantId } = await getAuthenticatedTenantNonDemo();
     const config = await leerConfig(tenantId);
-    const [sim, historial] = await Promise.all([simular(tenantId, config.gastos, config.redondeo), historialConfig(tenantId)]);
-    return NextResponse.json({ config, campos: CAMPOS, ...sim, historial });
+    const [sim, historial, reserva] = await Promise.all([simular(tenantId, config.gastos, config.redondeo), historialConfig(tenantId), reservaDeLaWeb(tenantId, config.gastos.webEnvioReservaPct ?? 0)]);
+    return NextResponse.json({ config, campos: CAMPOS, ...sim, historial, reserva });
   } catch (e) {
     if (e instanceof NextResponse) return e;
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });

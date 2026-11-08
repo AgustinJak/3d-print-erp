@@ -9,7 +9,8 @@ import { z } from "zod";
 /**
  * Crear en Mercado Libre una combinación del producto (docs/sdd/006, spec 008). Nunca automático.
  *
- * GET ?combinacion=: el borrador que propone el ERP. POST sin `aplicar`: lo que dicen el ERP y
+ * GET ?combinacion=: el borrador que propone el ERP; con &alto=&ancho=&largo=&peso=, el envío cotizado
+ * con esas medidas. POST sin `aplicar`: lo que dicen el ERP y
  * ML (`/items/validate`), sin crear nada. Con `aplicar`: crea, pausa, enlaza y registra.
  */
 const Cuerpo = z.object({
@@ -25,13 +26,17 @@ const Cuerpo = z.object({
   aplicar: z.boolean().optional(),
 });
 
+const Medidas = z.object({ alto: z.coerce.number().positive(), ancho: z.coerce.number().positive(), largo: z.coerce.number().positive(), peso: z.coerce.number().positive() });
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { tenantId } = await getAuthenticatedTenantNonDemo();
     const { id } = await params;
-    const combinacion = request.nextUrl.searchParams.get("combinacion");
+    const q = request.nextUrl.searchParams;
+    const combinacion = q.get("combinacion");
     if (!combinacion) return NextResponse.json({ error: "falta la combinación" }, { status: 400 });
-    return NextResponse.json(await borrador(tenantId, id, combinacion));
+    const medidas = Medidas.safeParse({ alto: q.get("alto"), ancho: q.get("ancho"), largo: q.get("largo"), peso: q.get("peso") });
+    return NextResponse.json(await borrador(tenantId, id, combinacion, medidas.success ? medidas.data : null));
   } catch (e) {
     if (e instanceof NextResponse) return e;
     return NextResponse.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });

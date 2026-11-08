@@ -1,8 +1,12 @@
-# Sincroniza Mercado Libre cada 15 minutos.
+# Sincroniza Mercado Libre una vez por hora.
 #
 # Por qué acá y no sólo en Vercel: en el plan Hobby los crons de Vercel corren
-# una vez por día. GitHub Actions es gratis y sí corre cada 15 minutos, así que
+# una vez por día. GitHub Actions es gratis y sí corre más seguido, así que
 # los pedidos entran solos aunque nadie abra la página.
+#
+# Cada hora y no cada 15 minutos desde el 2026-11-08: Vercel pausó la cuenta por pasar las 4 h
+# de CPU del plan, y estas 96 pasadas diarias eran la base del gasto del ERP. El webhook trae
+# cada venta en segundos (60 a 90 avisos por día); esto sólo recupera los que se pierden.
 #
 # Es la red de seguridad del webhook de ML, no su reemplazo: con el webhook bien
 # configurado el pedido entra en segundos; esto lo recupera si la notificación
@@ -15,7 +19,7 @@ name: Sincronizar Mercado Libre
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "0 * * * *"
   workflow_dispatch: # botón para correrlo a mano
 
 jobs:

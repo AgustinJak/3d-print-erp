@@ -65,7 +65,8 @@ Ningún producto pierde plata en ningún tramo. La venta suelta deja 30–35 %.
 - **REQ-4** Precios › Configuración muestra, por tramo, el peor producto, la mediana y los que
   perforan el piso. Un producto nuevo que perfore un piso avisa.
 - **REQ-5** La reserva se compara cada mes con lo que de verdad se absorbió en envíos gratis
-  (pedidos del Shop): si se aleja más de un punto, se avisa para ajustarla.
+  (pedidos del Shop): si se aleja más de un punto, se avisa para ajustarla. Lo absorbido es aproximado: el
+  Shop no guarda el costo del envío de un pedido gratis, y se valora con lo pagado por los demás con ese método.
 
 ## Reglas de negocio
 

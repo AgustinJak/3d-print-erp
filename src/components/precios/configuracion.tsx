@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { json, pedir, pesos } from "@/components/producto/seccion";
 import { REDONDEOS } from "@/lib/precios-formula";
 import type { CambioDeConfig, ConfigDePrecios, DefinicionDeCampo, Ejemplo, ResumenDeTramo } from "@/lib/precios-config";
+import type { ComparacionDeReserva } from "@/lib/precios-reglas";
 
 /**
  * Precios › Configuración (docs/sdd/006, spec 001): los valores generales con que se calcula,
@@ -23,6 +24,7 @@ interface Datos {
   ejemplos: Ejemplo[];
   tramos: ResumenDeTramo[];
   historial: CambioDeConfig[];
+  reserva: ComparacionDeReserva;
 }
 
 const GRUPOS: DefinicionDeCampo["grupo"][] = ["Margen y promo", "Mercado Libre", "Web", "Impuestos", "Respaldo"];
@@ -84,6 +86,42 @@ function Tramos({ tramos }: { tramos: ResumenDeTramo[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+const NOMBRE_DE_ENVIO: Record<string, string> = { correo_argentino: "Correo Argentino", syb: "SyB" };
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const coma = (n: number) => String(n).replace(".", ",");
+
+function Reserva({ r }: { r: ComparacionDeReserva }) {
+  if (!r.meses.length) return <p className="text-xs text-muted-foreground">Todavía no hay pedidos de la web para comparar.</p>;
+  const referencia = Object.entries(r.referencia).filter(([m]) => m !== "retiro");
+  return (
+    <>
+      <div className="rounded-lg border divide-y text-sm">
+        {r.meses.map((m) => (
+          <div key={m.mes} className="px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+            <span>
+              <span className="font-medium">
+                {MESES[Number(m.mes.slice(5)) - 1]} {m.mes.slice(0, 4)}
+              </span>{" "}
+              <span className="text-muted-foreground">
+                · {m.gratis} de {m.pedidos} con envío gratis
+              </span>
+            </span>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              unos {pesos(m.absorbido)} de {pesos(m.vendido)} vendidos: {coma(m.pct)} %
+              {m.seAleja && <span className="text-amber-700 dark:text-amber-400"> · a más de un punto de la reserva de {coma(r.reservaPct)} %</span>}
+              {m.sinValorar > 0 && <span> · {m.sinValorar} sin valorar</span>}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Aproximado: el Shop no guarda lo que salió el envío de un pedido gratis. Cada uno se cuenta por lo que pagaron en promedio los demás con ese método
+        {referencia.length > 0 && ` (${referencia.map(([m, v]) => `${NOMBRE_DE_ENVIO[m] ?? m} ${pesos(v)}`).join(", ")})`}. Un mes con pocos pedidos puede alejarse sin que signifique nada.
+      </p>
+    </>
   );
 }
 
@@ -218,6 +256,8 @@ export function ConfiguracionDePrecios({ onGuardado }: { onGuardado: () => void 
         <p className="text-sm font-semibold pt-2">Descuentos por cantidad de la web</p>
         <Tramos tramos={vista?.clave === clave ? vista.tramos : datos.tramos} />
         <p className="text-xs text-muted-foreground">Los tramos se cargan en el panel del Shop. Se mide el pedido mínimo de cada tramo, con su envío si pasa el envío gratis.</p>
+        <p className="text-sm font-semibold pt-2">Reserva para el envío gratis, contra lo absorbido</p>
+        <Reserva r={datos.reserva} />
       </div>
 
       <div className="space-y-2">

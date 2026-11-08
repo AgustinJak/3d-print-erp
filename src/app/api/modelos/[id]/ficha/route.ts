@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { gruposDe, tipoDeVariante, type TipoGrupo } from "@/lib/catalogo";
 import { fabricacionDePieza, leerParametros, leerRecetas } from "@/lib/costos-bodega";
 import { cargarContexto, componentesDeItem, type Componente } from "@/lib/reservas";
-import { leerGastosDeVenta, preciosDeCombinaciones } from "@/lib/precios-combinacion";
+import { gastosDe, leerGastosDeVenta, preciosDeCombinaciones } from "@/lib/precios-combinacion";
+import { margenesDeTramos } from "@/lib/precios-formula";
 import { categoriaDeProducto } from "@/lib/categorias-ml";
 import { PREFIJO_FALTA, textoDeFalta } from "@/lib/precios-reglas";
 import { aplicarCostosSiCambio } from "@/lib/sincronizar-costos";
@@ -93,7 +94,7 @@ export interface Ficha {
     consume: Componente[];
     pendiente: boolean;
     /** Los tres precios de Bodega (docs/sdd/003, spec 004, REQ-6); se aplican desde Precios. */
-    precios: { ml: number; mlPublicado: number; web: number; personalizado: number } | null;
+    precios: { ml: number; mlPublicado: number; web: number; personalizado: number; tramosDebajo: Array<{ desde: number; piso: number; margen: number }> } | null;
     /** Por qué no tiene precio. */
     faltaCostear: string | null;
   }>;
@@ -214,7 +215,20 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         variantes: c.variantes,
         consume,
         pendiente: c.activo && conInsumo && !consume.some((x) => x.tipo === "insumo" && x.stockId),
-        precios: precio?.precios ? { ml: precio.precios.ml, mlPublicado: precio.precios.mlPublicado, web: precio.precios.web, personalizado: precio.precios.personalizado } : null,
+        precios: precio?.precios
+          ? {
+              ml: precio.precios.ml,
+              mlPublicado: precio.precios.mlPublicado,
+              web: precio.precios.web,
+              personalizado: precio.precios.personalizado,
+              // Los descuentos por cantidad de la web que lo dejan debajo del piso (spec 009, REQ-4).
+              tramosDebajo: precio.costo
+                ? margenesDeTramos(gastosDe(general.gastos, precio.politica), precio.precios.web, precio.costo.fabricacion, precio.costo.insumos)
+                    .filter((t) => !t.llega)
+                    .map((t) => ({ desde: t.desde, piso: t.piso, margen: Math.round(t.margen * 10) / 10 }))
+                : [],
+            }
+          : null,
         faltaCostear: precio && !precio.precios ? textoDeFalta(precio.falta).replace(`${PREFIJO_FALTA} — `, "") : null,
       };
     });

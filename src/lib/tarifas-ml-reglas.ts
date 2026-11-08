@@ -34,3 +34,33 @@ export function pctMasAlto(t: Pick<TarifasMl, "categorias"> | null): number | nu
   const v = Object.values(t?.categorias ?? {});
   return v.length ? Math.max(...v) : null;
 }
+
+/** El paquete de una publicación: alto, ancho y largo en cm, peso en gramos. */
+export interface PaqueteMl {
+  alto: number;
+  ancho: number;
+  largo: number;
+  peso: number;
+}
+
+/**
+ * Las medidas que tiene cargadas una publicación. Las creadas como User Product las tienen en los
+ * atributos ("30 cm", "400 g"); las más viejas, en `shipping.dimensions` ("110x15x15,760").
+ */
+export function paqueteDeItem(item: { attributes?: Array<{ id: string; value_name?: string | null }>; shipping?: { dimensions?: string | null } }): PaqueteMl | null {
+  const vistas = /^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?),(\d+(?:\.\d+)?)$/.exec(item.shipping?.dimensions ?? "");
+  if (vistas) {
+    const [alto, ancho, largo, peso] = vistas.slice(1).map(Number);
+    return { alto, ancho, largo, peso };
+  }
+  const valor = (id: string) => item.attributes?.find((a) => a.id === id)?.value_name ?? "";
+  const numero = (texto: string) => parseFloat(texto.replace(",", "."));
+  const pesoTexto = valor("SELLER_PACKAGE_WEIGHT");
+  const paquete = {
+    alto: numero(valor("SELLER_PACKAGE_HEIGHT")),
+    ancho: numero(valor("SELLER_PACKAGE_WIDTH")),
+    largo: numero(valor("SELLER_PACKAGE_LENGTH")),
+    peso: numero(pesoTexto) * (/kg/i.test(pesoTexto) ? 1000 : 1),
+  };
+  return Object.values(paquete).every((x) => x > 0) ? paquete : null;
+}

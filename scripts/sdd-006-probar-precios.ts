@@ -16,6 +16,9 @@ import {
   techoDeRedondeo,
   type GastosVenta,
 } from "@/lib/precios-formula";
+import { precioConEnvioCotizado, type PrecioMl } from "@/lib/precios-ml-publicacion";
+import { compararReserva } from "@/lib/precios-reglas";
+import { paqueteDeItem } from "@/lib/tarifas-ml-reglas";
 
 let pruebas = 0;
 let fallas = 0;
@@ -80,5 +83,46 @@ for (const fab of [2000, 7000, 12000]) {
   ok(chico.envioPorUnidad === 0, "5 u de $5.000 no pasa el umbral: el envío lo paga el cliente", chico);
 }
 
-console.log(`\n${fallas ? `✗ ${fallas} de ${pruebas} fallaron` : `✓ ${pruebas} de ${pruebas}`}`);
-process.exitCode = fallas ? 1 : 0;
+// Spec 006, RN-4: el envío que cotiza ML, que depende del precio.
+void (async () => {
+  const conPrecio = (publicado: number) => ({ publicado, final: publicado }) as PrecioMl;
+  const tramos = async (p: number) => (p < 33000 ? 16506 : p < 50000 ? 11790 : 13090);
+  const baja = await precioConEnvioCotizado((c) => conPrecio(Math.round(20000 + (c ?? 9900) * 1.3)), tramos);
+  ok(baja.envio === 11790 && baja.precio.publicado === 35327, "el precio y el envío terminan en el mismo tramo", baja);
+  const pelota = await precioConEnvioCotizado((c) => conPrecio(18000 + (c ?? 9900)), async (p) => (p < 33000 ? 16506 : 11790));
+  ok(pelota.envio === 16506 && pelota.precio.publicado === 34506, "dos tramos que se pasan la pelota: el precio más alto", pelota);
+  const sinCotizar = await precioConEnvioCotizado((c) => conPrecio(20000 + (c ?? 9900)), async () => null);
+  ok(sinCotizar.envio === null && sinCotizar.precio.publicado === 29900, "sin cotización queda el de la configuración, y envio en null", sinCotizar);
+
+  const atributos = (alto: string, ancho: string, largo: string, peso: string) => ({
+    attributes: [
+      { id: "SELLER_PACKAGE_HEIGHT", value_name: alto },
+      { id: "SELLER_PACKAGE_WIDTH", value_name: ancho },
+      { id: "SELLER_PACKAGE_LENGTH", value_name: largo },
+      { id: "SELLER_PACKAGE_WEIGHT", value_name: peso },
+    ],
+  });
+  ok(paqueteDeItem(atributos("30 cm", "20 cm", "10 cm", "400 g"))?.peso === 400, "medidas de los atributos");
+  ok(paqueteDeItem(atributos("30 cm", "20 cm", "10 cm", "1.3 kg"))?.peso === 1300, "un peso en kilos");
+  ok(paqueteDeItem({ shipping: { dimensions: "110x15x15,760" } })?.largo === 15, "medidas de shipping.dimensions");
+  ok(paqueteDeItem(atributos("30 cm", "", "10 cm", "400 g")) === null, "si falta una medida, no hay paquete");
+
+  // Spec 009, REQ-5: la reserva contra lo absorbido.
+  const reserva = compararReserva(
+    [
+      { mes: "2026-10", metodoEnvio: "correo_argentino", precioEnvio: 6000, vendido: 20000 },
+      { mes: "2026-10", metodoEnvio: "correo_argentino", precioEnvio: 8000, vendido: 20000 },
+      { mes: "2026-10", metodoEnvio: "correo_argentino", precioEnvio: 0, vendido: 100000 },
+      { mes: "2026-10", metodoEnvio: "retiro", precioEnvio: 0, vendido: 60000 },
+      { mes: "2026-09", metodoEnvio: "syb", precioEnvio: 0, vendido: 50000 },
+    ],
+    3
+  );
+  const [octubre, septiembre] = reserva.meses;
+  ok(reserva.referencia.correo_argentino === 7000, "un envío gratis vale lo que pagaron en promedio los demás con ese método", reserva.referencia);
+  ok(octubre.gratis === 1 && octubre.absorbido === 7000 && octubre.pct === 3.5 && !octubre.seAleja, "el retiro no cuenta; 3,5 % está a menos de un punto de 3 %", octubre);
+  ok(septiembre.gratis === 1 && septiembre.sinValorar === 1 && septiembre.pct === 0 && septiembre.seAleja, "sin nadie que pagara ese método no se inventa un valor, y se dice", septiembre);
+
+  console.log(`\n${fallas ? `✗ ${fallas} de ${pruebas} fallaron` : `✓ ${pruebas} de ${pruebas}`}`);
+  process.exitCode = fallas ? 1 : 0;
+})();

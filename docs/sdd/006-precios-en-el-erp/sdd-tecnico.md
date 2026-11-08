@@ -58,7 +58,8 @@ Un archivo, `prisma/sql/precios-en-el-erp.sql`, aditivo.
 `leerPreciosMl()` suma, sin llamadas de más:
 
 - `attributes` de `/items?ids=` con `listing_type_id,category_id,shipping,sale_terms`.
-- `/users/{id}/shipping_options/free?item_id` sólo para las que tienen envío gratis.
+- `/users/{id}/shipping_options/free?item_id` para todas, también las que no tienen envío gratis: cotiza a su
+  precio. Con `dimensions` e `item_price` cotiza sin publicación (TASK-014).
 - `/sites/MLA/listing_prices?price&category_id` una vez por categoría (devuelve todos los tipos).
 - Los tramos del cargo fijo: se leen buscando los cortes con `listing_prices` en una categoría y
   se guardan en `tarifasMl`; se vuelven a leer si tienen más de un día.

@@ -1,7 +1,7 @@
 import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { getMlAccount, mlFetch } from "@/lib/mercadolibre";
-import { cargoFijo, RECARGO_CUOTAS_POR_DEFECTO, type TarifasMl } from "@/lib/tarifas-ml-reglas";
+import { cargoFijo, RECARGO_CUOTAS_POR_DEFECTO, type PaqueteMl, type TarifasMl } from "@/lib/tarifas-ml-reglas";
 
 export { cargoFijo, RECARGO_CUOTAS_POR_DEFECTO, type TarifasMl };
 
@@ -108,6 +108,32 @@ async function leerRecargoCobrado(
     porPublicacion: Object.fromEntries([...porPub].map(([mla, xs]) => [mla, Math.round(mediana(xs)! * 100) / 100])),
     ventas: todos.length,
   };
+}
+
+/**
+ * Lo que ML le cobraría al vendedor por el envío gratis de un paquete, sin publicación (docs/sdd/006,
+ * spec 006, RN-4). Sólo GET. Se comparó con 14 publicaciones activas el 2026-11-06 y dio igual al peso.
+ *
+ * Depende del precio: con 30x30x30 cm, $16.506 hasta $32.999, $11.790 hasta $49.999 y $13.090 desde
+ * $50.000. Por eso cada cálculo la pide con su precio. Sin `item_price`, `listing_type_id` y
+ * `condition` ML contesta otro número (el doble, medido), así que van siempre. `null` si ML no cotiza.
+ */
+export async function cotizarEnvioGratis(tenantId: string, paquete: PaqueteMl, precio: number): Promise<number | null> {
+  const cuenta = await getMlAccount(tenantId);
+  if (!cuenta) return null;
+  const q = new URLSearchParams({
+    dimensions: `${Math.ceil(paquete.alto)}x${Math.ceil(paquete.ancho)}x${Math.ceil(paquete.largo)},${Math.ceil(paquete.peso)}`,
+    item_price: String(Math.round(precio)),
+    listing_type_id: "gold_pro",
+    mode: "me2",
+    condition: "new",
+    free_shipping: "true",
+    verbose: "true",
+    currency_id: "ARS",
+  });
+  const r = await mlFetch<{ coverage?: { all_country?: { list_cost?: number } } }>(tenantId, `/users/${cuenta.mlUserId}/shipping_options/free?${q}`).catch(() => null);
+  const costo = r?.coverage?.all_country?.list_cost;
+  return costo && costo > 0 ? costo : null;
 }
 
 export async function tarifasGuardadas(tenantId: string): Promise<TarifasMl | null> {

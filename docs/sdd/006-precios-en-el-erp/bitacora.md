@@ -274,3 +274,22 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
   una publicación real. Se elige a mano en ML. Crear avisa, y Precios marca y calcula con 12,9 % una
   Premium sin campaña. Las publicaciones nuevas salen con `local_pick_up` (validate lo acepta; falta
   confirmarlo en una creación real).
+- (2026-11-06) TASK-014. `shipping_options/free` también cotiza con `dimensions`, sin publicación: igual al peso
+  en 14 de 14 publicaciones activas. Lo que no estaba en la spec: **cobra por tramos de precio** (30x30x30 cm:
+  $16.506 hasta $32.999, $11.790 hasta $49.999, $13.090 desde $50.000), así que precio y envío se recalculan hasta
+  coincidir. Sólo con las medidas, ML contesta el doble: hay que mandar precio, tipo y condición. Comprobado con el
+  borrador: Horda opción 2 $46.212 (antes $42.878), Ajedrez opción 1 $48.323, Tokito $65.656 y Sanemi $82.100, los
+  cuatro iguales a lo publicado. Publicaciones del mismo producto tienen medidas distintas (Sanemi 6x100x6 y
+  120x15x15): se toma la más grande, para no cotizar de menos.
+- (2026-11-06) Al probarlo apareció un error de antes: la primera vez que se abría el borrador de una categoría
+  nueva, el precio salía con la comisión de referencia, porque la comisión real se guardaba después de calcular.
+  Jabonera: $9.656 la primera vez, $8.989 la segunda. Ahora la categoría se resuelve primero. La prueba dejó las
+  comisiones de dos categorías en `tarifasMl`, lo mismo que hace abrir el formulario.
+- (2026-11-06) TASK-018 completa. La pantalla de tramos ya estaba. Faltaban REQ-4 (aviso en el producto: hoy ninguno
+  queda debajo del piso; el peor, Porta Auricular de Demonio, 24,7 % contra 14 % a 20 u) y REQ-5. **REQ-5 es
+  aproximado:** el Shop no guarda lo que sale el envío de un pedido gratis, así que se valora con el promedio de lo
+  pagado con ese método (Correo $7.346, SyB $5.243). Agosto 2,5 %, septiembre 0 %, octubre 5,6 %, noviembre 9,4 % con 3
+  pedidos. Octubre está inflado: 4 de sus 7 gratis fueron de unos $38.000 con el cupón JOJOSBR, y SS-00108 es de
+  septiembre pero llegó al ERP el 1/10.
+- (2026-11-06) TASK-016. Cerebro al día. Quedan abiertos en INV - Backlog el costo real del envío gratis (del Shop),
+  la línea "publicaría unos $X" y el corte de $30.000 contra los $33.000 que muestra ML.

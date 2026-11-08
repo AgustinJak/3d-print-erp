@@ -43,8 +43,9 @@ en un producto con variantes, variante por variante (el vaso BTS tiene 7).
 - **RN-3** El corte de $30.000 se mira sobre lo que paga el cliente en la opción 1. Si la opción 1
   queda abajo y la opción 2 arriba, la opción 2 igual lleva envío gratis: no cambia nada.
 - **RN-4** El costo del envío gratis es el real de la publicación (`shipping_options/free`). Para un
-  producto sin publicar, el que cotice ML con su peso y medidas si están cargados; si no, el de la
-  configuración, marcado como estimado.
+  producto sin publicar, el que cotice ML con su peso y medidas si están cargados (en el formulario o en
+  otra publicación del producto, la más grande); si no, el de la configuración, marcado como estimado. El
+  costo cambia con el precio, por tramos: se recalculan hasta coincidir.
 - **RN-5** El recargo por 3 cuotas es el cobrado en ventas reales (spec 003, RN-4). Agustín dice
   8,9 %.
 - **RN-6** Crear una publicación en ML es público y no se deshace solo: cada tanda se confirma

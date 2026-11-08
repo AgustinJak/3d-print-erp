@@ -2,6 +2,7 @@ import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { cargarContextoDePrecios, cargarDelErp, preciosDeCombinaciones, type ContextoDePrecios } from "@/lib/precios-combinacion";
 import { esRedondeo, margenesDeTramos, TRAMOS_WEB, type GastosVenta, type Redondeo } from "@/lib/precios-formula";
+import { compararReserva, type ComparacionDeReserva } from "@/lib/precios-reglas";
 
 /**
  * La configuración de precios del ERP (docs/sdd/006, spec 001): leerla, ver cómo quedaría un
@@ -131,6 +132,26 @@ export async function simular(tenantId: string, gastos: GastosVenta, redondeo: R
     };
   });
   return { ejemplos, tramos };
+}
+
+/** La reserva de la web contra lo que se absorbió en envíos gratis (spec 009, REQ-5): los pedidos de los últimos seis meses. */
+export async function reservaDeLaWeb(tenantId: string, reservaPct: number): Promise<ComparacionDeReserva> {
+  const desde = new Date();
+  desde.setDate(1);
+  desde.setMonth(desde.getMonth() - 6);
+  const pedidos = await prisma.pedido.findMany({
+    where: { tenantId, canalVenta: "shop", estado: { not: "CANCELADO" }, fechaPedido: { gte: desde } },
+    select: { fechaPedido: true, metodoEnvio: true, precioEnvio: true, items: { select: { precioUnitario: true, cantidad: true, ajusteManual: true } } },
+  });
+  return compararReserva(
+    pedidos.map((p) => ({
+      mes: `${p.fechaPedido.getFullYear()}-${String(p.fechaPedido.getMonth() + 1).padStart(2, "0")}`,
+      metodoEnvio: p.metodoEnvio,
+      precioEnvio: p.precioEnvio,
+      vendido: p.items.reduce((a, i) => a + i.precioUnitario * i.cantidad + i.ajusteManual, 0),
+    })),
+    reservaPct
+  );
 }
 
 /** Los gastos de hoy con los cambios pedidos, validados. */

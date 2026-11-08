@@ -2,10 +2,14 @@
 
 import { useEffect, useRef } from "react";
 
-const INTERVALO_MS = 15_000;
+/**
+ * Cada 30 s (antes 15) desde el 2026-11-08: con Pedidos o Stock abiertos todo el día, cada
+ * consulta es CPU de Vercel, y la cuenta llegó al límite del plan.
+ */
+const INTERVALO_MS = 30_000;
 /**
  * Tope de la espera cuando falla. Con la base caída cada pestaña abierta seguía preguntando
- * cada 15 s; ahora espera el doble cada vez (15 → 30 → 60 → 120 s) y vuelve a 15 s con la
+ * cada 15 s; ahora espera el doble cada vez (30 → 60 → 120 s) y vuelve a 30 s con la
  * primera respuesta buena.
  */
 const ESPERA_MAXIMA_MS = 120_000;
