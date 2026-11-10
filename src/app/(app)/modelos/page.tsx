@@ -1,246 +1,132 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
-import {
-  Plus, Search, FileBox, LayoutGrid, TableIcon, ChevronDown, SlidersHorizontal, ArrowUpDown, Box, Combine, Download, Loader2,
-} from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Box, ChevronDown, Download, Loader2, Plus, Search, Zap, Clock } from "lucide-react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { TableSkeleton } from "@/components/data-loading";
 import { EmptyState } from "@/components/empty-state";
 import { PiezasNuevas } from "@/components/producto/piezas-nuevas";
-import { costoModelo } from "@/lib/costos";
-import { CrearMlMasivo, type ItemACrear } from "@/components/producto/crear-ml-masivo";
-import type { CanalesDeModelo } from "@/app/api/modelos/canales/route";
+import { CrearMlMasivo } from "@/components/producto/crear-ml-masivo";
 import { ConfirmarFlex } from "@/components/precios/confirmar-flex";
+import { FiltrosDeProductos, filtrosPuestos, type Vista } from "@/components/productos/filtros";
+import { TablaDeProductos, TarjetasDeProductos } from "@/components/productos/tabla";
+import {
+  agrupar as agruparFilas,
+  alternar,
+  estadoDeTilde,
+  filtrar,
+  filtraVariantes,
+  FILTROS_INICIALES,
+  ordenar,
+  resumir,
+  type Agrupar,
+  type CanalesDeModelo,
+  type CategoriaLista,
+  type Filtros,
+  type Orden,
+  type ProductoLista,
+  type RespuestaDeCanales,
+  type ResumenDeSeleccion,
+} from "@/lib/productos-lista";
 
-/* ─── Types ────────────────────────────────────────────── */
+/**
+ * Productos (docs/sdd/008). Los precios se manejan en Precios: acá se ve dónde está publicado cada
+ * producto, su stock y lo que vende, y se hace en cantidad lo de todos los días (crear en ML, la
+ * entrega, activar). Lo que se elige es cada variante, y lo elegido se acumula aunque cambien los
+ * filtros: así se arma una tanda de a grupos.
+ */
 
-interface Categoria {
-  id: string;
-  nombre: string;
-  color: string | null;
+const PREFERENCIAS = "productos:vista";
+const ORDENES: Orden[] = ["nuevo", "antiguo", "az", "za", "vendidos30", "menos_vendidos30", "vendidos", "stock_mas", "stock_menos", "costo_mas", "costo_menos"];
+
+interface Preferencias {
+  orden: Orden;
+  agrupar: Agrupar;
+  vista: Vista;
+  verVariantes: boolean;
 }
 
-interface Variante {
-  nombre: string;
+function leerPreferencias(): Partial<Preferencias> {
+  try {
+    const p = JSON.parse(localStorage.getItem(PREFERENCIAS) ?? "{}") as Partial<Preferencias>;
+    return {
+      orden: ORDENES.includes(p.orden as Orden) ? p.orden : undefined,
+      agrupar: p.agrupar === "serie" || p.agrupar === "categoria" || p.agrupar === "nada" ? p.agrupar : undefined,
+      vista: p.vista === "tarjetas" || p.vista === "tabla" ? p.vista : undefined,
+      verVariantes: typeof p.verVariantes === "boolean" ? p.verVariantes : undefined,
+    };
+  } catch {
+    return {};
+  }
 }
 
-interface ModeloRef {
-  id: string;
-  nombre: string;
-}
-
-interface Modelo {
-  id: string;
-  nombre: string;
-  sku: string | null;
-  serie: string | null;
-  consolidadoEnId?: string | null;
-  consolidadoEn?: ModeloRef | null;
-  pesoGr: number | null;
-  costoFab: number;
-  costoInsumos: number;
-  precioVenta: number;
-  precioCreditoPorc: number;
-  precioMayorista: number | null;
-  precioPromo: number | null;
-  notas: string | null;
-  archivo3mfUrl: string | null;
-  imagenUrl: string | null;
-  imagenesUrls: string[];
-  activo: boolean;
-  esInsumo?: boolean;
-  creadoEn: string;
-  categorias: Array<{
-    categoria: Categoria;
-  }>;
-  variantes: Variante[];
-}
-
-type ViewMode = "table" | "cards";
-
-/* ─── Category Filter Dropdown ─────────────────────────── */
-
-function CategoryFilter({
-  categorias,
-  selected,
-  onChange,
-}: {
-  categorias: Categoria[];
-  selected: string[];
-  onChange: (ids: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
-
-  const toggle = (id: string) => {
-    onChange(
-      selected.includes(id)
-        ? selected.filter((s) => s !== id)
-        : [...selected, id]
-    );
-  };
-
-  return (
-    <div className="relative" ref={ref}>
-      <Button
-        variant="outline"
-        className="w-full justify-between"
-        onClick={() => setOpen(!open)}
-        type="button"
-      >
-        <span className="truncate text-left">
-          {selected.length === 0
-            ? "Todas las categorías"
-            : `${selected.length} categoría${selected.length > 1 ? "s" : ""}`}
-        </span>
-        <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-      </Button>
-      {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md">
-          {categorias.length === 0 && (
-            <p className="px-2 py-1.5 text-sm text-muted-foreground">Sin categorías</p>
-          )}
-          {categorias.map((c) => (
-            <label
-              key={c.id}
-              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
-            >
-              <input
-                type="checkbox"
-                checked={selected.includes(c.id)}
-                onChange={() => toggle(c.id)}
-                className="h-4 w-4 rounded border-input accent-primary"
-              />
-              {c.color && (
-                <span
-                  className="h-3 w-3 rounded-full shrink-0"
-                  style={{ backgroundColor: c.color }}
-                />
-              )}
-              {c.nombre}
-            </label>
-          ))}
-          {selected.length > 0 && (
-            <button
-              type="button"
-              className="mt-1 w-full rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-              onClick={() => onChange([])}
-            >
-              Limpiar filtro
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ─── Category Badges ──────────────────────────────────── */
-
-/** Cómo está el producto en Mercado Libre: publicaciones activas, pausadas, o sin publicar. */
-function EstadoMl({ c }: { c: CanalesDeModelo | undefined }) {
-  const total = c ? c.ml.activas + c.ml.pausadas + c.ml.otras : 0;
-  if (!total) return <span className="text-xs text-muted-foreground">Sin publicar</span>;
-  const partes = [c!.ml.activas ? `${c!.ml.activas} activa${c!.ml.activas === 1 ? "" : "s"}` : null, c!.ml.pausadas ? `${c!.ml.pausadas} pausada${c!.ml.pausadas === 1 ? "" : "s"}` : null, c!.ml.otras ? `${c!.ml.otras} sin leer` : null].filter(Boolean);
-  return (
-    <span className="text-xs">
-      {partes.join(" · ")}
-      {(c!.entrega.flex > 0 || c!.entrega.aPedido > 0) && (
-        <span className="block text-muted-foreground">
-          {[c!.entrega.flex ? `${c!.entrega.flex} con Flex` : null, c!.entrega.aPedido ? `${c!.entrega.aPedido} a pedido` : null].filter(Boolean).join(" · ")}
-        </span>
-      )}
-      {c!.sinMl.length > 0 && <span className="block text-amber-600 dark:text-amber-400">{c!.sinMl.length} sin publicar</span>}
-    </span>
-  );
-}
-
-function CategoriaBadges({ categorias }: { categorias: Modelo["categorias"] }) {
-  if (!categorias || categorias.length === 0) return <span className="text-muted-foreground text-sm">—</span>;
-  return (
-    <div className="flex flex-wrap gap-1">
-      {categorias.map(({ categoria: c }) => (
-        <Badge
-          key={c.id}
-          variant="outline"
-          className="gap-1"
-          style={c.color ? { borderColor: c.color, color: c.color } : undefined}
-        >
-          {c.color && (
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c.color }} />
-          )}
-          {c.nombre}
-        </Badge>
-      ))}
-    </div>
-  );
-}
-
-/* ─── Helpers ──────────────────────────────────────────── */
-
-function formatPrice(n: number) {
-  return `$${n.toLocaleString("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-}
-
-/* ═══════════════════════════════════════════════════════ */
+const cuantos = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
 
 export default function ModelosPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [modelos, setModelos] = useState<Modelo[]>([]);
-  const [categorias, setCategorias] = useState<Categoria[]>([]);
-  const [search, setSearch] = useState("");
-  const [filterCategoriaIds, setFilterCategoriaIds] = useState<string[]>([]);
-  const [filterEstado, setFilterEstado] = useState<"todos" | "activos" | "inactivos" | "insumos">("activos");
-  const [filterExtras, setFilterExtras] = useState<{ con3mf: boolean; conImagen: boolean; conVariantes: boolean }>({ con3mf: false, conImagen: false, conVariantes: false });
-  const [sortBy, setSortBy] = useState<"nuevo" | "antiguo" | "az" | "za">("nuevo");
-  const [showExtraFilters, setShowExtraFilters] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>("table");
+  const [modelos, setModelos] = useState<ProductoLista[]>([]);
+  const [categorias, setCategorias] = useState<CategoriaLista[]>([]);
+  const [canales, setCanales] = useState<Record<string, CanalesDeModelo>>({});
+  const [leidoEn, setLeidoEn] = useState<string | null>(null);
+  const [filtros, setFiltros] = useState<Filtros>(FILTROS_INICIALES);
+  const [orden, setOrden] = useState<Orden>("nuevo");
+  const [agrupar, setAgrupar] = useState<Agrupar>("nada");
+  const [vista, setVista] = useState<Vista>("tabla");
+  const [verVariantes, setVerVariantes] = useState(false);
+  const [mostrarConsolidados, setMostrarConsolidados] = useState(false);
   // "Nuevo producto": sólo el nombre; el resto se completa en su página (docs/sdd/004, spec 001).
   const [nuevo, setNuevo] = useState<{ nombre: string; serie: string } | null>(null);
   const [creando, setCreando] = useState(false);
   const [trayendo, setTrayendo] = useState(false);
   const [versionPiezas, setVersionPiezas] = useState(0);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [mostrarConsolidados, setMostrarConsolidados] = useState(false);
-  const [filterSku, setFilterSku] = useState<"todos" | "con" | "sin">("todos");
-  // Dónde está publicado cada producto, y lo que se hace en cantidad (Agustín, 2026-11-02). Los
-  // precios se manejan en Precios: acá no se muestran ni se ordena por ellos.
-  const [canales, setCanales] = useState<Record<string, CanalesDeModelo>>({});
-  const [filterMl, setFilterMl] = useState<"todos" | "publicados" | "pausados" | "sin">("todos");
-  const [filterWeb, setFilterWeb] = useState<"todos" | "si" | "no">("todos");
+  // Claves de variante (o `m:<id>` para un producto sin variantes activas).
   const [elegidos, setElegidos] = useState<Set<string>>(new Set());
   const [masivo, setMasivo] = useState<"crear" | "activar" | "desactivar" | "inmediata" | "a_pedido" | null>(null);
   const [aplicandoMasivo, setAplicandoMasivo] = useState(false);
+  // Lo que se manda queda fijo al abrir el diálogo: si no, al refrescar la lista después de aplicar
+  // el diálogo volvería a leer ML o perdería sus resultados.
+  const [tanda, setTanda] = useState<{ mlas: string[]; aCrear: ResumenDeSeleccion["aCrear"] }>({ mlas: [], aCrear: [] });
 
-  /* ─── Fetch ───────────────────────────────────────── */
+  /* ─── Preferencias de la vista: quedan en el navegador ─── */
+
+  useEffect(() => {
+    const p = leerPreferencias();
+    // Se leen después del primer dibujo: en el servidor no hay navegador.
+    if (p.orden) setOrden(p.orden);
+    if (p.agrupar) setAgrupar(p.agrupar);
+    if (p.vista) setVista(p.vista);
+    if (p.verVariantes != null) setVerVariantes(p.verVariantes);
+  }, []);
+
+  const guardar = (cambio: Partial<Preferencias>) => {
+    try {
+      localStorage.setItem(PREFERENCIAS, JSON.stringify({ orden, agrupar, vista, verVariantes, ...cambio }));
+    } catch {
+      // Sin almacenamiento (modo privado): la vista funciona igual, sólo no se recuerda.
+    }
+  };
+
+  /* ─── Datos ───────────────────────────────────────── */
 
   const fetchModelos = useCallback(async () => {
     const consolidados = mostrarConsolidados ? "incluir" : "ocultar";
     const [res, can] = await Promise.all([fetch(`/api/modelos?consolidados=${consolidados}`), fetch("/api/modelos/canales")]);
     setModelos(await res.json());
-    if (can.ok) setCanales(await can.json());
+    if (can.ok) {
+      const r = (await can.json()) as RespuestaDeCanales;
+      setCanales(r.modelos ?? {});
+      setLeidoEn(r.leidoEn ?? null);
+    }
   }, [mostrarConsolidados]);
 
   const fetchCategorias = useCallback(async () => {
@@ -267,62 +153,35 @@ export default function ModelosPage() {
     }
   }, [searchParams, router]);
 
-  if (initialLoading) return <TableSkeleton cols={8} />;
+  /* ─── Lo que se ve y lo elegido ────────────────────── */
 
-  /* ─── Filter ──────────────────────────────────────── */
+  const filas = useMemo(() => ordenar(filtrar(modelos, canales, filtros), orden), [modelos, canales, filtros, orden]);
+  const grupos = useMemo(() => agruparFilas(filas, agrupar, orden), [filas, agrupar, orden]);
+  const clavesALaVista = useMemo(() => [...new Set(filas.flatMap((f) => f.unidades.map((u) => u.clave)))], [filas]);
+  const resumen = useMemo(() => resumir(modelos, canales, elegidos), [modelos, canales, elegidos]);
+  const sku = useMemo(() => {
+    const base = modelos.filter((m) => m.activo && !m.consolidadoEnId && !m.esInsumo);
+    return { total: base.length, con: base.filter((m) => m.sku).length };
+  }, [modelos]);
 
-  const filtered = modelos
-    .filter((m) => {
-      const matchSearch =
-        m.nombre.toLowerCase().includes(search.toLowerCase()) ||
-        m.serie?.toLowerCase().includes(search.toLowerCase());
-      const matchCategoria =
-        filterCategoriaIds.length === 0 ||
-        m.categorias.some(({ categoria }) => filterCategoriaIds.includes(categoria.id));
-      const matchEstado =
-        filterEstado === "insumos" ? !!m.esInsumo :
-        m.esInsumo ? false :
-        filterEstado === "todos" ? true :
-        filterEstado === "activos" ? m.activo :
-        !m.activo;
-      const match3mf = !filterExtras.con3mf || !!m.archivo3mfUrl;
-      const matchImagen = !filterExtras.conImagen || !!m.imagenUrl;
-      const matchVariantes = !filterExtras.conVariantes || (m.variantes && m.variantes.length > 0);
-      const matchSku =
-        filterSku === "todos" ? true :
-        filterSku === "con" ? !!m.sku :
-        !m.sku;
-      const c = canales[m.id];
-      const matchMl =
-        filterMl === "todos" ? true :
-        filterMl === "publicados" ? (c?.ml.activas ?? 0) > 0 :
-        filterMl === "pausados" ? (c?.ml.pausadas ?? 0) > 0 :
-        !c || c.ml.activas + c.ml.pausadas + c.ml.otras === 0 || c.sinMl.length > 0;
-      const matchWeb = filterWeb === "todos" ? true : filterWeb === "si" ? (c?.web ?? 0) > 0 : !c || c.web === 0;
-      return matchSearch && matchCategoria && matchEstado && match3mf && matchImagen && matchVariantes && matchSku && matchMl && matchWeb;
-    })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case "az": return a.nombre.localeCompare(b.nombre, "es");
-        case "za": return b.nombre.localeCompare(a.nombre, "es");
-        case "antiguo": return new Date(a.creadoEn).getTime() - new Date(b.creadoEn).getTime();
-        default: return new Date(b.creadoEn).getTime() - new Date(a.creadoEn).getTime();
-      }
-    });
+  if (initialLoading) return <TableSkeleton cols={7} />;
+
+  const onAlternar = (claves: string[]) => setElegidos((prev) => alternar(prev, claves));
+  const abrirMasivo = (que: NonNullable<typeof masivo>) => {
+    setTanda({ mlas: resumen.mlas, aCrear: resumen.aCrear });
+    setMasivo(que);
+  };
+  const variantesALaVista = filas.reduce((s, f) => s + f.unidades.filter((u) => u.comb).length, 0);
+  const todoElegido = estadoDeTilde(clavesALaVista, elegidos) === "todas";
+  const hayConVariantes = filas.some((f) => f.todas.length > 1);
 
   /* ─── En cantidad ────────────────────────────────── */
-
-  // Las combinaciones sin publicar en ML de los productos elegidos.
-  const itemsACrear: ItemACrear[] = [...elegidos].flatMap((id) => (canales[id]?.sinMl ?? []).map((c) => ({ modeloId: id, combinacionId: c.id, nombre: c.nombre })));
-
-  // Las publicaciones de ML (activas y pausadas) de los productos elegidos, para la entrega.
-  const mlasElegidas = [...new Set([...elegidos].flatMap((id) => canales[id]?.mlas ?? []))];
 
   const cambiarActivo = async () => {
     const activo = masivo === "activar";
     setAplicandoMasivo(true);
     let ok = 0;
-    for (const id of elegidos) {
+    for (const id of resumen.productos) {
       const r = await fetch(`/api/modelos/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ activo }) });
       if (r.ok) ok++;
     }
@@ -391,7 +250,6 @@ export default function ModelosPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h1 className="text-2xl font-bold">Productos</h1>
         <div className="flex items-center gap-2">
@@ -406,470 +264,156 @@ export default function ModelosPage() {
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="space-y-2">
-        {/* Row 1: search + sort + view toggle */}
-        <div className="flex flex-wrap gap-2 items-center">
-          <div className="relative flex-1 min-w-[180px]">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Buscar producto o serie..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-
-          {/* Sort */}
-          <div className="relative">
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-              className="h-9 rounded-md border border-input bg-background px-3 pr-8 text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring min-w-[170px]"
-            >
-              <option value="nuevo">⬇ Más reciente</option>
-              <option value="antiguo">⬆ Más antiguo</option>
-              <option value="az">A → Z</option>
-              <option value="za">Z → A</option>
-            </select>
-            <ArrowUpDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          </div>
-
-          {/* Estado filter */}
-          <div className="inline-flex rounded-md border text-sm overflow-hidden">
-            {(["todos", "activos", "inactivos", "insumos"] as const).map((e) => (
-              <button
-                key={e}
-                type="button"
-                onClick={() => setFilterEstado(e)}
-                className={`px-3 h-9 capitalize transition-colors ${
-                  filterEstado === e
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-background hover:bg-muted"
-                } ${e !== "todos" ? "border-l" : ""}`}
-              >
-                {e}
-              </button>
-            ))}
-          </div>
-
-          {/* Mostrar consolidados toggle */}
-          <Button
-            variant={mostrarConsolidados ? "default" : "outline"}
-            size="sm"
-            className="gap-1.5 h-9"
-            onClick={() => setMostrarConsolidados(!mostrarConsolidados)}
-            type="button"
-            title="Mostrar productos que fueron consolidados en otro"
-          >
-            <Combine className="h-3.5 w-3.5" />
-            {mostrarConsolidados ? "Ocultar consolidados" : "Mostrar consolidados"}
-          </Button>
-
-          {/* Extra filters toggle */}
-          <Button
-            variant={showExtraFilters ? "default" : "outline"}
-            size="sm"
-            className="gap-1.5 h-9"
-            onClick={() => setShowExtraFilters(!showExtraFilters)}
-            type="button"
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            Filtros
-            {(filterExtras.con3mf || filterExtras.conImagen || filterExtras.conVariantes) && (
-              <span className="ml-0.5 h-2 w-2 rounded-full bg-primary-foreground" />
-            )}
-          </Button>
-
-          {/* View mode */}
-          <div className="inline-flex rounded-md border ml-auto">
-            <Button
-              variant={viewMode === "table" ? "default" : "ghost"}
-              size="icon"
-              className="rounded-r-none h-9 w-9"
-              onClick={() => setViewMode("table")}
-              title="Vista tabla"
-            >
-              <TableIcon className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === "cards" ? "default" : "ghost"}
-              size="icon"
-              className="rounded-l-none h-9 w-9"
-              onClick={() => setViewMode("cards")}
-              title="Vista tarjetas"
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-
-        {/* Row 2: category filter + extra filters (collapsible) */}
-        <div className="flex flex-wrap gap-2 items-center">
-          <div className="w-56">
-            <CategoryFilter
-              categorias={categorias}
-              selected={filterCategoriaIds}
-              onChange={setFilterCategoriaIds}
-            />
-          </div>
-
-          {showExtraFilters && (
-            <div className="flex flex-wrap gap-3 items-center">
-              {([
-                { key: "con3mf", label: "Con archivo 3MF" },
-                { key: "conImagen", label: "Con imagen" },
-                { key: "conVariantes", label: "Con variantes" },
-              ] as const).map(({ key, label }) => (
-                <label key={key} className="flex items-center gap-2 text-sm cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={filterExtras[key]}
-                    onChange={() => setFilterExtras(prev => ({ ...prev, [key]: !prev[key] }))}
-                    className="h-4 w-4 rounded border-input accent-primary"
-                  />
-                  {label}
-                </label>
-              ))}
-              {(filterExtras.con3mf || filterExtras.conImagen || filterExtras.conVariantes) && (
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground hover:text-foreground underline"
-                  onClick={() => setFilterExtras({ con3mf: false, conImagen: false, conVariantes: false })}
-                >
-                  Limpiar
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* SKU filter + counter */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-muted-foreground">SKU:</span>
-            <div className="inline-flex rounded-md border text-xs overflow-hidden">
-              {(["todos", "con", "sin"] as const).map((e, i) => (
-                <button
-                  key={e}
-                  type="button"
-                  onClick={() => setFilterSku(e)}
-                  className={`px-2.5 py-1 capitalize transition-colors ${
-                    filterSku === e
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-background hover:bg-muted"
-                  } ${i > 0 ? "border-l" : ""}`}
-                >
-                  {e === "todos" ? "Todos" : e === "con" ? "Con SKU" : "Sin SKU"}
-                </button>
-              ))}
-            </div>
-            {(() => {
-              const total = modelos.filter((m) => m.activo && !m.consolidadoEnId && !m.esInsumo).length;
-              const conSku = modelos.filter((m) => m.activo && !m.consolidadoEnId && !m.esInsumo && m.sku).length;
-              const sinSku = total - conSku;
-              return (
-                <button
-                  type="button"
-                  onClick={() => setFilterSku(sinSku > 0 ? "sin" : "todos")}
-                  className={`text-xs hover:underline decoration-dotted underline-offset-4 ${
-                    sinSku > 0 ? "text-amber-500" : "text-muted-foreground"
-                  }`}
-                  title={sinSku > 0 ? "Click para ver los que faltan" : "Todos los productos tienen SKU"}
-                >
-                  {conSku}/{total} con SKU
-                </button>
-              );
-            })()}
-          </div>
-
-          {/* Dónde está publicado */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-muted-foreground">Mercado Libre:</span>
-            <div className="inline-flex rounded-md border text-xs overflow-hidden">
-              {([["todos", "Todos"], ["publicados", "Publicados"], ["pausados", "Pausados"], ["sin", "Sin publicar"]] as const).map(([v, t], i) => (
-                <button key={v} type="button" onClick={() => setFilterMl(v)} className={`px-2.5 py-1 transition-colors ${filterMl === v ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"} ${i > 0 ? "border-l" : ""}`}>
-                  {t}
-                </button>
-              ))}
-            </div>
-            <span className="text-xs text-muted-foreground">Web:</span>
-            <div className="inline-flex rounded-md border text-xs overflow-hidden">
-              {([["todos", "Todos"], ["si", "En la web"], ["no", "No está"]] as const).map(([v, t], i) => (
-                <button key={v} type="button" onClick={() => setFilterWeb(v)} className={`px-2.5 py-1 transition-colors ${filterWeb === v ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"} ${i > 0 ? "border-l" : ""}`}>
-                  {t}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Results count */}
-          <span className="text-xs text-muted-foreground ml-auto">
-            {filtered.length} producto{filtered.length !== 1 ? "s" : ""}
-          </span>
-        </div>
-      </div>
+      <FiltrosDeProductos
+        f={filtros}
+        onFiltros={(cambio) => setFiltros((prev) => ({ ...prev, ...cambio }))}
+        categorias={categorias}
+        orden={orden}
+        onOrden={(o) => {
+          setOrden(o);
+          guardar({ orden: o });
+        }}
+        agrupar={agrupar}
+        onAgrupar={(a) => {
+          setAgrupar(a);
+          guardar({ agrupar: a });
+        }}
+        vista={vista}
+        onVista={(v) => {
+          setVista(v);
+          guardar({ vista: v });
+        }}
+        consolidados={mostrarConsolidados}
+        onConsolidados={setMostrarConsolidados}
+        sku={sku}
+      />
 
       {/* Piezas de Bodega que no entraron solas (docs/sdd/004, spec 005) */}
       <PiezasNuevas key={versionPiezas} onCambio={fetchModelos} />
 
-      {/* Lo que se hace en cantidad: tildar productos en la tabla */}
-      {elegidos.size > 0 && (
-        <Card className="flex flex-wrap items-center gap-2 p-3 border-primary/40 sticky top-2 z-10">
-          <span className="text-sm font-medium">
-            {elegidos.size} {elegidos.size === 1 ? "producto elegido" : "productos elegidos"}
+      {/* Qué se ve, y elegirlo todo de una */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span className="tabular-nums">
+          {cuantos(filas.length, "producto", "productos")}
+          {variantesALaVista > filas.length && ` · ${variantesALaVista} variantes`}
+          {filtraVariantes(filtros) && " que pasan los filtros"}
+        </span>
+        {filas.length > 0 && (
+          <button type="button" className="text-primary hover:underline" onClick={() => onAlternar(clavesALaVista)}>
+            {todoElegido ? "Quitar de lo elegido todo lo que se ve" : filtrosPuestos(filtros) > 0 ? "Elegir todo lo que pasa los filtros" : "Elegir todo"}
+          </button>
+        )}
+        {hayConVariantes && vista === "tabla" && (
+          <button
+            type="button"
+            className="text-primary hover:underline"
+            onClick={() => {
+              setVerVariantes(!verVariantes);
+              guardar({ verVariantes: !verVariantes });
+            }}
+          >
+            {verVariantes ? "Cerrar las variantes" : "Abrir todas las variantes"}
+          </button>
+        )}
+        {leidoEn && (
+          <span className="ml-auto">
+            Mercado Libre según la lectura del {new Date(leidoEn).toLocaleString("es-AR", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })} ·{" "}
+            <Link href="/precios" className="text-primary hover:underline">
+              leer de nuevo en Precios
+            </Link>
           </span>
-          <Button size="sm" onClick={() => setMasivo("crear")} disabled={!itemsACrear.length} title={!itemsACrear.length ? "Todos ya están publicados en ML" : undefined}>
-            Crear en ML ({itemsACrear.length})
+        )}
+      </div>
+
+      {/* Lo que se hace en cantidad, con lo elegido */}
+      {resumen.unidades > 0 && (
+        <Card className="flex flex-row flex-wrap items-center gap-2 p-3 border-primary/40 sticky top-2 z-10 shadow-md">
+          <div className="mr-1">
+            <p className="text-sm font-medium leading-tight">
+              {resumen.productosAMedias === 0 && resumen.unidades === resumen.productos.length
+                ? cuantos(resumen.productos.length, "producto elegido", "productos elegidos")
+                : `${cuantos(resumen.unidades, "variante elegida", "variantes elegidas")} de ${cuantos(resumen.productos.length, "producto", "productos")}`}
+            </p>
+            {resumen.conStock.length > 0 && resumen.sinStock.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                <button type="button" className="hover:text-primary hover:underline" title="Dejar elegidas sólo las que tienen stock" onClick={() => setElegidos(new Set(resumen.conStock))}>
+                  {resumen.conStock.length} con stock
+                </button>
+                {" · "}
+                <button type="button" className="hover:text-primary hover:underline" title="Dejar elegidas sólo las que no tienen stock" onClick={() => setElegidos(new Set(resumen.sinStock))}>
+                  {resumen.sinStock.length} sin stock
+                </button>
+                <span className="hidden sm:inline"> · tocá uno para quedarte sólo con esas</span>
+              </p>
+            )}
+          </div>
+          <Button size="sm" variant="outline" onClick={() => abrirMasivo("inmediata")} disabled={!resumen.mlas.length} title="En ML: sin tiempo de disponibilidad y con Flex">
+            <Zap className="h-3.5 w-3.5" /> Con stock: Flex ({resumen.mlas.length})
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setMasivo("inmediata")} disabled={!mlasElegidas.length} title="En ML: sin tiempo de disponibilidad y con Flex">
-            Con stock: Flex ({mlasElegidas.length})
+          <Button size="sm" variant="outline" onClick={() => abrirMasivo("a_pedido")} disabled={!resumen.mlas.length} title="En ML: sin Flex y con días de disponibilidad">
+            <Clock className="h-3.5 w-3.5" /> Sin stock: a pedido ({resumen.mlas.length})
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setMasivo("a_pedido")} disabled={!mlasElegidas.length} title="En ML: sin Flex y con días de disponibilidad">
-            Sin stock: a pedido ({mlasElegidas.length})
+          <Button size="sm" variant="outline" onClick={() => abrirMasivo("crear")} disabled={!resumen.aCrear.length} title={!resumen.aCrear.length ? "Todo lo elegido ya está publicado en ML" : undefined}>
+            Crear en ML ({resumen.aCrear.length})
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setMasivo("activar")}>
-            Activar
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setMasivo("desactivar")}>
-            Desactivar
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
+              Más <ChevronDown className="h-3.5 w-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={() => abrirMasivo("activar")}>Activar {cuantos(resumen.productos.length, "producto", "productos")}</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => abrirMasivo("desactivar")}>Desactivar {cuantos(resumen.productos.length, "producto", "productos")}</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setElegidos(new Set())}>
             Limpiar
           </Button>
         </Card>
       )}
 
-      {/* Content */}
-      {filtered.length === 0 ? (
+      {/* La lista */}
+      {filas.length === 0 ? (
         modelos.length === 0 ? (
-          <EmptyState
-            icon={Box}
-            title="Sin productos registrados"
-            description="Creá la pieza en Bodega y aparece acá sola, o creá el producto a mano."
-            actionLabel="Nuevo producto"
-            onAction={() => setNuevo({ nombre: "", serie: "" })}
-          />
+          <EmptyState icon={Box} title="Sin productos registrados" description="Creá la pieza en Bodega y aparece acá sola, o creá el producto a mano." actionLabel="Nuevo producto" onAction={() => setNuevo({ nombre: "", serie: "" })} />
         ) : (
-          <EmptyState
-            icon={Search}
-            title="Sin resultados"
-            description="No se encontraron productos con esos filtros."
-          />
+          <EmptyState icon={Search} title="Sin resultados" description="Ningún producto pasa esos filtros." actionLabel="Sacar filtros" onAction={() => setFiltros({ ...FILTROS_INICIALES, estado: filtros.estado })} />
         )
-      ) : viewMode === "cards" ? (
-        /* ─── Card View ─────────────────────────────── */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filtered.map((m) => (
-            <Card
-              key={m.id}
-              className="cursor-pointer overflow-hidden transition-shadow hover:shadow-lg"
-              onClick={() => router.push(`/modelos/${m.id}`)}
-            >
-              {/* Image */}
-              <div className="relative aspect-square w-full bg-muted">
-                {m.imagenUrl ? (
-                  <img
-                    src={m.imagenUrl}
-                    alt={m.nombre}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center">
-                    <FileBox className="h-12 w-12 text-muted-foreground/40" />
-                  </div>
-                )}
-                {/* Active badge */}
-                {!m.activo && (
-                  <Badge variant="destructive" className="absolute top-2 right-2">
-                    Inactivo
-                  </Badge>
-                )}
-              </div>
-              {/* Info */}
-              <div className="space-y-2 px-4 pb-4">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-semibold truncate" title={m.nombre}>
-                    {m.nombre}
-                  </h3>
-                  {!m.sku && !m.consolidadoEn && !m.esInsumo && (
-                    <Badge variant="outline" className="border-amber-500/40 text-amber-500 text-[10px] py-0 px-1.5 shrink-0">
-                      Sin SKU
-                    </Badge>
-                  )}
-                </div>
-                <EstadoMl c={canales[m.id]} />
-                <CategoriaBadges categorias={m.categorias} />
-                {m.consolidadoEn && (
-                  <p className="text-xs text-amber-500 truncate">
-                    ↪ Consolidado en {m.consolidadoEn.nombre}
-                  </p>
-                )}
-              </div>
-            </Card>
-          ))}
-        </div>
+      ) : vista === "tarjetas" ? (
+        <TarjetasDeProductos grupos={grupos} agrupado={agrupar !== "nada"} elegidos={elegidos} onAlternar={onAlternar} onAbrir={(id) => router.push(`/modelos/${id}`)} />
       ) : (
-        <div>
-        <div className="hidden md:block rounded-md border overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-8">
-                  <input
-                    type="checkbox"
-                    aria-label="Elegir todos"
-                    checked={filtered.length > 0 && filtered.every((m) => elegidos.has(m.id))}
-                    onChange={(e) => setElegidos(e.target.checked ? new Set(filtered.map((m) => m.id)) : new Set())}
-                  />
-                </TableHead>
-                <TableHead className="w-[60px]">Imagen</TableHead>
-                <TableHead className="min-w-[140px]">Nombre</TableHead>
-                <TableHead>Categorías</TableHead>
-                <TableHead className="text-right">Costo</TableHead>
-                <TableHead>Mercado Libre</TableHead>
-                <TableHead>Web</TableHead>
-                <TableHead>Estado</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((m) => {
-                return (
-                  <TableRow
-                    key={m.id}
-                    className={`cursor-pointer hover:bg-muted/50 ${elegidos.has(m.id) ? "bg-primary/5" : ""}`}
-                    onClick={() => router.push(`/modelos/${m.id}`)}
-                  >
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        aria-label={`Elegir ${m.nombre}`}
-                        checked={elegidos.has(m.id)}
-                        onChange={(e) =>
-                          setElegidos((prev) => {
-                            const s = new Set(prev);
-                            if (e.target.checked) s.add(m.id);
-                            else s.delete(m.id);
-                            return s;
-                          })
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {m.imagenUrl ? (
-                        <img
-                          src={m.imagenUrl}
-                          alt={m.nombre}
-                          className="h-10 w-10 rounded object-cover"
-                        />
-                      ) : (
-                        <div className="h-10 w-10 rounded bg-muted flex items-center justify-center">
-                          <FileBox className="h-5 w-5 text-muted-foreground" />
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium">{m.nombre}</span>
-                          {!m.sku && !m.consolidadoEn && !m.esInsumo && (
-                            <Badge variant="outline" className="border-amber-500/40 text-amber-500 text-[10px] py-0 px-1.5">
-                              Sin SKU
-                            </Badge>
-                          )}
-                          {m.sku && (
-                            <code className="text-[10px] text-muted-foreground font-mono">{m.sku}</code>
-                          )}
-                        </div>
-                        {m.serie && (
-                          <span className="block text-xs text-muted-foreground">{m.serie}</span>
-                        )}
-                        {m.consolidadoEn && (
-                          <span className="block text-xs text-amber-500 mt-0.5">
-                            ↪ Consolidado en {m.consolidadoEn.nombre}
-                          </span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <CategoriaBadges categorias={m.categorias} />
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatPrice(costoModelo(m))}
-                      {m.costoInsumos > 0 && (
-                        <div className="text-[10px] text-muted-foreground">
-                          {formatPrice(m.costoFab)} + {formatPrice(m.costoInsumos)} insumos
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <EstadoMl c={canales[m.id]} />
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {(canales[m.id]?.web ?? 0) > 0 ? <span>En la web</span> : <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={m.activo ? "default" : "destructive"}>
-                        {m.activo ? "Activo" : "Inactivo"}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-        {/* Mobile fallback: show cards when table mode on small screens */}
-        <div className="md:hidden grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {filtered.map((m) => (
-            <Card
-              key={m.id}
-              className="cursor-pointer overflow-hidden transition-shadow hover:shadow-lg"
-              onClick={() => router.push(`/modelos/${m.id}`)}
-            >
-              <div className="relative aspect-square w-full bg-muted">
-                {m.imagenUrl ? (
-                  <img src={m.imagenUrl} alt={m.nombre} className="h-full w-full object-cover" />
-                ) : (
-                  <div className="h-full w-full flex items-center justify-center">
-                    <FileBox className="h-12 w-12 text-muted-foreground/30" />
-                  </div>
-                )}
-                {!m.activo && (
-                  <Badge variant="destructive" className="absolute top-2 right-2 text-[10px]">Inactivo</Badge>
-                )}
-              </div>
-              <div className="p-3 space-y-1">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-medium text-sm truncate">{m.nombre}</h3>
-                  {!m.sku && !m.consolidadoEn && !m.esInsumo && (
-                    <Badge variant="outline" className="border-amber-500/40 text-amber-500 text-[10px] py-0 px-1 shrink-0">
-                      Sin SKU
-                    </Badge>
-                  )}
-                </div>
-                <EstadoMl c={canales[m.id]} />
-                <CategoriaBadges categorias={m.categorias} />
-                {m.consolidadoEn && (
-                  <p className="text-xs text-amber-500 truncate">
-                    ↪ {m.consolidadoEn.nombre}
-                  </p>
-                )}
-              </div>
-            </Card>
-          ))}
-        </div>
-        </div>
+        <>
+          <div className="hidden md:block">
+            <TablaDeProductos
+              grupos={grupos}
+              agrupado={agrupar !== "nada"}
+              elegidos={elegidos}
+              onAlternar={onAlternar}
+              orden={orden}
+              onOrden={(o) => {
+                setOrden(o);
+                guardar({ orden: o });
+              }}
+              verVariantes={verVariantes}
+              onAbrir={(id) => router.push(`/modelos/${id}`)}
+            />
+          </div>
+          {/* En el teléfono la tabla no entra: tarjetas. */}
+          <div className="md:hidden">
+            <TarjetasDeProductos grupos={grupos} agrupado={agrupar !== "nada"} elegidos={elegidos} onAlternar={onAlternar} onAbrir={(id) => router.push(`/modelos/${id}`)} />
+          </div>
+        </>
       )}
 
       {/* ─── En cantidad ────────────────────────────── */}
       <Dialog open={masivo === "crear"} onOpenChange={(o) => !o && setMasivo(null)}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Crear en Mercado Libre ({itemsACrear.length})</DialogTitle>
-            <DialogDescription>Las combinaciones sin publicar de los productos elegidos. No se crea nada hasta que confirmes; quedan pausadas.</DialogDescription>
+            <DialogTitle>Crear en Mercado Libre ({tanda.aCrear.length})</DialogTitle>
+            <DialogDescription>Las variantes elegidas que no están publicadas. No se crea nada hasta que confirmes; quedan pausadas.</DialogDescription>
           </DialogHeader>
           {masivo === "crear" && (
             <CrearMlMasivo
-              items={itemsACrear}
+              items={tanda.aCrear}
               onCerrar={() => setMasivo(null)}
               onHecho={() => {
                 setElegidos(new Set());
@@ -884,13 +428,11 @@ export default function ModelosPage() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              {masivo === "inmediata" ? "Entrega inmediata con Flex" : "A pedido, sin Flex"}: {mlasElegidas.length} {mlasElegidas.length === 1 ? "publicación" : "publicaciones"}
+              {masivo === "inmediata" ? "Entrega inmediata con Flex" : "A pedido, sin Flex"}: {cuantos(tanda.mlas.length, "publicación", "publicaciones")}
             </DialogTitle>
-            <DialogDescription>Las publicaciones de ML de los productos elegidos, como están hoy. No se manda nada hasta que confirmes.</DialogDescription>
+            <DialogDescription>Las publicaciones de ML de las variantes elegidas, como están hoy. No se manda nada hasta que confirmes.</DialogDescription>
           </DialogHeader>
-          {(masivo === "inmediata" || masivo === "a_pedido") && (
-            <ConfirmarFlex mlas={mlasElegidas} inmediata={masivo === "inmediata"} onCerrar={() => setMasivo(null)} onHecho={fetchModelos} />
-          )}
+          {(masivo === "inmediata" || masivo === "a_pedido") && <ConfirmarFlex mlas={tanda.mlas} inmediata={masivo === "inmediata"} onCerrar={() => setMasivo(null)} onHecho={fetchModelos} />}
         </DialogContent>
       </Dialog>
 
@@ -898,12 +440,14 @@ export default function ModelosPage() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>
-              {masivo === "activar" ? "Activar" : "Desactivar"} {elegidos.size} {elegidos.size === 1 ? "producto" : "productos"}
+              {masivo === "activar" ? "Activar" : "Desactivar"} {cuantos(resumen.productos.length, "producto", "productos")}
             </DialogTitle>
             <DialogDescription>
               {masivo === "desactivar"
                 ? "Un producto inactivo no aparece para vender en el ERP ni en Precios. No toca sus publicaciones de ML ni de la web."
                 : "Vuelven a aparecer para vender en el ERP y en Precios."}
+              {resumen.productosAMedias > 0 &&
+                ` Ojo: de ${cuantos(resumen.productosAMedias, "producto elegiste", "productos elegiste")} sólo algunas variantes, y esto cambia el producto entero.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -935,12 +479,12 @@ export default function ModelosPage() {
               <Input id="np-nombre" autoFocus value={nuevo?.nombre ?? ""} onChange={(e) => setNuevo((n) => (n ? { ...n, nombre: e.target.value } : n))} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="np-serie">Serie <span className="text-xs text-muted-foreground font-normal">(opcional)</span></Label>
+              <Label htmlFor="np-serie">
+                Serie <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+              </Label>
               <Input id="np-serie" value={nuevo?.serie ?? ""} placeholder="Demon Slayer, One Piece…" onChange={(e) => setNuevo((n) => (n ? { ...n, serie: e.target.value } : n))} />
             </div>
-            <p className="text-xs text-muted-foreground">
-              Lo demás (precio, fotos, variantes, pieza de Bodega) se completa en su página. Si la pieza ya está en Bodega, no hace falta: el producto aparece solo.
-            </p>
+            <p className="text-xs text-muted-foreground">Lo demás (precio, fotos, variantes, pieza de Bodega) se completa en su página. Si la pieza ya está en Bodega, no hace falta: el producto aparece solo.</p>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => setNuevo(null)}>
                 Cancelar

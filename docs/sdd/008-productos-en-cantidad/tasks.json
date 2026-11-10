@@ -1,0 +1,23 @@
+{
+  "$schema": "../_plantillas/tasks.schema.json",
+  "featureId": "008-productos-en-cantidad",
+  "epic": "ninguna",
+  "version": "1.0.0",
+  "status": "in-review",
+  "branch": "feat/003-precios-desde-bodega",
+  "baseBranch": "master",
+  "pullRequest": null,
+  "validation": {
+    "approved": true,
+    "approvedBy": "Agustín",
+    "approvedAt": "2026-11-10",
+    "notes": "Pedido directo en el chat. Falta que lo vea en producción."
+  },
+  "updatedAt": "2026-11-10",
+  "tasks": [
+    { "id": "TASK-001", "title": "Traer cada variante con su stock, sus ventas y sus publicaciones", "description": "canalesDeModelos en src/lib/productos-canales.ts; GET /api/modelos/canales devuelve { leidoEn, modelos }.", "component": "backend", "status": "completed", "origin": "plan", "dependencies": [] },
+    { "id": "TASK-002", "title": "Filtrar, ordenar, agrupar y elegir, como funciones puras", "description": "src/lib/productos-lista.ts, con scripts/sdd-008-probar-productos.ts (24 pruebas).", "component": "lib", "status": "completed", "origin": "plan", "dependencies": ["TASK-001"] },
+    { "id": "TASK-003", "title": "La pantalla: filtros en píldoras, tabla que se abre, grupos y barra de lo elegido", "description": "src/components/productos/ y src/app/(app)/modelos/page.tsx.", "component": "frontend", "status": "completed", "origin": "plan", "dependencies": ["TASK-002"] },
+    { "id": "TASK-004", "title": "Verificar en producción", "description": "Agustín prueba elegir por variante y cambiar la entrega de una tanda real.", "component": "frontend", "status": "pending", "origin": "plan", "dependencies": ["TASK-003"] }
+  ]
+}
