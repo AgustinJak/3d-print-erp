@@ -17,7 +17,9 @@ import type { Prisma } from "@/generated/prisma";
  *                    (envío gratis); en un paquete con cosas de los dos, por bruto
  *   publicidad       directo, por campaña: se sabe de quién es cada una
  *   percepciones     prorrateado por bruto sobre todas las ventas del mes
- *   convenio         prorrateado por bruto sobre todas las ventas del mes
+ *   convenio         fijo: lo que paga Shay, que Agustín calcula afuera con las
+ *                    facturas (desde el 2026-11-12). Los meses que no lo tienen
+ *                    cargado (`iibbSocio` null) reparten el total como antes.
  *   monotributo      prorrateado por bruto sobre todas las ventas del mes
  *
  * Lo prorrateado se carga una sola vez con el total del mes
@@ -55,7 +57,8 @@ export interface PedidoTercero {
 /** Los gastos del mes que no son de una tienda sola. Total, sin repartir. */
 export interface GastosCompartidos {
   percepciones: number;
-  iibb: number;         // convenio multilateral
+  iibb: number;         // convenio multilateral, total de la cuenta (meses de antes)
+  iibbSocio: number | null; // convenio que paga el socio, fijo; null = repartir `iibb`
   monotributo: number;
   notas: string | null;
 }
@@ -306,8 +309,7 @@ function armarCierre(
 ): CierreTercero {
   const brutoTotal = fila.bruto + fila.brutoPropio + fila.brutoOtros;
   const proporcion = brutoTotal > 0 ? fila.bruto / brutoTotal : 0;
-  const totalCompartido = compartidos.percepciones + compartidos.iibb + compartidos.monotributo;
-  const parteCompartidos = totalCompartido * proporcion;
+  const parteCompartidos = parteDeGastos(compartidos, proporcion);
 
   return {
     socio: fila.socio,
@@ -333,9 +335,20 @@ function armarCierre(
   };
 }
 
+/**
+ * Lo que le toca al socio de los gastos del mes: percepciones y monotributo por
+ * su proporción; el convenio, el monto fijo si está cargado, y si no (los meses
+ * de antes del 2026-11-12) el total por su proporción.
+ */
+export function parteDeGastos(g: GastosCompartidos, proporcion: number): number {
+  const convenio = g.iibbSocio ?? g.iibb * proporcion;
+  return (g.percepciones + g.monotributo) * proporcion + convenio;
+}
+
 const SIN_GASTOS: GastosCompartidos = {
   percepciones: 0,
   iibb: 0,
+  iibbSocio: null,
   monotributo: 0,
   notas: null,
 };
@@ -353,6 +366,7 @@ export async function leerCompartidos(
   return {
     percepciones: g.percepciones,
     iibb: g.iibb,
+    iibbSocio: g.iibbSocio,
     monotributo: g.monotributo,
     notas: g.notas,
   };
@@ -370,6 +384,10 @@ export async function guardarCompartidos(
     if (typeof campos[k] === "number" && Number.isFinite(campos[k])) data[k] = campos[k];
   }
   if ("notas" in campos) data.notas = campos.notas ?? null;
+  // El convenio fijo admite null: vuelve a repartir el total de ese mes.
+  if (campos.iibbSocio === null || (typeof campos.iibbSocio === "number" && Number.isFinite(campos.iibbSocio))) {
+    data.iibbSocio = campos.iibbSocio;
+  }
 
   const g = await prisma.gastoCompartido.upsert({
     where: { tenantId_anio_mes: { tenantId, anio, mes } },
@@ -379,6 +397,7 @@ export async function guardarCompartidos(
   return {
     percepciones: g.percepciones,
     iibb: g.iibb,
+    iibbSocio: g.iibbSocio,
     monotributo: g.monotributo,
     notas: g.notas,
   };
@@ -435,13 +454,14 @@ export async function compartidosPrevios(
     orderBy: [{ anio: "desc" }, { mes: "desc" }],
     take: 6,
   });
-  const conDatos = previos.find((p) => p.percepciones || p.iibb || p.monotributo);
+  const conDatos = previos.find((p) => p.percepciones || p.iibb || p.iibbSocio || p.monotributo);
   if (!conDatos) return null;
   return {
     anio: conDatos.anio,
     mes: conDatos.mes,
     percepciones: conDatos.percepciones,
     iibb: conDatos.iibb,
+    iibbSocio: conDatos.iibbSocio,
     monotributo: conDatos.monotributo,
     notas: conDatos.notas,
   };

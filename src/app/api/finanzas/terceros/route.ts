@@ -17,9 +17,9 @@ import { NextRequest, NextResponse } from "next/server";
  *         se calculó: la UI ofrece el botón. Trae también los gastos del último
  *         mes cargado, como propuesta.
  * POST  → recalcula las ventas desde ML y las guarda. Tarda unos segundos.
- * PATCH → guarda los gastos compartidos del mes (percepciones, convenio,
- *         monotributo) con su TOTAL. El reparto entre las dos tiendas se
- *         recalcula solo, según cuánto vendió cada una.
+ * PATCH → guarda los gastos compartidos del mes: percepciones y monotributo con
+ *         su TOTAL, que se reparte solo según cuánto vendió cada tienda, y el
+ *         convenio de Shay como monto fijo (`iibbSocio`, desde el 2026-11-12).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -69,6 +69,7 @@ export async function PATCH(request: NextRequest) {
     await guardarCompartidos(tenantId, Number(anio), Number(mes), {
       percepciones: body.percepciones,
       iibb: body.iibb,
+      ...("iibbSocio" in body ? { iibbSocio: body.iibbSocio } : {}),
       monotributo: body.monotributo,
       ...("notas" in body ? { notas: body.notas } : {}),
     });

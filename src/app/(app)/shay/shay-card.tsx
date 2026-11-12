@@ -13,10 +13,11 @@ import { toast } from "sonner";
  * Reparto de la cuenta de Mercado Libre compartida con Shay Juguetes.
  *
  * Lo que se sabe de quién es se imputa directo: la comisión de cada venta, el
- * envío que cobra ML y las campañas de publicidad. Lo que no —percepciones,
- * convenio, monotributo— se carga una vez con el total del mes y se reparte por
- * bruto sobre todo lo vendido en el mes, en ML y fuera de ML (ver
- * `lib/ventas-terceros`).
+ * envío que cobra ML y las campañas de publicidad. Percepciones y monotributo
+ * se cargan una vez con el total del mes y se reparten por bruto sobre todo lo
+ * vendido en el mes, en ML y fuera de ML (ver `lib/ventas-terceros`). El
+ * convenio va fijo, con lo que paga Shay: Agustín lo calcula afuera con las
+ * facturas (desde el 2026-11-12).
  *
  * El cálculo de ventas va contra la API de ML y tarda unos segundos, así que se
  * guarda: la tarjeta lee el cierre guardado y sólo se recalcula a pedido.
@@ -40,7 +41,10 @@ interface PedidoTercero {
 
 interface GastosCompartidos {
   percepciones: number;
+  /** Convenio, total de la cuenta: sólo en los meses de antes del 2026-11-12. */
   iibb: number;
+  /** Convenio que paga Shay, fijo. Null: se reparte `iibb`. */
+  iibbSocio: number | null;
   monotributo: number;
   notas: string | null;
 }
@@ -77,12 +81,12 @@ interface Campana {
   impresiones: number;
 }
 
-type CampoCompartido = "percepciones" | "iibb" | "monotributo";
+type CampoCompartido = "percepciones" | "iibbSocio" | "monotributo";
 
 const COMPARTIDOS: Array<{ campo: CampoCompartido; label: string; ayuda: string }> = [
-  { campo: "percepciones", label: "Percepciones", ayuda: "La aproximada de la pantalla de ML. Al cerrar el período se reemplaza sola por la que factura ML" },
-  { campo: "iibb", label: "Convenio multilateral", ayuda: "IIBB convenio multilateral del mes" },
-  { campo: "monotributo", label: "Monotributo", ayuda: "El monotributo del mes, completo" },
+  { campo: "percepciones", label: "Percepciones (total)", ayuda: "La aproximada de la pantalla de ML. Al cerrar el período se reemplaza sola por la que factura ML" },
+  { campo: "iibbSocio", label: "Convenio multilateral de Shay (fijo)", ayuda: "Lo que paga Shay del convenio, calculado afuera con las facturas. No se reparte" },
+  { campo: "monotributo", label: "Monotributo (total)", ayuda: "El monotributo del mes, completo" },
 ];
 
 const MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
@@ -143,7 +147,7 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
   const previo = cargado?.periodo === periodo ? cargado.previo : null;
 
   const totalCompartido = cierre
-    ? cierre.compartidos.percepciones + cierre.compartidos.iibb + cierre.compartidos.monotributo
+    ? cierre.compartidos.percepciones + (cierre.compartidos.iibbSocio ?? cierre.compartidos.iibb) + cierre.compartidos.monotributo
     : 0;
 
   // Un cierre guardado antes del 2026-11-02 no tiene el envío: hay que recalcularlo.
@@ -175,7 +179,7 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
 
   /* ── gastos compartidos ── */
 
-  const patchCompartidos = async (campos: Partial<Record<CampoCompartido, number>>) => {
+  const patchCompartidos = async (campos: Partial<Record<CampoCompartido, number | null>>) => {
     try {
       const res = await fetch("/api/finanzas/terceros", {
         method: "PATCH",
@@ -196,7 +200,8 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
   const guardarCampo = async (campo: CampoCompartido) => {
     const crudo = borrador[campo];
     if (crudo === undefined || !cierre) return;
-    const valor = parsePrice(crudo);
+    // El convenio vacío es "sin cargar": un mes de antes vuelve a repartir su total.
+    const valor = campo === "iibbSocio" && !crudo.trim() ? null : parsePrice(crudo);
     setBorrador((b) => {
       const c = { ...b };
       delete c[campo];
@@ -208,10 +213,11 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
 
   const copiarPrevio = async () => {
     if (!previo) return;
+    // El convenio sólo si el mes anterior lo tiene fijo: un total viejo no es lo que paga Shay.
     await patchCompartidos({
       percepciones: previo.percepciones,
-      iibb: previo.iibb,
       monotributo: previo.monotributo,
+      ...(previo.iibbSocio != null ? { iibbSocio: previo.iibbSocio } : {}),
     });
   };
 
@@ -277,12 +283,13 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
     L.push("");
     fila("Publicidad (sus campanas)", Math.round(cierre.publicidad));
     fila("Percepciones del mes (total)", Math.round(cierre.compartidos.percepciones));
-    fila("Convenio multilateral del mes (total)", Math.round(cierre.compartidos.iibb));
+    if (cierre.compartidos.iibbSocio != null) fila("Convenio multilateral de Shay (fijo)", Math.round(cierre.compartidos.iibbSocio));
+    else fila("Convenio multilateral del mes (total, repartido)", Math.round(cierre.compartidos.iibb));
     fila("Monotributo del mes (total)", Math.round(cierre.compartidos.monotributo));
     fila("Ventas de Sendero en ML (bruto)", Math.round(cierre.brutoPropio));
     fila("Ventas de Sendero fuera de ML (bruto)", Math.round(cierre.brutoOtros));
     fila("Proporcion de Shay sobre todo lo vendido", pct(cierre.proporcion));
-    fila("Su parte de esos gastos", Math.round(cierre.parteCompartidos));
+    fila("Su parte de esos gastos (con el convenio)", Math.round(cierre.parteCompartidos));
     L.push("");
     fila("A PASARLE", Math.round(cierre.aPasar));
     L.push("");
@@ -453,18 +460,16 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
               )}
             </div>
 
-            {/* Gastos del mes: se cargan enteros y se reparten */}
+            {/* Gastos del mes: percepciones y monotributo enteros y se reparten; el convenio, fijo */}
             <div className="mt-4 pt-3 border-t border-pink-500/20">
               <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Gastos del mes — total de la cuenta
-                  </p>
+                  <p className="text-xs font-medium text-muted-foreground">Gastos del mes</p>
                   <p className="text-[11px] text-muted-foreground">
-                    Se cargan enteros; a Shay le toca el {pct(cierre.proporcion)}: su parte de todo lo
-                    vendido en el mes ({money(cierre.bruto)} de{" "}
+                    Percepciones y monotributo se cargan enteros; a Shay le toca el{" "}
+                    {pct(cierre.proporcion)}: su parte de todo lo vendido en el mes ({money(cierre.bruto)} de{" "}
                     {money(cierre.bruto + cierre.brutoPropio + cierre.brutoOtros)}, contando las ventas
-                    de Sendero en ML y fuera de ML)
+                    de Sendero en ML y fuera de ML). El convenio va con lo que paga Shay, sin repartir.
                   </p>
                 </div>
                 {previo && totalCompartido === 0 && (
@@ -480,6 +485,15 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {COMPARTIDOS.map(({ campo, label, ayuda }) => {
                   const total = cierre.compartidos[campo];
+                  const { iibb, iibbSocio } = cierre.compartidos;
+                  const nota =
+                    campo !== "iibbSocio"
+                      ? (total ?? 0) > 0 ? `le toca ${money((total ?? 0) * cierre.proporcion)}` : "—"
+                      : iibbSocio != null
+                        ? "fijo: no se reparte"
+                        : iibb > 0
+                          ? `sin cargar: se reparte el total viejo de ${money(iibb)} → le toca ${money(iibb * cierre.proporcion)}`
+                          : "—";
                   return (
                     <div key={campo}>
                       <label className="text-[11px] text-muted-foreground block mb-1" title={ayuda}>
@@ -488,14 +502,12 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
                       <Input
                         className="h-7 text-sm tabular-nums"
                         inputMode="decimal"
-                        value={borrador[campo] ?? String(total || "")}
+                        value={borrador[campo] ?? (campo === "iibbSocio" ? (total == null ? "" : String(total)) : String(total || ""))}
                         placeholder="0"
                         onChange={(e) => setBorrador((b) => ({ ...b, [campo]: e.target.value }))}
                         onBlur={() => guardarCampo(campo)}
                       />
-                      <p className="text-[10px] text-muted-foreground mt-0.5 tabular-nums">
-                        {total > 0 ? `le toca ${money(total * cierre.proporcion)}` : "—"}
-                      </p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5 tabular-nums">{nota}</p>
                     </div>
                   );
                 })}

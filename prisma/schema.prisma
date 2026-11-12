@@ -628,15 +628,20 @@ model VentaTercero {
 /// percepciones, convenio multilateral y monotributo.
 ///
 /// Se cargan una vez por mes con el total, y cada tienda se hace cargo de la
-/// parte que le toca según cuánto vendió (neto sobre neto). La publicidad NO
-/// entra acá: esa se sabe de quién es, campaña por campaña.
+/// parte que le toca según cuánto vendió (bruto sobre todas las ventas). La
+/// publicidad NO entra acá: esa se sabe de quién es, campaña por campaña.
+///
+/// El convenio, desde el 2026-11-12, va fijo: `iibbSocio` es lo que paga Shay,
+/// que Agustín calcula afuera con las facturas. Si es null (los meses de antes),
+/// se reparte el total `iibb` como antes.
 model GastoCompartido {
   id           String   @id @default(cuid())
   tenantId     String   @default("sendero3d") @map("tenant_id")
   anio         Int
   mes          Int
   percepciones Float    @default(0)
-  iibb         Float    @default(0) // convenio multilateral
+  iibb         Float    @default(0) // convenio multilateral, total (meses de antes del 2026-11-12)
+  iibbSocio    Float?   @map("iibb_socio") // convenio que paga Shay, fijo; null = repartir `iibb`
   monotributo  Float    @default(0)
   notas        String?
   creadoEn     DateTime @default(now()) @map("creado_en")
