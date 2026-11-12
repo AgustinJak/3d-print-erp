@@ -47,8 +47,9 @@ const ESTADO_DE_PUBLICACION = { active: "activa", paused: "pausada", otro: "sin 
 function ChipDePublicacion({ x }: { x: PublicacionMl }) {
   const punto = x.estado === "active" ? "bg-emerald-500" : x.estado === "paused" ? "bg-amber-500" : "bg-muted-foreground/50";
   return (
-    <Chip tono={x.estado === "paused" ? "ambar" : x.flex ? "azul" : "gris"} titulo={`${x.mla} · ${ESTADO_DE_PUBLICACION[x.estado]}`}>
+    <Chip tono={x.estado === "paused" ? "ambar" : x.flex ? "azul" : "gris"} titulo={`${x.mla} · ${ESTADO_DE_PUBLICACION[x.estado]}${x.cuenta ? ` · ${x.cuenta}` : ""}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${punto}`} />
+      {x.cuenta && <span className="font-medium">{x.cuenta} ·</span>}
       {x.premium ? "Premium" : "Clásica"}
       {x.estado === "paused" && " · pausada"}
       {x.flex && (

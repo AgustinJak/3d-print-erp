@@ -697,6 +697,8 @@ model MapeoCanal {
   muestra         Json?
   vecesVista      Int       @default(0) @map("veces_vista")
   ultimaVenta     String?   @map("ultima_venta")
+  /// En ML, de qué cuenta es la publicación (docs/sdd/010): el id de `cuentas_ml`; null = la principal.
+  cuentaMlId      String?   @map("cuenta_ml_id")
   /// Lo último que se leyó del canal (docs/sdd/003, spec 004). En ML, el precio standard.
   precioPublicado Float?    @map("precio_publicado")
   precioLeidoEn   DateTime? @map("precio_leido_en")

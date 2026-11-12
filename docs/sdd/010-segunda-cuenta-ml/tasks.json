@@ -44,23 +44,26 @@
       "title": "Conectar la segunda cuenta",
       "description": "OAuth con la cuenta en el state firmado; Integraciones muestra las dos. Agustín inicia sesión en ML con Sendero Shop.",
       "component": "backend",
-      "status": "in-progress",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-002"
       ],
-      "notes": "Hecho en el código: OAuth con ?otra=1, Integraciones lista las otras cuentas, desconectar por cuenta. El webhook anota y no procesa ventas de otra cuenta hasta TASK-005; los crons sólo la principal. Falta: desplegar, aplicar el paso 2 y que Agustín conecte Sendero Shop."
+      "notes": "Desplegado (f55e269), paso 2 aplicado. Agustín conectó SENDERODELOSSUENOS el 2026-11-12; en el ERP se llama Sendero Shop.",
+      "completedAt": "2026-11-12"
     },
     {
       "id": "TASK-004",
       "title": "Cada publicación con su cuenta",
       "description": "mapeos_canal.cuenta_ml_id; precios (leer y aplicar), Flex, promos y crear en ML con la cuenta de la publicación.",
       "component": "backend",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-003"
-      ]
+      ],
+      "completedAt": "2026-11-12",
+      "notes": "mapeos_canal.cuenta_ml_id (prisma/sql/mapeos-cuenta-ml.sql). mlFetch toma la cuenta de la publicación cuando la ruta es /items/MLA…, /seller-promotions/items/MLA… o /flex/sites/MLA/items/MLA…; la lectura de precios agrupa por cuenta. Precios y Productos dicen de qué cuenta es. Probado: lectura de las 227 publicaciones sin errores y sin cambios. Con publicaciones reales de Sendero Shop, cuando las cree el copiador."
     },
     {
       "id": "TASK-005",

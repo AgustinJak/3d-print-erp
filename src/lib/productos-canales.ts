@@ -10,10 +10,14 @@ import type { CanalesDeModelo, CombinacionLista, RespuestaDeCanales } from "@/li
  * El estado y la entrega de ML son los de la última lectura de precios: `leidoEn` dice de cuándo.
  */
 export async function canalesDeModelos(tenantId: string): Promise<RespuestaDeCanales> {
+  // Las otras cuentas de ML, para decir de cuál es cada publicación (docs/sdd/010).
+  const nombreDeCuenta = new Map(
+    (await prisma.cuentaMercadolibre.findMany({ where: { tenantId, principal: false }, select: { id: true, nombre: true, nickname: true } })).map((c) => [c.id, c.nombre ?? c.nickname ?? "otra cuenta"])
+  );
   const [mapeos, combinaciones, mueven, filasDeStock, ventas] = await Promise.all([
     prisma.mapeoCanal.findMany({
       where: { tenantId, ignorar: false, combinacionId: { not: null }, canal: { in: ["mercadolibre", "shop"] } },
-      select: { canal: true, clave: true, combinacionId: true, precioLectura: true, precioLeidoEn: true, combinacion: { select: { modeloId: true } } },
+      select: { canal: true, clave: true, combinacionId: true, precioLectura: true, precioLeidoEn: true, cuentaMlId: true, combinacion: { select: { modeloId: true } } },
     }),
     prisma.combinacion.findMany({
       where: { tenantId, activo: true },
@@ -92,7 +96,7 @@ export async function canalesDeModelos(tenantId: string): Promise<RespuestaDeCan
     const lectura = m.precioLectura as unknown as LecturaMl | null;
     const estado = lectura?.estado === "active" ? "active" : lectura?.estado === "paused" ? "paused" : "otro";
     if (comb && !comb.publicaciones.some((x) => x.mla === mla)) {
-      comb.publicaciones.push({ mla, estado, flex: !!lectura?.flex, dias: lectura?.disponibilidad ?? null, premium: lectura?.tipo === "gold_pro" });
+      comb.publicaciones.push({ mla, estado, flex: !!lectura?.flex, dias: lectura?.disponibilidad ?? null, premium: lectura?.tipo === "gold_pro", cuenta: m.cuentaMlId ? (nombreDeCuenta.get(m.cuentaMlId) ?? "otra cuenta") : null });
     }
     if (vistas.has(`${m.combinacion.modeloId}|${mla}`)) continue;
     vistas.add(`${m.combinacion.modeloId}|${mla}`);

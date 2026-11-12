@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getMlAccount, mlFetch } from "@/lib/mercadolibre";
+import { getMlAccount, mlFetch, type CuentaMl } from "@/lib/mercadolibre";
 import { actualizarTarifas } from "@/lib/tarifas-ml";
 
 /**
@@ -89,15 +89,16 @@ const PAUSA_ENTRE_ESCRITURAS_MS = 1500;
 const mlaDe = (clave: string) => clave.split("|")[0];
 
 /** Los ids de las publicaciones con automatización de precios; null si la API no contesta. */
-async function automatizadas(tenantId: string): Promise<Set<string> | null> {
-  const cuenta = await getMlAccount(tenantId);
+async function automatizadas(tenantId: string, cuentaId: CuentaMl = null): Promise<Set<string> | null> {
+  const cuenta = await getMlAccount(tenantId, cuentaId);
   if (!cuenta) return null;
   const ids = new Set<string>();
   try {
     for (let offset = 0; ; offset += 100) {
       const r = await mlFetch<{ items: string[]; paging: { total: number } }>(
         tenantId,
-        `/pricing-automation/users/${cuenta.mlUserId}/items?offset=${offset}&limit=100`
+        `/pricing-automation/users/${cuenta.mlUserId}/items?offset=${offset}&limit=100`,
+        { cuenta: cuentaId }
       );
       r.items.forEach((i) => ids.add(i));
       if (offset + 100 >= r.paging.total) return ids;
@@ -132,21 +133,32 @@ async function enTandas<T, R>(xs: T[], n: number, f: (x: T) => Promise<R>): Prom
 export async function leerPreciosMl(tenantId: string): Promise<{ leidas: number; errores: Array<{ mla: string; error: string }> }> {
   const mapeos = await prisma.mapeoCanal.findMany({
     where: { tenantId, canal: "mercadolibre", ignorar: false },
-    select: { id: true, clave: true },
+    select: { id: true, clave: true, cuentaMlId: true },
   });
   const ids = [...new Set(mapeos.map((m) => mlaDe(m.clave)))];
-  const auto = await automatizadas(tenantId);
 
+  // Cada cuenta con su token (docs/sdd/010): las publicaciones de Sendero Shop no se leen con el de
+  // Sendero 3D. "" es la principal.
+  const cuentaDe = new Map(mapeos.map((m) => [mlaDe(m.clave), m.cuentaMlId ?? ""]));
+  const porCuenta = new Map<string, string[]>();
+  for (const mla of ids) porCuenta.set(cuentaDe.get(mla) ?? "", [...(porCuenta.get(cuentaDe.get(mla) ?? "") ?? []), mla]);
   const items = new Map<string, ItemMl>();
-  for (let i = 0; i < ids.length; i += 20) {
-    const r = await mlFetch<Array<{ code: number; body: ItemMl }>>(
-      tenantId,
-      `/items?ids=${ids.slice(i, i + 20).join(",")}&attributes=id,status,sub_status,price,catalog_listing,variations,listing_type_id,category_id,shipping,sale_terms`
-    );
-    for (const x of r) if (x.code === 200) items.set(x.body.id, x.body);
+  const auto = new Map<string, Set<string> | null>();
+  const cuentas = new Map<string, Awaited<ReturnType<typeof getMlAccount>>>();
+  for (const [c, delGrupo] of porCuenta) {
+    const cuenta = c || null;
+    auto.set(c, await automatizadas(tenantId, cuenta));
+    cuentas.set(c, await getMlAccount(tenantId, cuenta));
+    for (let i = 0; i < delGrupo.length; i += 20) {
+      const r = await mlFetch<Array<{ code: number; body: ItemMl }>>(
+        tenantId,
+        `/items?ids=${delGrupo.slice(i, i + 20).join(",")}&attributes=id,status,sub_status,price,catalog_listing,variations,listing_type_id,category_id,shipping,sale_terms`,
+        { cuenta }
+      );
+      for (const x of r) if (x.code === 200) items.set(x.body.id, x.body);
+    }
   }
 
-  const cuenta = await getMlAccount(tenantId);
   const errores: Array<{ mla: string; error: string }> = [];
   const leidas = await enTandas(ids, 10, async (mla) => {
     const item = items.get(mla);
@@ -154,6 +166,8 @@ export async function leerPreciosMl(tenantId: string): Promise<{ leidas: number;
       errores.push({ mla, error: "ML no devolvió la publicación" });
       return null;
     }
+    const c = cuentaDe.get(mla) ?? "";
+    const cuenta = cuentas.get(c);
     try {
       const envioGratis = !!item.shipping?.free_shipping;
       const [{ standard, promos }, venta, envio] = await Promise.all([
@@ -162,7 +176,7 @@ export async function leerPreciosMl(tenantId: string): Promise<{ leidas: number;
         // Lo que cuesta, o costaría, el envío gratis: una llamada por publicación. Para la opción 2
         // de un producto que hoy no tiene envío gratis (spec 006).
         cuenta
-          ? mlFetch<{ coverage?: { all_country?: { list_cost?: number } } }>(tenantId, `/users/${cuenta.mlUserId}/shipping_options/free?item_id=${mla}&free_shipping=true`).catch(() => null)
+          ? mlFetch<{ coverage?: { all_country?: { list_cost?: number } } }>(tenantId, `/users/${cuenta.mlUserId}/shipping_options/free?item_id=${mla}&free_shipping=true`, { cuenta: c || null }).catch(() => null)
           : Promise.resolve(null),
       ]);
       // La promoción que gana es la del precio que paga el cliente.
@@ -180,7 +194,7 @@ export async function leerPreciosMl(tenantId: string): Promise<{ leidas: number;
         subEstado: item.sub_status ?? [],
         paga: venta?.amount ?? null,
         promo,
-        automatizada: auto ? auto.has(mla) : null,
+        automatizada: auto.get(c) ? auto.get(c)!.has(mla) : null,
         variaciones: item.variations?.length ?? 0,
         catalogo: !!item.catalog_listing,
         tipo: item.listing_type_id ?? null,

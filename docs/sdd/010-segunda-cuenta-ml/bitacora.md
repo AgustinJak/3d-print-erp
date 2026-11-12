@@ -43,3 +43,21 @@ desconecta si no quedan otras. El nickname de una cuenta nueva se pide con su pr
 **Cómo se probó.** Con la cuenta real: la principal sin cuenta y por id dan el mismo token y la misma
 cuenta en ML; una cuenta inexistente da null; el `state` firma los dos modos, uno viejo sigue valiendo y
 uno adulterado no. 41/41 pruebas de precios.
+
+## 2026-11-12 · Claude, TASK-003 y TASK-004
+
+Agustín conectó la segunda cuenta: el apodo de ML es SENDERODELOSSUENOS; en el ERP se llama Sendero
+Shop (`cuentas_ml.nombre`).
+
+**Cada publicación con su cuenta.** `mapeos_canal.cuenta_ml_id`, con restricción a `cuentas_ml` y sin
+borrado en cascada: una cuenta con publicaciones enlazadas no se desconecta. En vez de tocar cada
+llamada, `mlFetch` reconoce la publicación en la ruta (`/items/MLA…`, sus promos, su Flex) y usa la
+cuenta de esa publicación, con un minuto de memoria. Lo que no lleva la publicación en la ruta va
+explícito: la lectura de precios en tanda (`/items?ids=`), la automatización de precios y el costo
+del envío gratis por usuario. Lo de toda la cuenta sigue siendo de la principal: la lista de campañas
+de Promos, las tarifas y la publicidad.
+
+**Probado.** Sendero Shop responde con su token; una publicación de Sendero 3D sigue yendo a la
+principal; la lectura completa de precios leyó 227 publicaciones en 92 s sin errores ni cambios.
+Todavía no hay publicaciones de Sendero Shop para probar el camino con la otra cuenta: llega con el
+copiador.

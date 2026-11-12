@@ -14,6 +14,9 @@ export async function DELETE(request: NextRequest) {
     const { tenantId } = await getAuthenticatedTenantNonDemo();
     const cuenta = request.nextUrl.searchParams.get("cuenta");
     if (cuenta) {
+      // Sus publicaciones quedarían yendo a la principal: primero hay que sacarlas del mapeo.
+      const enlazadas = await prisma.mapeoCanal.count({ where: { tenantId, cuentaMlId: cuenta } });
+      if (enlazadas) return NextResponse.json({ error: `Tiene ${enlazadas} publicaciones enlazadas en el ERP: no se puede desconectar.` }, { status: 409 });
       const r = await prisma.cuentaMercadolibre.deleteMany({ where: { id: cuenta, tenantId, principal: false } });
       if (!r.count) return NextResponse.json({ error: "No existe esa cuenta, o es la principal." }, { status: 404 });
       return NextResponse.json({ ok: true });

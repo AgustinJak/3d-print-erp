@@ -188,6 +188,31 @@ export async function usuarioDelToken(accessToken: string): Promise<{ id: number
  */
 export type CuentaMl = string | null | undefined;
 
+/**
+ * De qué cuenta es una publicación, según el mapeo (docs/sdd/010): el id de `cuentas_ml`, o null si es
+ * de la principal o no está mapeada. Se recuerda un minuto: la lectura de precios pide varias veces
+ * por la misma publicación.
+ */
+const cacheDeCuentas = new Map<string, { cuenta: string | null; hasta: number }>();
+export async function cuentaDePublicacion(tenantId: string, mla: string): Promise<string | null> {
+  const k = `${tenantId}|${mla}`;
+  const c = cacheDeCuentas.get(k);
+  if (c && c.hasta > Date.now()) return c.cuenta;
+  const m = await prisma.mapeoCanal.findFirst({
+    where: { tenantId, canal: "mercadolibre", clave: { startsWith: `${mla}|` }, cuentaMlId: { not: null } },
+    select: { cuentaMlId: true },
+  });
+  const cuenta = m?.cuentaMlId ?? null;
+  cacheDeCuentas.set(k, { cuenta, hasta: Date.now() + 60_000 });
+  return cuenta;
+}
+
+/** Para después de enlazar una publicación a otra cuenta: que la próxima llamada lo vea. */
+export const olvidarCuentaDePublicacion = (tenantId: string, mla: string) => cacheDeCuentas.delete(`${tenantId}|${mla}`);
+
+/** Las rutas de ML que son de una publicación: la cuenta sale de la publicación. */
+const PUBLICACION_EN_RUTA = /^\/(?:items|seller-promotions\/items|flex\/sites\/MLA\/items)\/(MLA\d+)/;
+
 /** La fila de la cuenta: la pedida, o la principal. Nunca otra cuenta en lugar de la principal. */
 function filaDeCuenta(tenantId: string, cuenta?: CuentaMl) {
   return prisma.cuentaMercadolibre.findFirst({ where: cuenta ? { id: cuenta, tenantId } : { tenantId, principal: true } });
@@ -280,8 +305,11 @@ export async function mlFetch<T = unknown>(
   init?: RequestInit & { cuenta?: CuentaMl },
   antesDeLeer?: (texto: string) => string
 ): Promise<T> {
-  // `cuenta`: con qué cuenta de ML (docs/sdd/010); sin cuenta, la principal.
-  const { cuenta: cuentaId, ...pedido } = init ?? {};
+  // `cuenta`: con qué cuenta de ML (docs/sdd/010). Si no se dice y la ruta es de una publicación
+  // (`/items/MLA…`, sus promos o su Flex), la de esa publicación; si no, la principal.
+  const { cuenta: pedida, ...pedido } = init ?? {};
+  const deLaRuta = pedida === undefined ? PUBLICACION_EN_RUTA.exec(path)?.[1] : undefined;
+  const cuentaId = deLaRuta ? await cuentaDePublicacion(tenantId, deLaRuta) : pedida;
   const doFetch = async (token: string) => {
     return fetch(`${ML_API}${path}`, {
       ...pedido,

@@ -18,4 +18,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS cuentas_ml_tenant_ml_user_key ON public.cuenta
 CREATE UNIQUE INDEX IF NOT EXISTS cuentas_ml_una_principal ON public.cuentas_ml (tenant_id) WHERE principal;
 
 -- ── Paso 2 ──────────────────────────────────────────────────────────────────
--- ALTER TABLE public.cuentas_ml DROP CONSTRAINT IF EXISTS cuentas_ml_tenant_id_key;
+-- Aplicado el 2026-11-12, después del deploy f55e269.
+ALTER TABLE public.cuentas_ml DROP CONSTRAINT IF EXISTS cuentas_ml_tenant_id_key;
+CREATE INDEX IF NOT EXISTS cuentas_ml_tenant_id_idx ON public.cuentas_ml (tenant_id);

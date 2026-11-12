@@ -15,6 +15,8 @@ export interface PublicacionMl {
   /** Días de disponibilidad (a pedido); null = entrega inmediata. */
   dias: number | null;
   premium: boolean;
+  /** De otra cuenta de ML (docs/sdd/010): su nombre. null = la principal. */
+  cuenta?: string | null;
 }
 
 export interface CombinacionLista {
