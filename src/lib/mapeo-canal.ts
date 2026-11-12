@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma";
+import { cuentaMlEnCurso } from "@/lib/mercadolibre";
 import { costoModelo, costoVariante } from "@/lib/costos";
 import { asegurarCombinacion } from "@/lib/combinaciones";
 import { ESTADOS_QUE_RESERVAN } from "@/lib/reservas";
@@ -200,6 +201,8 @@ export async function resolverLinea(
       combinacionId: r && r !== "ignorar" ? r.id : null,
       ignorar: r === "ignorar",
       origen: origenNuevo,
+      // Una clave nueva de ML que llega con una venta de otra cuenta es de esa cuenta (docs/sdd/010).
+      cuentaMlId: canal === "mercadolibre" ? cuentaMlEnCurso() : null,
       descripcion: opts.descripcion ?? null,
       muestra: opts.muestra,
       vecesVista: contar ? 1 : 0,

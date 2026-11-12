@@ -70,11 +70,13 @@
       "title": "Ventas de las dos cuentas",
       "description": "Webhook y sincronización por cuenta; el pedido guarda la cuenta; neto de Mercado Pago con el token de esa cuenta.",
       "component": "backend",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-003"
-      ]
+      ],
+      "completedAt": "2026-11-12",
+      "notes": "conCuentaMl (AsyncLocalStorage): la venta se procesa con su cuenta en curso, y la orden, el paquete, el envío, el pago y el neto de MP se piden con su token. El pedido guarda origen_externo.cuenta_ml y la etiqueta con el nombre de la cuenta; las claves nuevas del mapeo quedan con su cuenta. Webhook, cron, sincronizar y liquidaciones recorren cada cuenta (porCadaCuentaMl). Probado: Sendero Shop con 0 ventas; Sendero 3D igual que siempre. Las bonificaciones Flex y la facturación de Sendero Shop van con TASK-006."
     },
     {
       "id": "TASK-006",

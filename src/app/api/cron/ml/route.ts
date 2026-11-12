@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { esBaseCaida, MENSAJE_BASE_CAIDA } from "@/lib/base-caida";
 import { altasAutomaticas } from "@/lib/altas-bodega";
 import { aplicarCostosSiCambio } from "@/lib/sincronizar-costos";
-import { actualizarLiquidaciones, completarLiquidados, sincronizarOrdenes } from "@/lib/ml-lote";
+import { actualizarLiquidaciones, completarLiquidados, porCadaCuentaMl, sincronizarOrdenes } from "@/lib/ml-lote";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
   // escapaba y Next contestaba 500 sin cuerpo: el aviso de GitHub decía "HTTP 500" y nada más.
   let cuentas: Array<{ tenantId: string }>;
   try {
-    cuentas = await prisma.cuentaMercadolibre.findMany({ where: { principal: true }, select: { tenantId: true } });
+    cuentas = await prisma.cuentaMercadolibre.findMany({ where: { principal: true }, select: { tenantId: true } }) // una por negocio; sus cuentas, adentro;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (esBaseCaida(e)) {
@@ -58,17 +58,20 @@ export async function GET(request: NextRequest) {
 
   for (const { tenantId } of cuentas) {
     try {
-      const ordenes = await sincronizarOrdenes(tenantId, {
-        days: 2,
-        max: 40,
-        evento: "cron_ordenes",
-        presupuestoMs: restante(20_000), // deja aire para las liquidaciones
-      });
-      const liquidaciones = await actualizarLiquidaciones(tenantId, {
-        max: 20,
-        evento: "cron_liquidaciones",
-        presupuestoMs: restante(0),
-      });
+      // Cada cuenta de ML del negocio, la principal primero (docs/sdd/010).
+      const porCuenta = await porCadaCuentaMl(tenantId, async () => ({
+        ordenes: await sincronizarOrdenes(tenantId, {
+          days: 2,
+          max: 40,
+          evento: "cron_ordenes",
+          presupuestoMs: restante(20_000), // deja aire para las liquidaciones
+        }),
+        liquidaciones: await actualizarLiquidaciones(tenantId, {
+          max: 20,
+          evento: "cron_liquidaciones",
+          presupuestoMs: restante(0),
+        }),
+      }));
       // Lo que ML ya liquidó se cobra hoy: pasa a completado aunque nadie abra el panel.
       const completados = await completarLiquidados(tenantId).catch((e) => {
         console.error("[cron/ml] completar liquidados:", e);
@@ -92,8 +95,7 @@ export async function GET(request: NextRequest) {
 
       resultados.push({
         tenantId,
-        ordenes: ordenes.stats,
-        liquidaciones: liquidaciones.stats,
+        porCuenta: porCuenta.map((x) => ({ cuenta: x.cuenta, ordenes: x.resultado.ordenes.stats, liquidaciones: x.resultado.liquidaciones.stats })),
         completados,
         altasBodega: altas ? altas.creados.length + altas.mapeados.length : null,
       });

@@ -61,3 +61,25 @@ de Promos, las tarifas y la publicidad.
 principal; la lectura completa de precios leyó 227 publicaciones en 92 s sin errores ni cambios.
 Todavía no hay publicaciones de Sendero Shop para probar el camino con la otra cuenta: llega con el
 copiador.
+
+## 2026-11-12 · Claude, TASK-005
+
+**Las ventas de las dos cuentas.** El camino de una venta pasa por unas 40 llamadas a ML en
+`mercadolibre-sync.ts` (1.100 líneas). En vez de pasar la cuenta por cada una, `conCuentaMl(cuenta, fn)`
+la deja "en curso" con `AsyncLocalStorage`, y `filaDeCuenta` y `mlFetch` la usan cuando no se pide
+otra. Orden en `mlFetch`: la cuenta pedida, la en curso, la de la publicación en la ruta, la principal.
+
+- El webhook procesa la venta de otra cuenta con esa cuenta en curso (antes la anotaba y no la
+  procesaba).
+- El pedido guarda `origen_externo.cuenta_ml` (null = principal) y lleva el nombre de la cuenta como
+  etiqueta. Una clave nueva del mapeo que llega con esa venta queda con `cuenta_ml_id`.
+- Liquidaciones: cada pasada sólo mira los pedidos de la cuenta en curso. El neto de Mercado Pago se
+  relee con la cuenta de cada pedido.
+- `porCadaCuentaMl` recorre las cuentas en el cron, "Sincronizar últimos 30 días" y "Actualizar
+  liquidaciones".
+
+**Probado.** La cuenta en curso no se escapa afuera ni se mezcla entre dos trabajos en paralelo. La
+pasada del cron por cuenta: Sendero 3D con 17 compras de 2 días, 7 actualizadas y nada creado (lo de
+siempre); Sendero Shop con 0 ventas.
+
+**Queda para TASK-006:** las bonificaciones Flex (`sincronizarFlex`) y la facturación de Sendero Shop.

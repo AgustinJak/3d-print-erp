@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 import { prisma } from "@/lib/prisma";
-import { getOrder } from "@/lib/mercadolibre";
+import { conCuentaMl, getOrder } from "@/lib/mercadolibre";
 import { processMlOrder } from "@/lib/mercadolibre-sync";
 import { NextRequest, NextResponse, after } from "next/server";
 import type { Prisma } from "@/generated/prisma";
@@ -69,37 +69,21 @@ export async function POST(request: NextRequest) {
   // Resolver tenant por la cuenta conectada con ese ml_user_id
   const cuenta = await prisma.cuentaMercadolibre.findFirst({
     where: { mlUserId: userId },
-    select: { tenantId: true, principal: true, nombre: true, nickname: true },
+    select: { id: true, tenantId: true, principal: true },
   });
   if (!cuenta) {
     return NextResponse.json({ ok: true, ignored: "no_account" }, { status: 200 });
   }
   const tenantId = cuenta.tenantId;
 
-  // Las ventas de otra cuenta (docs/sdd/010) todavía no se procesan: falta TASK-005. Quedan anotadas,
-  // y la sincronización de esa cuenta las va a traer.
-  if (!cuenta.principal) {
-    await prisma.webhookLog
-      .create({
-        data: {
-          tenantId,
-          origen: "mercadolibre",
-          evento: topic,
-          externoId: orderId,
-          estado: "ignorado",
-          errorMsg: `venta de ${cuenta.nombre ?? cuenta.nickname ?? "otra cuenta"}: todavía no se procesan (docs/sdd/010, TASK-005)`,
-          payload: body as unknown as Prisma.InputJsonValue,
-        },
-      })
-      .catch(() => {});
-    return NextResponse.json({ ok: true, ignored: "otra_cuenta" }, { status: 200 });
-  }
+  // Una venta de otra cuenta (docs/sdd/010) se procesa con esa cuenta en curso: la orden, el envío y
+  // el pago se piden con su token, y el pedido y sus claves quedan marcados con la cuenta.
+  const cuentaMl = cuenta.principal ? null : cuenta.id;
 
   // Procesar en segundo plano: ML recibe el 200 de inmediato.
   after(async () => {
     try {
-      const order = await getOrder(tenantId, orderId);
-      const result = await processMlOrder(tenantId, order, { source: "webhook" });
+      const result = await conCuentaMl(cuentaMl, async () => processMlOrder(tenantId, await getOrder(tenantId, orderId), { source: "webhook" }));
       await prisma.webhookLog.create({
         data: {
           tenantId,

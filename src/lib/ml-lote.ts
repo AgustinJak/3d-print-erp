@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getMlAccount, searchOrders, type MlOrder } from "@/lib/mercadolibre";
+import { conCuentaMl, cuentaMlEnCurso, getMlAccount, searchOrders, type MlOrder } from "@/lib/mercadolibre";
 import {
   actualizarLiquidacionYEstado,
   estadoPuedeAvanzarAEsperandoLiq,
@@ -221,7 +221,11 @@ export async function actualizarLiquidaciones(
     orderBy: { fechaPedido: "desc" },
   });
 
-  for (const p of candidatos) {
+  // Sólo los pedidos de la cuenta en curso (docs/sdd/010): cada uno se consulta con su cuenta.
+  const enCurso = cuentaMlEnCurso();
+  const deEstaCuenta = candidatos.filter((p) => (((p.origenExterno ?? {}) as { cuenta_ml?: string | null }).cuenta_ml ?? null) === enCurso);
+
+  for (const p of deEstaCuenta) {
     if (stats.actualizados >= max) break;
     if (Date.now() > limite) { cortadoPorTiempo = true; break; }
 
@@ -269,5 +273,19 @@ export async function actualizarLiquidaciones(
     })
     .catch(() => {});
 
-  return { ok: true, candidatos: candidatos.length, stats, errores, cortadoPorTiempo };
+  return { ok: true, candidatos: deEstaCuenta.length, stats, errores, cortadoPorTiempo };
+}
+
+/**
+ * Corre `fn` una vez por cada cuenta de ML del negocio, la principal primero, con esa cuenta en curso
+ * (docs/sdd/010). Lo usan la sincronización y las liquidaciones, a mano y por cron.
+ */
+export async function porCadaCuentaMl<T>(tenantId: string, fn: (cuenta: { id: string; nombre: string; principal: boolean }) => Promise<T>): Promise<Array<{ cuenta: string; resultado: T }>> {
+  const cuentas = await prisma.cuentaMercadolibre.findMany({ where: { tenantId }, orderBy: [{ principal: "desc" }, { creadoEn: "asc" }], select: { id: true, nombre: true, nickname: true, principal: true } });
+  const out: Array<{ cuenta: string; resultado: T }> = [];
+  for (const c of cuentas) {
+    const nombre = c.nombre ?? c.nickname ?? c.id;
+    out.push({ cuenta: nombre, resultado: await conCuentaMl(c.principal ? null : c.id, () => fn({ id: c.id, nombre, principal: c.principal })) });
+  }
+  return out;
 }

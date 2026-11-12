@@ -1,6 +1,6 @@
 import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
-import { getMlAccount, getValidAccessToken, mlFetch } from "@/lib/mercadolibre";
+import { conCuentaMl, getMlAccount, getValidAccessToken, mlFetch } from "@/lib/mercadolibre";
 
 /**
  * Lo que entra de verdad por cada venta de ML, y las bonificaciones Flex (docs/sdd/007).
@@ -208,9 +208,11 @@ export async function revisarNetos(tenantId: string, opts: { hasta: number; desd
     });
     await Promise.all(
       tanda.map(async (p) => {
-        const ids = ((p.origenExterno ?? {}) as { order_ids?: string[] }).order_ids ?? [];
+        const oe = (p.origenExterno ?? {}) as { order_ids?: string[]; cuenta_ml?: string | null };
+        const ids = oe.order_ids ?? [];
         if (!ids.length) return;
-        const r = await leerNetoReal(tenantId, ids).catch(() => null);
+        // Con la cuenta de la venta: el pago de Sendero Shop está en el Mercado Pago de esa cuenta.
+        const r = await conCuentaMl(oe.cuenta_ml ?? null, () => leerNetoReal(tenantId, ids)).catch(() => null);
         if (!r) return;
         const dif = await aplicarNetoReal(p, r);
         out.revisados++;

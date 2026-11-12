@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { createHmac, timingSafeEqual } from "crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 /**
  * Cliente de Mercado Libre.
@@ -213,9 +214,25 @@ export const olvidarCuentaDePublicacion = (tenantId: string, mla: string) => cac
 /** Las rutas de ML que son de una publicación: la cuenta sale de la publicación. */
 const PUBLICACION_EN_RUTA = /^\/(?:items|seller-promotions\/items|flex\/sites\/MLA\/items)\/(MLA\d+)/;
 
-/** La fila de la cuenta: la pedida, o la principal. Nunca otra cuenta en lugar de la principal. */
+/**
+ * La cuenta "en curso" (docs/sdd/010, TASK-005): una venta de Sendero Shop pasa por decenas de
+ * llamadas a ML (la orden, el paquete, el envío, el pago, el neto de Mercado Pago). En vez de pasar
+ * la cuenta por cada una, quien empieza el trabajo lo envuelve en `conCuentaMl` y todo lo que se
+ * llame adentro usa esa cuenta. null = la principal.
+ */
+const cuentaEnCurso = new AsyncLocalStorage<string | null>();
+export function conCuentaMl<T>(cuenta: string | null, fn: () => Promise<T>): Promise<T> {
+  return cuentaEnCurso.run(cuenta, fn);
+}
+export const cuentaMlEnCurso = (): string | null => cuentaEnCurso.getStore() ?? null;
+
+/**
+ * La fila de la cuenta: la pedida, la en curso o la principal. Nunca otra cuenta en lugar de la
+ * principal.
+ */
 function filaDeCuenta(tenantId: string, cuenta?: CuentaMl) {
-  return prisma.cuentaMercadolibre.findFirst({ where: cuenta ? { id: cuenta, tenantId } : { tenantId, principal: true } });
+  const id = cuenta ?? cuentaMlEnCurso();
+  return prisma.cuentaMercadolibre.findFirst({ where: id ? { id, tenantId } : { tenantId, principal: true } });
 }
 
 export interface MlAccount {
@@ -305,11 +322,13 @@ export async function mlFetch<T = unknown>(
   init?: RequestInit & { cuenta?: CuentaMl },
   antesDeLeer?: (texto: string) => string
 ): Promise<T> {
-  // `cuenta`: con qué cuenta de ML (docs/sdd/010). Si no se dice y la ruta es de una publicación
-  // (`/items/MLA…`, sus promos o su Flex), la de esa publicación; si no, la principal.
+  // Con qué cuenta de ML (docs/sdd/010): la que se pide; si no, la en curso (`conCuentaMl`); si no, y
+  // la ruta es de una publicación (`/items/MLA…`, sus promos o su Flex), la de esa publicación; si
+  // no, la principal.
   const { cuenta: pedida, ...pedido } = init ?? {};
-  const deLaRuta = pedida === undefined ? PUBLICACION_EN_RUTA.exec(path)?.[1] : undefined;
-  const cuentaId = deLaRuta ? await cuentaDePublicacion(tenantId, deLaRuta) : pedida;
+  const enCurso = cuentaMlEnCurso();
+  const deLaRuta = pedida == null && !enCurso ? PUBLICACION_EN_RUTA.exec(path)?.[1] : undefined;
+  const cuentaId = pedida ?? enCurso ?? (deLaRuta ? await cuentaDePublicacion(tenantId, deLaRuta) : null);
   const doFetch = async (token: string) => {
     return fetch(`${ML_API}${path}`, {
       ...pedido,

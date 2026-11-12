@@ -25,6 +25,7 @@ import {
   getPack,
   getShipmentCosts,
   getShipment,
+  cuentaMlEnCurso,
   type MlOrder,
 } from "@/lib/mercadolibre";
 import type { Prisma } from "@/generated/prisma";
@@ -421,6 +422,14 @@ export async function processMlOrderGroup(
     it.precioUnitario = Math.round(it.precioUnitario * costos.factorNeto);
   }
 
+  // Una venta de otra cuenta lleva su nombre como etiqueta, para verla en Pedidos (docs/sdd/010).
+  const cuentaVenta = cuentaMlEnCurso();
+  const etiquetaDeCuenta = cuentaVenta
+    ? await prisma.cuentaMercadolibre
+        .findUnique({ where: { id: cuentaVenta }, select: { nombre: true, nickname: true } })
+        .then((c) => c?.nombre ?? c?.nickname ?? "otra cuenta")
+    : null;
+
   const result = await prisma.$transaction(async (tx) => {
     let cliente = await tx.cliente.findFirst({
       where: { tenantId, nombre: { equals: nombre, mode: "insensitive" }, plataforma: "mercadolibre" },
@@ -439,6 +448,7 @@ export async function processMlOrderGroup(
     const etiquetas: string[] = [];
     if (necesitaRevision) etiquetas.push("revision_manual");
     if (fechas.esFlex) etiquetas.push("flex");
+    if (etiquetaDeCuenta) etiquetas.push(etiquetaDeCuenta);
     const bonificacionFlex = fechas.esFlex ? costos.grossEnvio : 0;
     return tx.pedido.create({
       data: {
@@ -457,6 +467,8 @@ export async function processMlOrderGroup(
         etiquetas,
         origenExterno: {
           sistema: "mercadolibre",
+          // De qué cuenta de ML es la venta (docs/sdd/010); null = la principal.
+          cuenta_ml: cuentaMlEnCurso(),
           pack_id: principal.pack_id ?? null,
           order_ids: orders.map((o) => String(o.id)),
           status_ml: principal.status,
