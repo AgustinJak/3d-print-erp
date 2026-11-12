@@ -134,11 +134,40 @@ export function precioParaGanancia(
     },
     (x) => x.final
   );
+  // Cuando dos tramos se pasan la pelota, conCargoFijo se queda con el precio calculado con el cargo
+  // más caro, aunque a ese precio ML ya no lo cobre: el Porta auricular AC/DC (2026-11-11) salía a
+  // $36.890 pagando $3.320 de cargo que no existe. El precio justo es el corte entre los dos tramos:
+  // ahí ya rige el cargo más barato y deja lo pedido. Se prueba cada corte debajo del precio y se
+  // queda el más bajo que llegue.
+  let final = r.final;
+  let gp = r.gp;
+  let cargo = fijo;
+  if (tarifas?.fijos.length) {
+    for (const tramo of [...tarifas.fijos].sort((a, b) => a.desde - b.desde)) {
+      if (!(tramo.desde > 0) || tramo.desde >= final) continue;
+      const enCorte = redondear(tramo.desde, redondeo);
+      if (enCorte < tramo.desde || enCorte >= final) continue;
+      const f = cargoFijo(tarifas, enCorte);
+      const gpCorte = gastosConCostos(g, costos, f);
+      if (margenDe(gpCorte, "ml", enCorte, fabricacion, insumos).ganancia >= ganancia - 0.5) {
+        final = enCorte;
+        gp = gpCorte;
+        cargo = f;
+        break;
+      }
+    }
+    // Lo que deja se cuenta con el cargo que ML cobra a ese precio, aunque el precio haya salido de
+    // calcular con el otro (el redondeo puede caer justo en el corte).
+    if (cargo !== cargoFijo(tarifas, final)) {
+      cargo = cargoFijo(tarifas, final);
+      gp = gastosConCostos(g, costos, cargo);
+    }
+  }
   return {
-    final: r.final,
-    publicado: precioConPromo(r.final, g.mlPromoPct, techoDePromo(g, r.final)).publicado,
-    ganancia: margenDe(r.gp, "ml", r.final, fabricacion, insumos).ganancia,
-    cargoFijo: fijo,
+    final,
+    publicado: precioConPromo(final, g.mlPromoPct, techoDePromo(g, final)).publicado,
+    ganancia: margenDe(gp, "ml", final, fabricacion, insumos).ganancia,
+    cargoFijo: cargo,
     costos,
   };
 }

@@ -6,6 +6,8 @@ import { fabricacionDePieza, leerParametros, leerRecetas } from "@/lib/costos-bo
 import { cargarContexto, componentesDeItem, type Componente } from "@/lib/reservas";
 import { gastosDe, leerGastosDeVenta, preciosDeCombinaciones } from "@/lib/precios-combinacion";
 import { margenesDeTramos } from "@/lib/precios-formula";
+import { opcionDe } from "@/lib/precios-ml-publicacion";
+import type { LecturaMl } from "@/lib/precios-ml";
 import { categoriaDeProducto } from "@/lib/categorias-ml";
 import { PREFIJO_FALTA, textoDeFalta } from "@/lib/precios-reglas";
 import { aplicarCostosSiCambio } from "@/lib/sincronizar-costos";
@@ -102,7 +104,16 @@ export interface Ficha {
   usadoPor: Array<{ id: string; nombre: string }>;
   canales: {
     publicaciones: Array<{ mla: string; titulo: string | null }>;
-    claves: Array<{ id: string; canal: string; descripcion: string | null; combinacion: string | null; activa: boolean; origen: string }>;
+    claves: Array<{
+      id: string;
+      canal: string;
+      descripcion: string | null;
+      combinacion: string | null;
+      activa: boolean;
+      origen: string;
+      /** En ML, la opción de la publicación según la última lectura (spec 006); null si no se leyó o está cerrada. */
+      opcionMl: 1 | 2 | null;
+    }>;
   };
 }
 
@@ -244,7 +255,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
     const claves = await prisma.mapeoCanal.findMany({
       where: { tenantId, ignorar: false, combinacionId: { in: combinaciones.map((c) => c.id) } },
-      select: { id: true, canal: true, descripcion: true, origen: true, combinacion: { select: { nombre: true, activo: true } } },
+      select: { id: true, canal: true, descripcion: true, origen: true, precioLectura: true, combinacion: { select: { nombre: true, activo: true } } },
       orderBy: [{ canal: "asc" }, { descripcion: "asc" }],
     });
 
@@ -294,6 +305,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
           combinacion: k.combinacion?.nombre ?? null,
           activa: !!k.combinacion?.activo,
           origen: k.origen,
+          opcionMl: (() => {
+            const l = k.precioLectura as unknown as LecturaMl | null;
+            return k.canal === "mercadolibre" && l?.tipo && (l.estado === "active" || l.estado === "paused") ? opcionDe(l) : null;
+          })(),
         })),
       },
     };

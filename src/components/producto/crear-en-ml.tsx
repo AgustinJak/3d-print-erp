@@ -35,7 +35,7 @@ interface Form {
 
 const numero = (s: string) => Number(s.replace(",", "."));
 
-function Formulario({ modeloId, combinacionId, onCerrar, onCreada }: { modeloId: string; combinacionId: string; onCerrar: () => void; onCreada: () => void }) {
+function Formulario({ modeloId, combinacionId, soloOpcion2, onCerrar, onCreada }: { modeloId: string; combinacionId: string; soloOpcion2: boolean; onCerrar: () => void; onCreada: () => void }) {
   const [b, setB] = useState<Borrador | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [f, setF] = useState<Form | null>(null);
@@ -53,7 +53,7 @@ function Formulario({ modeloId, combinacionId, onCerrar, onCreada }: { modeloId:
           nombre: x.nombre,
           precio1: String(x.opcion1.precio),
           propuesto1: String(x.opcion1.precio),
-          opcion2: x.recomendarOpcion2,
+          opcion2: soloOpcion2 || x.recomendarOpcion2,
           precio2: x.opcion2 ? String(x.opcion2.precio) : "",
           propuesto2: x.opcion2 ? String(x.opcion2.precio) : "",
           alto: x.paquete ? String(x.paquete.alto) : "",
@@ -66,7 +66,7 @@ function Formulario({ modeloId, combinacionId, onCerrar, onCreada }: { modeloId:
         if (x.paquete) setCotizadas([x.paquete.alto, x.paquete.ancho, x.paquete.largo, x.paquete.peso].join("x"));
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
-  }, [modeloId, combinacionId]);
+  }, [modeloId, combinacionId, soloOpcion2]);
 
   // Al cargar o cambiar las medidas, ML cotiza el envío y el precio se recalcula. Un precio que se
   // editó a mano no se pisa.
@@ -112,6 +112,7 @@ function Formulario({ modeloId, combinacionId, onCerrar, onCreada }: { modeloId:
     const n = numero;
     return {
       combinacionId,
+      soloOpcion2,
       nombre: f.nombre.trim(),
       categoria: b.categoria.id,
       precio1: n(f.precio1),
@@ -121,7 +122,7 @@ function Formulario({ modeloId, combinacionId, onCerrar, onCreada }: { modeloId:
       stock: Math.floor(n(f.stock)),
       fotos: f.fotos,
     };
-  }, [f, b, combinacionId]);
+  }, [f, b, combinacionId, soloOpcion2]);
   const clave = JSON.stringify(pedido);
   const revisado = revision?.clave === clave;
   const sinErrores = revisado && revision!.r.every((x) => !x.errores.length);
@@ -201,18 +202,19 @@ function Formulario({ modeloId, combinacionId, onCerrar, onCreada }: { modeloId:
         Categoría: {b.categoria ? <span className="text-foreground">{b.categoria.nombre}{b.categoria.comision != null ? ` (comisión ${String(b.categoria.comision).replace(".", ",")} %)` : ""}</span> : <span className="text-red-600">sin categoría: elegila en Política de precio</span>} · costo {pesos(b.costo)}
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
+      {soloOpcion2 && <p className="text-xs text-muted-foreground">Ya tiene la opción 1 publicada: se crea sólo la opción 2, que deja lo mismo.</p>}
+      <div className={soloOpcion2 ? "space-y-1" : "grid grid-cols-2 gap-3"}>
+        {!soloOpcion2 && <div className="space-y-1">
           {campo("precio1", "Opción 1: Clásica, sin cuotas", "(publicado)")}
           <p className="text-xs text-muted-foreground">
             Con la promo paga {pesos(b.opcion1.paga)} y te deja {pesos(b.opcion1.ganancia)} ({String(b.opcion1.margen).replace(".", ",")} %)
             {b.opcion1.envio != null && `, con envío de ${pesos(b.opcion1.envio)}`}
             {b.opcion1.envioEstimado && " (envío estimado: cargá las medidas)"}
           </p>
-        </div>
+        </div>}
         <div className="space-y-1">
           <label className="flex items-center gap-2 text-xs font-medium">
-            <input type="checkbox" checked={f.opcion2} onChange={(e) => set("opcion2", e.target.checked)} disabled={!b.opcion2} /> Opción 2: 3 cuotas y envío gratis
+            <input type="checkbox" checked={f.opcion2} onChange={(e) => set("opcion2", e.target.checked)} disabled={!b.opcion2 || soloOpcion2} /> Opción 2: 3 cuotas y envío gratis
           </label>
           {f.opcion2 && campo("precio2", "Precio", "(publicado)")}
           {b.opcion2 && (
@@ -299,15 +301,19 @@ function Formulario({ modeloId, combinacionId, onCerrar, onCreada }: { modeloId:
 }
 
 export function SeccionCrearEnMl({ ficha, onCambio }: { ficha: Ficha; onCambio: () => void }) {
-  const [abierta, setAbierta] = useState<{ id: string; nombre: string } | null>(null);
-  const conMl = new Set(ficha.canales.claves.filter((k) => k.canal === "mercadolibre" && k.activa).map((k) => k.combinacion));
+  const [abierta, setAbierta] = useState<{ id: string; nombre: string; soloOpcion2: boolean } | null>(null);
+  const deMl = ficha.canales.claves.filter((k) => k.canal === "mercadolibre" && k.activa);
+  const conMl = new Set(deMl.map((k) => k.combinacion));
   const sinPublicar = ficha.combinaciones.filter((c) => c.activo && c.precios && !conMl.has(c.nombre));
-  if (!sinPublicar.length) return null;
+  // Tiene la opción 1 activa o pausada y ninguna opción 2.
+  const opciones = (nombre: string) => new Set(deMl.filter((k) => k.combinacion === nombre).map((k) => k.opcionMl));
+  const faltaLaDos = ficha.combinaciones.filter((c) => c.activo && c.precios && conMl.has(c.nombre) && opciones(c.nombre).has(1) && !opciones(c.nombre).has(2));
+  if (!sinPublicar.length && !faltaLaDos.length) return null;
   return (
     <Card>
       <CardContent className="py-4 space-y-3">
         <p className="font-medium flex items-center gap-2">
-          <Store className="h-4 w-4 text-primary" /> Sin publicar en Mercado Libre
+          <Store className="h-4 w-4 text-primary" /> {sinPublicar.length ? "Sin publicar en Mercado Libre" : "Falta la opción 2 en Mercado Libre"}
         </p>
         <div className="divide-y text-sm">
           {sinPublicar.map((c) => (
@@ -315,8 +321,18 @@ export function SeccionCrearEnMl({ ficha, onCambio }: { ficha: Ficha; onCambio: 
               <span>
                 {c.nombre} <span className="text-xs text-muted-foreground">· publicaría {pesos(c.precios!.mlPublicado)}</span>
               </span>
-              <Button size="sm" variant="outline" onClick={() => setAbierta({ id: c.id, nombre: c.nombre })}>
+              <Button size="sm" variant="outline" onClick={() => setAbierta({ id: c.id, nombre: c.nombre, soloOpcion2: false })}>
                 Crear en ML
+              </Button>
+            </div>
+          ))}
+          {faltaLaDos.map((c) => (
+            <div key={c.id} className="flex items-center justify-between gap-2 py-2">
+              <span>
+                {c.nombre} <span className="text-xs text-muted-foreground">· tiene la opción 1, falta la 2 (3 cuotas y envío gratis)</span>
+              </span>
+              <Button size="sm" variant="outline" onClick={() => setAbierta({ id: c.id, nombre: c.nombre, soloOpcion2: true })}>
+                Crear opción 2
               </Button>
             </div>
           ))}
@@ -328,10 +344,12 @@ export function SeccionCrearEnMl({ ficha, onCambio }: { ficha: Ficha; onCambio: 
           {abierta && (
             <>
               <DialogHeader>
-                <DialogTitle>Crear en Mercado Libre: {abierta.nombre}</DialogTitle>
+                <DialogTitle>
+                  {abierta.soloOpcion2 ? "Crear la opción 2" : "Crear en Mercado Libre"}: {abierta.nombre}
+                </DialogTitle>
                 <DialogDescription>Revisá todo. No se crea nada hasta que toques &quot;Crear pausada&quot;.</DialogDescription>
               </DialogHeader>
-              <Formulario modeloId={ficha.producto.id} combinacionId={abierta.id} onCerrar={() => setAbierta(null)} onCreada={onCambio} />
+              <Formulario modeloId={ficha.producto.id} combinacionId={abierta.id} soloOpcion2={abierta.soloOpcion2} onCerrar={() => setAbierta(null)} onCreada={onCambio} />
             </>
           )}
         </DialogContent>

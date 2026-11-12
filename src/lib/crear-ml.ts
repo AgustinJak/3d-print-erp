@@ -52,6 +52,8 @@ export interface Borrador {
 
 export interface PedidoDeCreacion {
   combinacionId: string;
+  /** La combinación ya tiene la opción 1 publicada: se crea sólo la 2. */
+  soloOpcion2?: boolean;
   nombre: string;
   categoria: string;
   precio1: number;
@@ -225,7 +227,7 @@ async function ml(tenantId: string, metodo: string, path: string, cuerpo?: unkno
 
 /** Lo que dice el ERP y lo que dice ML (`/items/validate`) de cada opción, sin crear nada. */
 export async function revisar(tenantId: string, p: PedidoDeCreacion): Promise<Revision[]> {
-  const opciones: Array<1 | 2> = p.opcion2 ? [1, 2] : [1];
+  const opciones: Array<1 | 2> = p.soloOpcion2 ? [2] : p.opcion2 ? [1, 2] : [1];
   return Promise.all(
     opciones.map(async (opcion) => {
       const errores: string[] = [];
@@ -253,7 +255,7 @@ export async function crear(tenantId: string, p: PedidoDeCreacion, usuario: stri
   const revisiones = await revisar(tenantId, p);
   if (revisiones.some((r) => r.errores.length)) throw new Error(revisiones.flatMap((r) => r.errores).join(" "));
   const out: Creada[] = [];
-  for (const opcion of (p.opcion2 ? [1, 2] : [1]) as Array<1 | 2>) {
+  for (const opcion of (p.soloOpcion2 ? [2] : p.opcion2 ? [1, 2] : [1]) as Array<1 | 2>) {
     const precio = opcion === 1 ? p.precio1 : p.precio2!;
     const r = await ml(tenantId, "POST", "/items", cuerpoDe(p, opcion));
     const mla = typeof r.json?.id === "string" ? r.json.id : null;

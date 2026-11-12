@@ -16,9 +16,9 @@ import {
   techoDeRedondeo,
   type GastosVenta,
 } from "@/lib/precios-formula";
-import { precioConEnvioCotizado, type PrecioMl } from "@/lib/precios-ml-publicacion";
+import { precioConEnvioCotizado, precioParaGanancia, type PrecioMl } from "@/lib/precios-ml-publicacion";
 import { compararReserva } from "@/lib/precios-reglas";
-import { paqueteDeItem } from "@/lib/tarifas-ml-reglas";
+import { cargoFijo, paqueteDeItem } from "@/lib/tarifas-ml-reglas";
 
 let pruebas = 0;
 let fallas = 0;
@@ -81,6 +81,23 @@ for (const fab of [2000, 7000, 12000]) {
   ok(Math.abs(cinco.margen - esperado) < 1e-9 && cinco.envioPorUnidad === 6315 / 5, "tramo de 5 u de $10.000 con 8 %", cinco);
   const [chico] = margenesDeTramos(gx, 5000, 2000, 0);
   ok(chico.envioPorUnidad === 0, "5 u de $5.000 no pasa el umbral: el envío lo paga el cliente", chico);
+}
+
+// El cargo fijo cambia por tramos: un precio nunca puede pagar un cargo que ML no cobra a ese precio,
+// y en el corte entre dos tramos se queda en el corte (Porta auricular AC/DC, 2026-11-11).
+{
+  const tarifas = { fijos: [{ desde: 0, monto: 1330 }, { desde: 15000, monto: 2740 }, { desde: 24000, monto: 3320 }, { desde: 33000, monto: 0 }] };
+  const costos = { pct: 15.5, recargoCuotas: 0, envioGratis: true, costoEnvio: 8890, estimado: [] };
+  let fantasmas = 0, cortos = 0, enElCorte = 0;
+  for (let meta = 3000; meta <= 20000; meta += 50) {
+    const r = precioParaGanancia(g, 4223, 0, "noventa", meta, costos, tarifas);
+    if (r.cargoFijo !== cargoFijo(tarifas, r.final)) fantasmas++;
+    if (r.ganancia < meta - 0.5) cortos++;
+    if (r.final === 33090) enElCorte++;
+  }
+  ok(fantasmas === 0, "ningún precio paga un cargo fijo que ML no cobra a ese precio", fantasmas);
+  ok(cortos === 0, "y todos dejan al menos lo pedido", cortos);
+  ok(enElCorte > 0, "en el hueco entre tramos, el precio es el corte, 33.090 con terminación 90", enElCorte);
 }
 
 // Spec 006, RN-4: el envío que cotiza ML, que depende del precio.

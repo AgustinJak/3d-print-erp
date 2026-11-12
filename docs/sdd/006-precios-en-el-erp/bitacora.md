@@ -293,3 +293,14 @@ Diario de sesiones. Lo último arriba de cada día; los días en orden.
   septiembre pero llegó al ERP el 1/10.
 - (2026-11-06) TASK-016. Cerebro al día. Quedan abiertos en INV - Backlog el costo real del envío gratis (del Shop),
   la línea "publicaría unos $X" y el corte de $30.000 contra los $33.000 que muestra ML.
+- (2026-11-11) **Cargo fijo entre tramos.** Cuando el precio cae en el hueco entre dos tramos (con el cargo de
+  abajo queda arriba del corte y con el de arriba queda abajo), `conCargoFijo` se quedaba con el precio
+  calculado con el cargo más caro, aunque a ese precio ML ya no lo cobre. El Porta auricular AC/DC
+  (MLA1716916321, Clásica a $37.434) recibía $40.989 de propuesta: con la promo el cliente pagaba $36.890 y el
+  precio incluía $3.320 de un cargo que no existe arriba de $33.000. Ahora `precioParaGanancia` prueba cada
+  corte debajo del precio y se queda con el más bajo que deja lo pedido: $36.767 publicado, $33.090 con la
+  promo, deja $10.050 contra $9.340 de la opción 1. Era la única de 92 publicaciones en ese hueco. Prueba
+  nueva en `scripts/sdd-006-probar-precios.ts` (41/41).
+- (2026-11-11) **Crear sólo la opción 2.** La página del producto lista las combinaciones con la opción 1
+  activa o pausada y sin la 2, con "Crear opción 2" (`soloOpcion2` en `crear-ml.ts`). La ficha trae la opción
+  de cada publicación (`opcionMl`).

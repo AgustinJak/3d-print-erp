@@ -15,6 +15,7 @@ import { z } from "zod";
  */
 const Cuerpo = z.object({
   combinacionId: z.string().min(1),
+  soloOpcion2: z.boolean().optional(),
   nombre: z.string().min(3).max(60),
   categoria: z.string().regex(/^MLA\d+$/),
   precio1: z.number().positive(),
