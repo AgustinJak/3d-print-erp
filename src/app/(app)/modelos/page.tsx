@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/empty-state";
 import { PiezasNuevas } from "@/components/producto/piezas-nuevas";
 import { CrearMlMasivo } from "@/components/producto/crear-ml-masivo";
 import { ConfirmarFlex } from "@/components/precios/confirmar-flex";
+import { CopiarAOtraCuenta } from "@/components/productos/copiar-ml";
 import { FiltrosDeProductos, filtrosPuestos, type Vista } from "@/components/productos/filtros";
 import { TablaDeProductos, TarjetasDeProductos } from "@/components/productos/tabla";
 import {
@@ -91,11 +92,13 @@ export default function ModelosPage() {
   const [initialLoading, setInitialLoading] = useState(true);
   // Claves de variante (o `m:<id>` para un producto sin variantes activas).
   const [elegidos, setElegidos] = useState<Set<string>>(new Set());
-  const [masivo, setMasivo] = useState<"crear" | "activar" | "desactivar" | "inmediata" | "a_pedido" | null>(null);
+  const [masivo, setMasivo] = useState<"crear" | "activar" | "desactivar" | "inmediata" | "a_pedido" | "copiar" | null>(null);
   const [aplicandoMasivo, setAplicandoMasivo] = useState(false);
   // Lo que se manda queda fijo al abrir el diálogo: si no, al refrescar la lista después de aplicar
   // el diálogo volvería a leer ML o perdería sus resultados.
-  const [tanda, setTanda] = useState<{ mlas: string[]; aCrear: ResumenDeSeleccion["aCrear"] }>({ mlas: [], aCrear: [] });
+  const [tanda, setTanda] = useState<{ mlas: string[]; aCrear: ResumenDeSeleccion["aCrear"]; mlasPrincipal: string[] }>({ mlas: [], aCrear: [], mlasPrincipal: [] });
+  // Las otras cuentas de ML conectadas (docs/sdd/010): con alguna, aparece "Copiar a…".
+  const [otrasCuentas, setOtrasCuentas] = useState<string[]>([]);
 
   /* ─── Preferencias de la vista: quedan en el navegador ─── */
 
@@ -126,6 +129,7 @@ export default function ModelosPage() {
       const r = (await can.json()) as RespuestaDeCanales;
       setCanales(r.modelos ?? {});
       setLeidoEn(r.leidoEn ?? null);
+      setOtrasCuentas(r.otrasCuentas ?? []);
     }
   }, [mostrarConsolidados]);
 
@@ -168,7 +172,7 @@ export default function ModelosPage() {
 
   const onAlternar = (claves: string[]) => setElegidos((prev) => alternar(prev, claves));
   const abrirMasivo = (que: NonNullable<typeof masivo>) => {
-    setTanda({ mlas: resumen.mlas, aCrear: resumen.aCrear });
+    setTanda({ mlas: resumen.mlas, aCrear: resumen.aCrear, mlasPrincipal: resumen.mlasPrincipal });
     setMasivo(que);
   };
   const variantesALaVista = filas.reduce((s, f) => s + f.unidades.filter((u) => u.comb).length, 0);
@@ -356,6 +360,11 @@ export default function ModelosPage() {
           <Button size="sm" variant="outline" onClick={() => abrirMasivo("crear")} disabled={!resumen.aCrear.length} title={!resumen.aCrear.length ? "Todo lo elegido ya está publicado en ML" : undefined}>
             Crear en ML ({resumen.aCrear.length})
           </Button>
+          {otrasCuentas.length > 0 && (
+            <Button size="sm" variant="outline" onClick={() => abrirMasivo("copiar")} disabled={!resumen.mlasPrincipal.length} title={`Copiar las publicaciones de Sendero 3D a ${otrasCuentas[0]}`}>
+              Copiar a {otrasCuentas[0]} ({resumen.mlasPrincipal.length})
+            </Button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
               Más <ChevronDown className="h-3.5 w-3.5" />
@@ -421,6 +430,18 @@ export default function ModelosPage() {
               }}
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={masivo === "copiar"} onOpenChange={(o) => !o && setMasivo(null)}>
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Copiar a {otrasCuentas[0] ?? "otra cuenta"}: {cuantos(tanda.mlasPrincipal.length, "publicación", "publicaciones")}
+            </DialogTitle>
+            <DialogDescription>Mismas fotos, descripción, precio y stock; el título cambia en su última parte. No se crea nada hasta que confirmes, y quedan pausadas.</DialogDescription>
+          </DialogHeader>
+          {masivo === "copiar" && <CopiarAOtraCuenta mlas={tanda.mlasPrincipal} onCerrar={() => setMasivo(null)} onHecho={fetchModelos} />}
         </DialogContent>
       </Dialog>
 

@@ -94,11 +94,12 @@
       "title": "Copiar a Sendero Shop",
       "description": "Desde Productos, por tandas: borrador de cada publicación con las mismas fotos y descripción y el título editable, que no puede quedar idéntico; revisar con validate; crear pausada y mapear.",
       "component": "frontend",
-      "status": "pending",
+      "status": "in-progress",
       "origin": "plan",
       "dependencies": [
         "TASK-004"
-      ]
+      ],
+      "notes": "Hecho: src/lib/copiar-ml.ts, GET/POST /api/ml/copiar y el diálogo en Productos (\"Copiar a Sendero Shop\"). Probado contra ML sólo con validate: la cuenta nueva usa User Products (family_name), y con el final del título cambiado acepta con avisos. Falta la primera copia real, que elige Agustín."
     },
     {
       "id": "TASK-008",

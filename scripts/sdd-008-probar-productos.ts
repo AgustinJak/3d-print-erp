@@ -122,6 +122,7 @@ const ver = (x: Partial<Filtros>) => ids(filtrar(productos, canales, con(x)));
   const r = resumir(productos, canales, e);
   ok(r.unidades === 4 && r.productos.join() === "nube,katana" && r.productosAMedias === 0, "el resumen cuenta variantes y productos", r);
   ok(r.mlas.join() === "MLA1,MLA2,MLA3,MLA4", "las publicaciones activas y pausadas de lo elegido; la sin leer no", r.mlas);
+  ok(r.mlasPrincipal.join() === r.mlas.join(), "sin otra cuenta, todas son de la principal (las que se pueden copiar)", r.mlasPrincipal);
   ok(r.conStock.join() === "violeta,celeste" && r.sinStock.join() === "blanco,k95", "con stock y sin stock", [r.conStock, r.sinStock]);
   e = alternar(e, ["violeta", "blanco", "celeste"]);
   ok(e.size === 1 && e.has("k95"), "tildar de nuevo el producto saca sólo las suyas", [...e]);

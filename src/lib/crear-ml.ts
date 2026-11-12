@@ -1,4 +1,5 @@
 import { Prisma } from "@/generated/prisma";
+import { PALABRAS_PROHIBIDAS } from "@/lib/copiar-ml-reglas";
 import { prisma } from "@/lib/prisma";
 import { getValidAccessToken, mlFetch } from "@/lib/mercadolibre";
 import { cargarContextoDePrecios, gastosDe, pctDeCombinacion, preciosDeCombinaciones } from "@/lib/precios-combinacion";
@@ -26,7 +27,7 @@ import { categoriaDeProducto, describirCategoria } from "@/lib/categorias-ml";
 export const AVISO_CUOTAS = "ML la deja en 6 cuotas: en ML, Cuotas y cargos, elegí 3 cuotas. El precio está calculado para 3.";
 
 /** Lo que no puede decir una publicación (RN-2; las reglas de cara al cliente de Sendero). */
-const PROHIBIDAS = [/impresi[oó]n\s*3d/i, /\bimprim/i, /\bimpres[oa]s?\b/i, /\bimpresora/i, /\bPLA\b/, /sendero\s*3d/i, /r[eé]plica/i, /\btipo\b/i, /s[ií]mil/i];
+export const PROHIBIDAS = PALABRAS_PROHIBIDAS;
 
 export type Paquete = PaqueteMl;
 

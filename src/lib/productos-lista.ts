@@ -55,6 +55,8 @@ export interface CanalesDeModelo {
 export interface RespuestaDeCanales {
   /** La lectura de ML más vieja de las que se muestran: de cuándo es el estado y la entrega. */
   leidoEn: string | null;
+  /** Las otras cuentas de ML conectadas, por nombre (docs/sdd/010): habilitan "Copiar a…". */
+  otrasCuentas?: string[];
   modelos: Record<string, CanalesDeModelo>;
 }
 
@@ -290,15 +292,18 @@ export interface ResumenDeSeleccion {
   aCrear: Array<{ modeloId: string; combinacionId: string; nombre: string }>;
   /** Publicaciones activas y pausadas de las variantes elegidas. */
   mlas: string[];
+  /** Las de la cuenta principal: las que se pueden copiar a otra cuenta (docs/sdd/010). */
+  mlasPrincipal: string[];
   conStock: string[];
   sinStock: string[];
 }
 
 /** Qué hay elegido, mirando todos los productos y no sólo los que se ven con los filtros de ahora. */
 export function resumir(productos: ProductoLista[], canales: Record<string, CanalesDeModelo>, elegidos: ReadonlySet<string>): ResumenDeSeleccion {
-  const r: ResumenDeSeleccion = { unidades: 0, productos: [], productosAMedias: 0, aCrear: [], mlas: [], conStock: [], sinStock: [] };
+  const r: ResumenDeSeleccion = { unidades: 0, productos: [], productosAMedias: 0, aCrear: [], mlas: [], mlasPrincipal: [], conStock: [], sinStock: [] };
   if (!elegidos.size) return r;
   const mlas = new Set<string>();
+  const principal = new Set<string>();
   for (const p of productos) {
     const todas = unidadesDe(p, canales[p.id]);
     const suyas = todas.filter((u) => elegidos.has(u.clave));
@@ -309,10 +314,14 @@ export function resumir(productos: ProductoLista[], canales: Record<string, Cana
     for (const u of suyas) {
       if (!u.comb) continue;
       if (!u.comb.publicaciones.length) r.aCrear.push({ modeloId: p.id, combinacionId: u.comb.id, nombre: u.comb.nombre });
-      for (const x of u.comb.publicaciones) if (x.estado !== "otro") mlas.add(x.mla);
+      for (const x of u.comb.publicaciones) if (x.estado !== "otro") {
+        mlas.add(x.mla);
+        if (!x.cuenta) principal.add(x.mla);
+      }
       ((u.comb.stock ?? 0) > 0 ? r.conStock : r.sinStock).push(u.clave);
     }
   }
   r.mlas = [...mlas];
+  r.mlasPrincipal = [...principal];
   return r;
 }

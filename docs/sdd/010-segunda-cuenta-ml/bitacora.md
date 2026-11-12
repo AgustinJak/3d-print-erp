@@ -83,3 +83,22 @@ pasada del cron por cuenta: Sendero 3D con 17 compras de 2 días, 7 actualizadas
 siempre); Sendero Shop con 0 ventas.
 
 **Queda para TASK-006:** las bonificaciones Flex (`sincronizarFlex`) y la facturación de Sendero Shop.
+
+## 2026-11-12 · Claude, TASK-007
+
+**El copiador.** En Productos, con variantes elegidas, "Copiar a Sendero Shop" lista sus publicaciones de
+Sendero 3D. Cada una se vuelve a leer de ML al revisar y al crear: va igual que la original
+(categoría, atributos, tipo, precio, stock, garantía, disponibilidad, envío, fotos en su versión
+completa y descripción), con el título editado. La copia queda pausada y enlazada a la misma variante
+con `cuenta_ml_id` de destino; el mapeo guarda `muestra.copiaDe`, así una publicación no se copia dos
+veces. Un error después de crear no corta la vuelta: se avisa, como en Crear en ML.
+
+**Lo que dijo ML con `/items/validate` en la cuenta nueva** (sin crear nada): usa User Products, pide
+`family_name` y rechaza `title`. Con eso contesta sólo avisos ("User has not mode me1", "Mandatory free
+shipping added", y atributos que no deja tocar: PACKAGE_*, SYI_PYMES_ID, GIFTABLE, IS_HIGHLIGHT_BRAND,
+IS_TOM_BRAND, que ya no se mandan). De las 226 publicaciones mapeadas de Sendero 3D, ninguna tiene
+variaciones y 11 son de catálogo; la Horda, de catálogo, pasó la revisión.
+
+**Probado.** Contra ML, sólo revisando: Horda y Bola de JOJOS con el final cambiado, aceptadas; AC/DC con
+el título igual, rechazada antes de mandarla. La pantalla, con respuestas simuladas. 11 pruebas del
+título (`scripts/sdd-010-probar-copia.ts`). La primera copia real la elige Agustín.

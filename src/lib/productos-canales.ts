@@ -111,6 +111,6 @@ export async function canalesDeModelos(tenantId: string): Promise<RespuestaDeCan
   const conMl = new Set(mapeos.filter((m) => m.canal === "mercadolibre").map((m) => m.combinacionId!));
   for (const c of combinaciones) if (!conMl.has(c.id)) de(c.modeloId).sinMl.push({ id: c.id, nombre: c.nombre });
 
-  const respuesta: RespuestaDeCanales = { leidoEn: leidoEn?.toISOString() ?? null, modelos };
+  const respuesta: RespuestaDeCanales = { leidoEn: leidoEn?.toISOString() ?? null, modelos, otrasCuentas: [...nombreDeCuenta.values()] };
   return respuesta;
 }
