@@ -1,12 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import {
-  exchangeCodeForTokens,
-  saveTokens,
-  parseOAuthState,
-  getMe,
-} from "@/lib/mercadolibre";
+import { exchangeCodeForTokens, guardarCuentaConectada, parseOAuthState, usuarioDelToken } from "@/lib/mercadolibre";
 
 /**
  * Callback de OAuth de Mercado Libre.
@@ -14,7 +9,7 @@ import {
  * ML redirige acá con ?code=...&state=... tras la autorización.
  * - Validamos el `state` firmado (identifica el tenant + previene CSRF)
  * - Intercambiamos el code por tokens
- * - Guardamos la cuenta
+ * - Guardamos la cuenta: la principal, u otra más si el state lo pide (docs/sdd/010)
  * - Redirigimos a la sección Integraciones con un flag de resultado
  */
 export async function GET(request: NextRequest) {
@@ -45,15 +40,15 @@ export async function GET(request: NextRequest) {
 
   try {
     const tokens = await exchangeCodeForTokens(code);
-    // Guardamos primero para poder usar el token al consultar el nickname
-    await saveTokens(parsed.tenantId, tokens);
-    try {
-      const me = await getMe(parsed.tenantId);
-      await saveTokens(parsed.tenantId, tokens, me.nickname);
-    } catch {
-      // Si falla traer el nickname, no es crítico
+    // El nickname con el token nuevo, no con el de la principal. Si falla, no es crítico.
+    const yo = await usuarioDelToken(tokens.access_token).catch(() => null);
+    const r = await guardarCuentaConectada(parsed.tenantId, tokens, yo?.nickname ?? null, parsed.modo);
+    // Para conectar otra cuenta hay que entrar a ML con esa: si ML tenía abierta la principal, vuelve
+    // la principal y no se crea nada.
+    if (parsed.modo === "otra" && !r.nueva && r.principal) {
+      return redirectTo("error", "ML devolvió la cuenta principal: cerrá la sesión de Mercado Libre y entrá con la otra cuenta");
     }
-    return redirectTo("ok");
+    return redirectTo(parsed.modo === "otra" ? "ok_otra" : "ok");
   } catch (e) {
     const msg = e instanceof Error ? e.message : "token_exchange_failed";
     return redirectTo("error", msg);

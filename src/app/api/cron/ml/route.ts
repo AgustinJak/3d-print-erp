@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
   // escapaba y Next contestaba 500 sin cuerpo: el aviso de GitHub decía "HTTP 500" y nada más.
   let cuentas: Array<{ tenantId: string }>;
   try {
-    cuentas = await prisma.cuentaMercadolibre.findMany({ select: { tenantId: true } });
+    cuentas = await prisma.cuentaMercadolibre.findMany({ where: { principal: true }, select: { tenantId: true } });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (esBaseCaida(e)) {

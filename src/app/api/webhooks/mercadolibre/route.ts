@@ -69,12 +69,31 @@ export async function POST(request: NextRequest) {
   // Resolver tenant por la cuenta conectada con ese ml_user_id
   const cuenta = await prisma.cuentaMercadolibre.findFirst({
     where: { mlUserId: userId },
-    select: { tenantId: true },
+    select: { tenantId: true, principal: true, nombre: true, nickname: true },
   });
   if (!cuenta) {
     return NextResponse.json({ ok: true, ignored: "no_account" }, { status: 200 });
   }
   const tenantId = cuenta.tenantId;
+
+  // Las ventas de otra cuenta (docs/sdd/010) todavía no se procesan: falta TASK-005. Quedan anotadas,
+  // y la sincronización de esa cuenta las va a traer.
+  if (!cuenta.principal) {
+    await prisma.webhookLog
+      .create({
+        data: {
+          tenantId,
+          origen: "mercadolibre",
+          evento: topic,
+          externoId: orderId,
+          estado: "ignorado",
+          errorMsg: `venta de ${cuenta.nombre ?? cuenta.nickname ?? "otra cuenta"}: todavía no se procesan (docs/sdd/010, TASK-005)`,
+          payload: body as unknown as Prisma.InputJsonValue,
+        },
+      })
+      .catch(() => {});
+    return NextResponse.json({ ok: true, ignored: "otra_cuenta" }, { status: 200 });
+  }
 
   // Procesar en segundo plano: ML recibe el 200 de inmediato.
   after(async () => {

@@ -1,0 +1,110 @@
+{
+  "$schema": "../_plantillas/tasks.schema.json",
+  "featureId": "010-segunda-cuenta-ml",
+  "epic": "ninguna",
+  "version": "1.0.0",
+  "status": "in-progress",
+  "branch": "feat/003-precios-desde-bodega",
+  "baseBranch": "master",
+  "pullRequest": null,
+  "validation": {
+    "approved": true,
+    "approvedBy": "Agustín",
+    "approvedAt": "2026-11-12",
+    "notes": "\"dale\", con fotos iguales y la última parte del título distinta."
+  },
+  "updatedAt": "2026-11-12",
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Varias cuentas de ML por negocio",
+      "description": "cuentas_ml sin único por tenant, nombre y principal; migración: la de hoy queda principal.",
+      "component": "database",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "completedAt": "2026-11-12",
+      "notes": "Paso 1 de prisma/sql/cuentas-ml-varias.sql aplicado (nombre, principal, únicos por (tenant, ml_user) y una principal). El paso 2 (sacar el único por tenant) va después de desplegar el código."
+    },
+    {
+      "id": "TASK-002",
+      "title": "Las llamadas a ML eligen la cuenta",
+      "description": "mlFetch, getMlAccount y getValidAccessToken con cuenta opcional; sin cuenta, la principal. Todo igual con una sola cuenta.",
+      "component": "backend",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-001"
+      ],
+      "completedAt": "2026-11-12",
+      "notes": "mlFetch(tenant, path, { cuenta }); getMlAccount y getValidAccessToken con cuenta opcional; la renovación del token es por cuenta. Probado con la cuenta real: sin cuenta y por id dan el mismo token y la misma cuenta en ML."
+    },
+    {
+      "id": "TASK-003",
+      "title": "Conectar la segunda cuenta",
+      "description": "OAuth con la cuenta en el state firmado; Integraciones muestra las dos. Agustín inicia sesión en ML con Sendero Shop.",
+      "component": "backend",
+      "status": "in-progress",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002"
+      ],
+      "notes": "Hecho en el código: OAuth con ?otra=1, Integraciones lista las otras cuentas, desconectar por cuenta. El webhook anota y no procesa ventas de otra cuenta hasta TASK-005; los crons sólo la principal. Falta: desplegar, aplicar el paso 2 y que Agustín conecte Sendero Shop."
+    },
+    {
+      "id": "TASK-004",
+      "title": "Cada publicación con su cuenta",
+      "description": "mapeos_canal.cuenta_ml_id; precios (leer y aplicar), Flex, promos y crear en ML con la cuenta de la publicación.",
+      "component": "backend",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-003"
+      ]
+    },
+    {
+      "id": "TASK-005",
+      "title": "Ventas de las dos cuentas",
+      "description": "Webhook y sincronización por cuenta; el pedido guarda la cuenta; neto de Mercado Pago con el token de esa cuenta.",
+      "component": "backend",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-003"
+      ]
+    },
+    {
+      "id": "TASK-006",
+      "title": "Facturación y Finanzas por cuenta",
+      "description": "cargos_ml, periodos_ml y flex_ml por cuenta; Finanzas separada y sumada; Shay sólo la principal.",
+      "component": "backend",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-005"
+      ]
+    },
+    {
+      "id": "TASK-007",
+      "title": "Copiar a Sendero Shop",
+      "description": "Desde Productos, por tandas: borrador de cada publicación con las mismas fotos y descripción y el título editable, que no puede quedar idéntico; revisar con validate; crear pausada y mapear.",
+      "component": "frontend",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-004"
+      ]
+    },
+    {
+      "id": "TASK-008",
+      "title": "Cerebro",
+      "description": "INV - Flujos, Integración Mercado Libre, Finanzas y backlog.",
+      "component": "docs",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-007"
+      ]
+    }
+  ]
+}

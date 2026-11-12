@@ -2,14 +2,15 @@ export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
-import { getMlAccount } from "@/lib/mercadolibre";
+import { cuentasMl } from "@/lib/mercadolibre";
 import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
     const { tenantId } = await getAuthenticatedTenantNonDemo();
 
-    const cuenta = await getMlAccount(tenantId);
+    const cuentas = await cuentasMl(tenantId);
+    const cuenta = cuentas.find((c) => c.principal) ?? null;
     const envConfigured = Boolean(
       process.env.ML_CLIENT_ID && process.env.ML_CLIENT_SECRET && process.env.ML_REDIRECT_URI
     );
@@ -37,6 +38,8 @@ export async function GET() {
             expiresAt: cuenta.expiresAt,
           }
         : null,
+      // Las otras cuentas conectadas (docs/sdd/010).
+      otras: cuentas.filter((c) => !c.principal).map((c) => ({ id: c.id, nombre: c.nombre, nickname: c.nickname, mlUserId: c.mlUserId })),
       webhookUrl: "/api/webhooks/mercadolibre",
       totalEventos,
       ultimoEvento,

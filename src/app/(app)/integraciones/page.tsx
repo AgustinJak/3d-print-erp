@@ -66,6 +66,8 @@ interface MlStatus {
     scope: string | null;
     expiresAt: string;
   } | null;
+  /** Las otras cuentas de ML conectadas (docs/sdd/010). */
+  otras?: Array<{ id: string; nombre: string | null; nickname: string | null; mlUserId: string }>;
   webhookUrl: string;
   totalEventos: number;
   ultimoEvento: { recibidoEn: string; estado: string; evento: string } | null;
@@ -185,6 +187,8 @@ function IntegracionesContent() {
     setTab("mercadolibre");
     if (ml === "ok") {
       toast.success("Cuenta de Mercado Libre conectada");
+    } else if (ml === "ok_otra") {
+      toast.success("Otra cuenta de Mercado Libre conectada");
     } else {
       const detail = searchParams.get("detail");
       toast.error(`No se pudo conectar Mercado Libre${detail ? `: ${detail}` : ""}`);
@@ -197,6 +201,25 @@ function IntegracionesContent() {
     window.location.href = "/api/ml/oauth/start";
   };
 
+  // Conectar otra cuenta (docs/sdd/010): ML autoriza la cuenta que tenga la sesión abierta.
+  const connectOtraMl = () => {
+    if (!confirm("Mercado Libre va a autorizar la cuenta con la que estés logueado. Antes, cerrá la sesión de la cuenta principal en Mercado Libre (o abrí esto en una ventana privada) y entrá con la otra cuenta. ¿Seguir?")) return;
+    window.location.href = "/api/ml/oauth/start?otra=1";
+  };
+
+  const disconnectOtraMl = async (id: string, nombre: string) => {
+    if (!confirm(`¿Desconectar ${nombre}? El ERP deja de usar esa cuenta.`)) return;
+    setMlBusy("disconnect");
+    const res = await fetch(`/api/ml/disconnect?cuenta=${id}`, { method: "DELETE" });
+    setMlBusy(null);
+    if (res.ok) {
+      toast.success(`${nombre} desconectada`);
+      fetchAll();
+    } else {
+      toast.error((await res.json().catch(() => null))?.error ?? "Error al desconectar");
+    }
+  };
+
   const disconnectMl = async () => {
     if (!confirm("¿Desconectar la cuenta de Mercado Libre? Vas a dejar de recibir pedidos automáticamente.")) return;
     setMlBusy("disconnect");
@@ -206,7 +229,7 @@ function IntegracionesContent() {
       toast.success("Cuenta desconectada");
       fetchAll();
     } else {
-      toast.error("Error al desconectar");
+      toast.error((await res.json().catch(() => null))?.error ?? "Error al desconectar");
     }
   };
 
@@ -597,7 +620,7 @@ function IntegracionesContent() {
               <>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                   <div className="rounded-md border p-3">
-                    <p className="text-xs text-muted-foreground">Cuenta</p>
+                    <p className="text-xs text-muted-foreground">Cuenta principal</p>
                     <p className="font-medium mt-1">{mlStatus.cuenta.nickname || mlStatus.cuenta.mlUserId}</p>
                   </div>
                   <div className="rounded-md border p-3">
@@ -642,6 +665,33 @@ function IntegracionesContent() {
                     ) : (
                       <><Unplug className="mr-2 h-4 w-4" /> Desconectar</>
                     )}
+                  </Button>
+                </div>
+
+                <div className="rounded-md border p-3 space-y-2">
+                  <p className="text-sm font-medium">Otras cuentas</p>
+                  {(mlStatus.otras ?? []).length ? (
+                    <div className="divide-y text-sm">
+                      {mlStatus.otras!.map((c) => (
+                        <div key={c.id} className="flex items-center justify-between gap-2 py-1.5">
+                          <span>
+                            {c.nombre || c.nickname || c.mlUserId}
+                            {c.nickname && c.nombre !== c.nickname && <span className="text-xs text-muted-foreground"> · {c.nickname}</span>}
+                          </span>
+                          <Button size="sm" variant="ghost" onClick={() => disconnectOtraMl(c.id, c.nombre || c.nickname || c.mlUserId)} disabled={mlBusy !== null}>
+                            <Unplug className="mr-1.5 h-3.5 w-3.5" /> Desconectar
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Ninguna. Sirve para manejar una segunda cuenta, como Sendero Shop, con los mismos productos.</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Por ahora sólo se conecta: sus ventas y publicaciones se suman al ERP en los próximos pasos del SDD 010.
+                  </p>
+                  <Button size="sm" variant="outline" onClick={connectOtraMl} disabled={mlBusy !== null || !mlStatus.envConfigured}>
+                    <Plug className="mr-1.5 h-3.5 w-3.5" /> Conectar otra cuenta
                   </Button>
                 </div>
 

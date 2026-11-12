@@ -39,15 +39,21 @@ function getStateSecret(): string {
   return process.env.ML_STATE_SECRET || process.env.NEXTAUTH_SECRET || "ml-state-fallback";
 }
 
-/** Genera un `state` firmado que incluye tenantId + timestamp. */
-export function buildOAuthState(tenantId: string): string {
-  const payload = `${tenantId}.${Date.now()}`;
+/** Qué cuenta se está conectando: la principal (la de siempre) u otra más (docs/sdd/010). */
+export type ModoConexion = "principal" | "otra";
+
+/**
+ * Genera un `state` firmado que incluye tenantId + timestamp. Para conectar otra cuenta, el tenant
+ * va con el sufijo `~otra`: el formato sigue siendo de tres partes y un state viejo sigue valiendo.
+ */
+export function buildOAuthState(tenantId: string, modo: ModoConexion = "principal"): string {
+  const payload = `${modo === "otra" ? `${tenantId}~otra` : tenantId}.${Date.now()}`;
   const sig = createHmac("sha256", getStateSecret()).update(payload).digest("hex");
   return Buffer.from(`${payload}.${sig}`).toString("base64url");
 }
 
-/** Valida un `state` firmado. Devuelve el tenantId si es válido (y no expiró). */
-export function parseOAuthState(state: string): { tenantId: string } | null {
+/** Valida un `state` firmado. Devuelve el tenantId y el modo si es válido (y no expiró). */
+export function parseOAuthState(state: string): { tenantId: string; modo: ModoConexion } | null {
   try {
     const decoded = Buffer.from(state, "base64url").toString("utf-8");
     const parts = decoded.split(".");
@@ -61,20 +67,20 @@ export function parseOAuthState(state: string): { tenantId: string } | null {
     if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
     // El state vale 15 minutos
     if (Date.now() - parseInt(ts, 10) > 15 * 60 * 1000) return null;
-    return { tenantId };
+    return tenantId.endsWith("~otra") ? { tenantId: tenantId.slice(0, -"~otra".length), modo: "otra" } : { tenantId, modo: "principal" };
   } catch {
     return null;
   }
 }
 
 /** URL a la que redirigir al usuario para que autorice la app. */
-export function buildAuthorizationUrl(tenantId: string): string {
+export function buildAuthorizationUrl(tenantId: string, modo: ModoConexion = "principal"): string {
   const { clientId, redirectUri } = getMlConfig();
   const params = new URLSearchParams({
     response_type: "code",
     client_id: clientId,
     redirect_uri: redirectUri,
-    state: buildOAuthState(tenantId),
+    state: buildOAuthState(tenantId, modo),
   });
   return `${ML_AUTH}?${params.toString()}`;
 }
@@ -130,66 +136,105 @@ async function refreshTokens(refreshToken: string): Promise<MlTokenResponse> {
   });
 }
 
-/** Guarda (upsert) los tokens de una cuenta ML para un tenant. */
-export async function saveTokens(
+const tokensDe = (token: MlTokenResponse) => ({
+  accessToken: token.access_token,
+  refreshToken: token.refresh_token,
+  expiresAt: new Date(Date.now() + token.expires_in * 1000),
+  scope: token.scope,
+});
+
+/**
+ * Guarda la cuenta que acaba de autorizar el ERP (docs/sdd/010). Si ya estaba conectada (el mismo
+ * usuario de ML), sólo renueva sus tokens. Si no:
+ * - `principal`: reemplaza a la principal, como antes de haber varias cuentas; si no hay, la crea.
+ * - `otra`: la suma como una cuenta más, salvo que el negocio no tenga ninguna, y entonces es la
+ *   principal.
+ */
+export async function guardarCuentaConectada(
   tenantId: string,
   token: MlTokenResponse,
-  nickname?: string | null
-) {
-  const expiresAt = new Date(Date.now() + token.expires_in * 1000);
-  return prisma.cuentaMercadolibre.upsert({
-    where: { tenantId },
-    create: {
-      tenantId,
-      mlUserId: String(token.user_id),
-      nickname: nickname ?? null,
-      accessToken: token.access_token,
-      refreshToken: token.refresh_token,
-      expiresAt,
-      scope: token.scope,
-    },
-    update: {
-      mlUserId: String(token.user_id),
-      ...(nickname !== undefined ? { nickname } : {}),
-      accessToken: token.access_token,
-      refreshToken: token.refresh_token,
-      expiresAt,
-      scope: token.scope,
-    },
+  nickname: string | null,
+  modo: ModoConexion
+): Promise<{ id: string; nueva: boolean; principal: boolean }> {
+  const mlUserId = String(token.user_id);
+  const datos = { ...tokensDe(token), ...(nickname ? { nickname } : {}) };
+  const ya = await prisma.cuentaMercadolibre.findUnique({ where: { tenantId_mlUserId: { tenantId, mlUserId } } });
+  if (ya) {
+    await prisma.cuentaMercadolibre.update({ where: { id: ya.id }, data: datos });
+    return { id: ya.id, nueva: false, principal: ya.principal };
+  }
+  const principal = await prisma.cuentaMercadolibre.findFirst({ where: { tenantId, principal: true } });
+  if (modo === "principal" && principal) {
+    await prisma.cuentaMercadolibre.update({ where: { id: principal.id }, data: { ...datos, mlUserId } });
+    return { id: principal.id, nueva: false, principal: true };
+  }
+  const creada = await prisma.cuentaMercadolibre.create({
+    data: { tenantId, mlUserId, nickname, nombre: principal ? nickname : (nickname ?? null), principal: !principal, ...tokensDe(token) },
   });
+  return { id: creada.id, nueva: true, principal: creada.principal };
+}
+
+/** Quién es el dueño de un token recién emitido: para nombrar la cuenta antes de guardarla. */
+export async function usuarioDelToken(accessToken: string): Promise<{ id: number; nickname: string } | null> {
+  const r = await fetch(`${ML_API}/users/me`, { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } });
+  return r.ok ? ((await r.json()) as { id: number; nickname: string }) : null;
 }
 
 /* ───────────────────────── Cliente autenticado ───────────────────────── */
 
+/**
+ * Qué cuenta de ML usar (docs/sdd/010): su id en `cuentas_ml`. Sin cuenta, la principal: todo lo
+ * que existía antes de haber varias cuentas sigue yendo a la de siempre.
+ */
+export type CuentaMl = string | null | undefined;
+
+/** La fila de la cuenta: la pedida, o la principal. Nunca otra cuenta en lugar de la principal. */
+function filaDeCuenta(tenantId: string, cuenta?: CuentaMl) {
+  return prisma.cuentaMercadolibre.findFirst({ where: cuenta ? { id: cuenta, tenantId } : { tenantId, principal: true } });
+}
+
 export interface MlAccount {
+  id: string;
   tenantId: string;
   mlUserId: string;
   nickname: string | null;
+  nombre: string | null;
+  principal: boolean;
   scope: string | null;
   expiresAt: Date;
 }
 
-/** Devuelve la cuenta ML conectada del tenant (o null si no hay). */
-export async function getMlAccount(tenantId: string): Promise<MlAccount | null> {
-  const cuenta = await prisma.cuentaMercadolibre.findUnique({ where: { tenantId } });
-  if (!cuenta) return null;
-  return {
-    tenantId: cuenta.tenantId,
-    mlUserId: cuenta.mlUserId,
-    nickname: cuenta.nickname,
-    scope: cuenta.scope,
-    expiresAt: cuenta.expiresAt,
-  };
+const deFila = (c: NonNullable<Awaited<ReturnType<typeof filaDeCuenta>>>): MlAccount => ({
+  id: c.id,
+  tenantId: c.tenantId,
+  mlUserId: c.mlUserId,
+  nickname: c.nickname,
+  nombre: c.nombre,
+  principal: c.principal,
+  scope: c.scope,
+  expiresAt: c.expiresAt,
+});
+
+/** Devuelve la cuenta ML conectada del tenant: la pedida, o la principal (o null si no hay). */
+export async function getMlAccount(tenantId: string, cuenta?: CuentaMl): Promise<MlAccount | null> {
+  const fila = await filaDeCuenta(tenantId, cuenta);
+  return fila ? deFila(fila) : null;
+}
+
+/** Todas las cuentas del negocio, la principal primero. */
+export async function cuentasMl(tenantId: string): Promise<MlAccount[]> {
+  const filas = await prisma.cuentaMercadolibre.findMany({ where: { tenantId }, orderBy: [{ principal: "desc" }, { creadoEn: "asc" }] });
+  return filas.map(deFila);
 }
 
 /**
  * Devuelve un access_token válido para el tenant, refrescándolo si está
  * por expirar. Lanza error si el tenant no tiene cuenta conectada.
  */
-export async function getValidAccessToken(tenantId: string): Promise<string> {
-  const cuenta = await prisma.cuentaMercadolibre.findUnique({ where: { tenantId } });
+export async function getValidAccessToken(tenantId: string, cuentaId?: CuentaMl): Promise<string> {
+  const cuenta = await filaDeCuenta(tenantId, cuentaId);
   if (!cuenta) {
-    throw new Error(`No hay cuenta de Mercado Libre conectada para el tenant "${tenantId}"`);
+    throw new Error(`No hay cuenta de Mercado Libre conectada para el tenant "${tenantId}"${cuentaId ? ` (cuenta ${cuentaId})` : ""}`);
   }
 
   const expiraEn = cuenta.expiresAt.getTime() - Date.now();
@@ -198,7 +243,7 @@ export async function getValidAccessToken(tenantId: string): Promise<string> {
   }
 
   // Token expirado o por expirar → refrescar
-  return refrescar(tenantId, cuenta);
+  return refrescar(cuenta);
 }
 
 /**
@@ -209,16 +254,13 @@ export async function getValidAccessToken(tenantId: string): Promise<string> {
  * la vez, el segundo falla con `invalid_grant`. Para ese momento el primero ya guardó un token
  * nuevo, así que se relee la cuenta y, si cambió, se usa ese.
  */
-async function refrescar(
-  tenantId: string,
-  cuenta: { accessToken: string; refreshToken: string }
-): Promise<string> {
+async function refrescar(cuenta: { id: string; accessToken: string; refreshToken: string }): Promise<string> {
   try {
     const nuevo = await refreshTokens(cuenta.refreshToken);
-    await saveTokens(tenantId, nuevo);
+    await prisma.cuentaMercadolibre.update({ where: { id: cuenta.id }, data: tokensDe(nuevo) });
     return nuevo.access_token;
   } catch (e) {
-    const actual = await prisma.cuentaMercadolibre.findUnique({ where: { tenantId } });
+    const actual = await prisma.cuentaMercadolibre.findUnique({ where: { id: cuenta.id } });
     if (actual && actual.refreshToken !== cuenta.refreshToken) return actual.accessToken;
     throw e;
   }
@@ -235,28 +277,30 @@ async function refrescar(
 export async function mlFetch<T = unknown>(
   tenantId: string,
   path: string,
-  init?: RequestInit,
+  init?: RequestInit & { cuenta?: CuentaMl },
   antesDeLeer?: (texto: string) => string
 ): Promise<T> {
+  // `cuenta`: con qué cuenta de ML (docs/sdd/010); sin cuenta, la principal.
+  const { cuenta: cuentaId, ...pedido } = init ?? {};
   const doFetch = async (token: string) => {
     return fetch(`${ML_API}${path}`, {
-      ...init,
+      ...pedido,
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: "application/json",
-        ...(init?.headers || {}),
+        ...(pedido.headers || {}),
       },
     });
   };
 
-  let token = await getValidAccessToken(tenantId);
+  let token = await getValidAccessToken(tenantId, cuentaId);
   let res = await doFetch(token);
 
   if (res.status === 401) {
     // Forzar refresh aunque la DB creyera que el token era válido
-    const cuenta = await prisma.cuentaMercadolibre.findUnique({ where: { tenantId } });
+    const cuenta = await filaDeCuenta(tenantId, cuentaId);
     if (cuenta) {
-      token = await refrescar(tenantId, cuenta);
+      token = await refrescar(cuenta);
       res = await doFetch(token);
     }
   }
@@ -424,6 +468,6 @@ export async function searchOrders(
 }
 
 /** Datos de la cuenta autenticada (para mostrar nickname al conectar). */
-export async function getMe(tenantId: string): Promise<{ id: number; nickname: string }> {
-  return mlFetch(tenantId, `/users/me`);
+export async function getMe(tenantId: string, cuenta?: CuentaMl): Promise<{ id: number; nickname: string }> {
+  return mlFetch(tenantId, `/users/me`, { cuenta });
 }

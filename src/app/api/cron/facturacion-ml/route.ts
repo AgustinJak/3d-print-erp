@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   if (request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "no autorizado" }, { status: 401 });
   }
-  const cuentas = await prisma.cuentaMercadolibre.findMany({ select: { tenantId: true } });
+  const cuentas = await prisma.cuentaMercadolibre.findMany({ where: { principal: true }, select: { tenantId: true } });
   const resultados: Array<Record<string, unknown>> = [];
   for (const { tenantId } of cuentas) {
     try {

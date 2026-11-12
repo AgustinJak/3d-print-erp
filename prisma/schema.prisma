@@ -366,9 +366,14 @@ model WebhookLog {
 
 model CuentaMercadolibre {
   id           String   @id @default(cuid())
-  tenantId     String   @unique @map("tenant_id")
+  tenantId     String   @map("tenant_id")
   mlUserId     String   @map("ml_user_id") // user_id de la cuenta ML
   nickname     String? // apodo de la cuenta (para mostrar en UI)
+  /// "Sendero 3D", "Sendero Shop" (docs/sdd/010). Sin nombre se muestra el nickname.
+  nombre       String?
+  /// La cuenta de siempre: todo lo que no dice de qué cuenta es va a esta. Una por negocio
+  /// (índice parcial en prisma/sql/cuentas-ml-varias.sql).
+  principal    Boolean  @default(true)
   accessToken  String   @map("access_token")
   refreshToken String   @map("refresh_token")
   expiresAt    DateTime @map("expires_at") // cuándo expira el access_token
@@ -376,6 +381,8 @@ model CuentaMercadolibre {
   creadoEn     DateTime @default(now()) @map("creado_en")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
+  @@unique([tenantId, mlUserId])
+  @@index([tenantId])
   @@map("cuentas_ml")
 }
 

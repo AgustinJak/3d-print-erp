@@ -1,0 +1,45 @@
+---
+feature: 010-segunda-cuenta-ml
+---
+
+# Bitácora 010
+
+## 2026-11-12 · Claude (sesión del inventario)
+
+**Pedido.** Agustín quiere una segunda cuenta de ML, Sendero Shop, con los mismos productos que Sendero
+3D, manejada desde el ERP, y un publicador que copie todo de la principal.
+
+**Lo que se miró.** `cuentas_ml` admite una cuenta por tenant, y 15 archivos llaman a ML con esa
+cuenta. El webhook ya resuelve la cuenta por `user_id` y los MLA no chocan entre cuentas.
+
+**Riesgo planteado antes de diseñar.** No hay texto oficial de ML Argentina para este caso; fuentes de
+terceros hablan de baja automática de publicaciones idénticas entre cuentas y de suspensión por
+cuentas duplicadas. Agustín cree que ML lo permite: Sendero Shop va a estar a su nombre y la principal
+a nombre de Tai, y acepta hacer variantes de fotos y textos.
+
+**Decisiones del 2026-11-12:** mismos precios; Finanzas separada y sumada; títulos y descripciones
+propios; copiar por tandas elegidas.
+
+**Una aclaración de diseño.** El copiador exige fotos y textos propios y avisa si son idénticos, pero no
+modifica fotos automáticamente para esquivar la detección de duplicados de ML: las variantes salen de
+las skills de fotos y textos de producto.
+
+**Cambio de decisión, el mismo día.** Agustín: las fotos van iguales ("ya vi que muchos lo hacen") y
+el título cambia en su última parte. La descripción va igual. El copiador sólo exige que el título no
+sea idéntico.
+
+## 2026-11-12 · Claude (sesión del inventario), más tarde
+
+**Tareas:** TASK-001 y TASK-002 (completed), TASK-003 (in-progress).
+
+**Qué se hizo.** La migración va en dos pasos: el código desplegado hasta hoy guarda los tokens con un
+upsert por `tenant_id`, y sin esa restricción única no podría renovar el token. Paso 1 aplicado
+(columnas e índices, Sendero 3D quedó principal con nombre). El paso 2 se aplica después de desplegar.
+`filaDeCuenta` nunca cae en otra cuenta cuando se pide la principal: si se desconectara la principal
+con otras conectadas, lo de siempre usaría el token de Sendero Shop. Por eso la principal sólo se
+desconecta si no quedan otras. El nickname de una cuenta nueva se pide con su propio token
+(`usuarioDelToken`), no con el de la principal.
+
+**Cómo se probó.** Con la cuenta real: la principal sin cuenta y por id dan el mismo token y la misma
+cuenta en ML; una cuenta inexistente da null; el `state` firma los dos modos, uno viejo sigue valiendo y
+uno adulterado no. 41/41 pruebas de precios.
