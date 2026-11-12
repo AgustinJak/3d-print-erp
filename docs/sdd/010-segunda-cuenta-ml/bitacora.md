@@ -102,3 +102,32 @@ variaciones y 11 son de catálogo; la Horda, de catálogo, pasó la revisión.
 **Probado.** Contra ML, sólo revisando: Horda y Bola de JOJOS con el final cambiado, aceptadas; AC/DC con
 el título igual, rechazada antes de mandarla. La pantalla, con respuestas simuladas. 11 pruebas del
 título (`scripts/sdd-010-probar-copia.ts`). La primera copia real la elige Agustín.
+
+## 2026-11-12 · Claude, TASK-007: los atributos
+
+**Lo que pasó.** Agustín copió 28 publicaciones; otras las rechazó ML al revisar ("Value name of
+attribute CHARACTER was not provided", "Attribute id cannot be null", "El valor que ingresaste en
+'Altura' es incorrecto"). El copiador mandaba cada atributo con el código de valor o, sin código, el
+nombre, tal como lo devuelve la original. La otra cuenta no conoce los códigos propios de la principal
+(el Personaje "Tokito Muichiro", el Color principal), las medidas necesitan el texto con unidad, y hay
+atributos sin id (un "Color" suelto) que no se pueden mandar.
+
+**El arreglo.** `atributosParaCopiar` (`copiar-ml-reglas.ts`): texto por nombre, medidas como "10 cm",
+lista/color/sí-no con código y nombre, "No aplica" (-1) tal cual; se saltean los sin id y los que
+calcula ML (se sumaron FILTRABLE_* y SELLER_PACKAGE_DATA_SOURCE). Si la categoría ya no tiene el código
+de la original (el "2 plazas" viejo de los Porta Sábanas), va el código vigente con ese nombre, leído
+de `/categories/{id}/attributes`. 15 pruebas nuevas, con las formas reales (26 en total).
+
+**Revisado contra ML, sin crear** (`/items/validate` en Sendero Shop, las 226 mapeadas): 28 ya
+copiadas, 7 cerradas y 191 a revisar. Con el primer arreglo pasaron 182; con el código vigente de la
+categoría, 186. Las 6 que Agustín vio fallar pasan, salvo el Sauce (las dos), que ahora frena el título
+("Replica", de la original). Lo que no se arregla en el copiador porque falta un dato que ML hoy exige
+y la original no tiene: la Edad recomendada de las dos Cajas de Dungeons & Dragons (está "No aplica")
+y el Modelo del Vaso J-Hope. Las 28 copias ya creadas tienen todos los atributos y fotos de su
+original; dos (las Bolas de Acero) están "under_review" en ML.
+
+Se sumaron a lo que no se copia los que ML ignora con aviso: UNITS_PER_PACKAGE, PATTERN_NAME,
+AGE_GROUP, IS_EMERGING_BRAND, IS_NEW_OFFER.
+
+Ojo: `validate` contesta 400 "validation_error" aunque todo sean avisos. El copiador ya lo trataba
+así: frena sólo con causas de tipo error.

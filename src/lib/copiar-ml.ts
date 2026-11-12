@@ -1,7 +1,7 @@
 import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { getValidAccessToken, mlFetch, olvidarCuentaDePublicacion } from "@/lib/mercadolibre";
-import { ATRIBUTOS_QUE_NO_SE_COPIAN, problemasDelTitulo } from "@/lib/copiar-ml-reglas";
+import { atributosParaCopiar, problemasDelTitulo, type AtributoMl, type ValoresDeCategoria } from "@/lib/copiar-ml-reglas";
 
 /**
  * Copiar publicaciones de Sendero 3D a otra cuenta de ML, Sendero Shop (docs/sdd/010, TASK-007).
@@ -16,7 +16,8 @@ import { ATRIBUTOS_QUE_NO_SE_COPIAN, problemasDelTitulo } from "@/lib/copiar-ml-
  * - Usa User Products: pide \`family_name\` y rechaza \`title\`.
  * - Con eso contesta sólo avisos ("User has not mode me1", "Mandatory free shipping added"), los
  *   mismos que con el Dumpling, que no frenan la creación.
- * - Los atributos que calcula ML (\`ATRIBUTOS_QUE_NO_SE_COPIAN\`) se ignoran: no se mandan.
+ * - Los atributos van en la forma que acepta la otra cuenta, no como los devuelve la original: ver
+ *   `atributosParaCopiar`.
  */
 
 interface ItemFuente {
@@ -34,7 +35,7 @@ interface ItemFuente {
   catalog_listing?: boolean;
   variations?: unknown[];
   pictures?: Array<{ id: string; secure_url?: string; url?: string }>;
-  attributes?: Array<{ id: string; value_id?: string | null; value_name?: string | null }>;
+  attributes?: AtributoMl[];
   sale_terms?: Array<{ id: string; value_id?: string | null; value_name?: string | null }>;
   shipping?: { local_pick_up?: boolean; free_shipping?: boolean };
 }
@@ -134,8 +135,24 @@ export async function fuentesDeCopia(tenantId: string, mlas: string[], destino: 
   return out;
 }
 
+/**
+ * Los valores vigentes de los atributos de lista de una categoría. Si ML no contesta, vacío: los
+ * atributos van como en la original.
+ */
+async function valoresDeCategoria(tenantId: string, categoria: string, cache: Map<string, Promise<ValoresDeCategoria>>): Promise<ValoresDeCategoria> {
+  if (!cache.has(categoria)) {
+    cache.set(
+      categoria,
+      mlFetch<Array<{ id: string; values?: Array<{ id: string; name: string }> }>>(tenantId, `/categories/${categoria}/attributes`, { cuenta: null })
+        .then((attrs) => new Map(attrs.filter((a) => a.values?.length).map((a) => [a.id, a.values!])))
+        .catch(() => new Map())
+    );
+  }
+  return cache.get(categoria)!;
+}
+
 /** El cuerpo para crear la copia: todo como la original, con el título nuevo. */
-function cuerpoDeCopia(it: ItemFuente, titulo: string): Record<string, unknown> {
+function cuerpoDeCopia(it: ItemFuente, titulo: string, valores: ValoresDeCategoria): Record<string, unknown> {
   return {
     family_name: titulo.trim(),
     category_id: it.category_id,
@@ -147,9 +164,7 @@ function cuerpoDeCopia(it: ItemFuente, titulo: string): Record<string, unknown> 
     listing_type_id: it.listing_type_id,
     // Las mismas fotos, en su versión completa: ML las baja para la cuenta nueva.
     pictures: (it.pictures ?? []).map((p) => ({ source: (p.secure_url ?? p.url ?? "").replace(/^http:/, "https:").replace(/-O\.\w+$/, "-F.jpg") })).filter((p) => p.source),
-    attributes: (it.attributes ?? [])
-      .filter((a) => !ATRIBUTOS_QUE_NO_SE_COPIAN.has(a.id) && (a.value_id || a.value_name))
-      .map((a) => ({ id: a.id, ...(a.value_id ? { value_id: a.value_id } : { value_name: a.value_name }) })),
+    attributes: atributosParaCopiar(it.attributes ?? [], valores),
     // Las cuotas no se pueden pedir por la API (INSTALLMENTS_CAMPAIGN es de sólo lectura).
     sale_terms: (it.sale_terms ?? [])
       .filter((s) => s.id !== "INSTALLMENTS_CAMPAIGN" && (s.value_id || s.value_name))
@@ -180,6 +195,7 @@ async function ml(tenantId: string, cuenta: string, metodo: string, path: string
 export async function copiarPublicaciones(tenantId: string, destino: string, pedidos: PedidoDeCopia[], crear: boolean, usuario: string | null): Promise<ResultadoDeCopia[]> {
   const [mapeos, hechas] = await Promise.all([mapeosDeLaPrincipal(tenantId, pedidos.map((p) => p.mla)), copiasHechas(tenantId, destino)]);
   const out: ResultadoDeCopia[] = [];
+  const categorias = new Map<string, Promise<ValoresDeCategoria>>();
   for (const p of pedidos) {
     const r: ResultadoDeCopia = { mla: p.mla, titulo: p.titulo.trim(), estado: "revisada", errores: [], avisos: [], nueva: null, link: null };
     out.push(r);
@@ -204,7 +220,7 @@ export async function copiarPublicaciones(tenantId: string, destino: string, ped
       r.estado = "rechazada";
       continue;
     }
-    const cuerpo = cuerpoDeCopia(fuente.item, p.titulo);
+    const cuerpo = cuerpoDeCopia(fuente.item, p.titulo, await valoresDeCategoria(tenantId, fuente.item.category_id, categorias));
     const v = await ml(tenantId, destino, "POST", "/items/validate", cuerpo);
     const causas = (v.json?.cause as Array<{ type: string; code: string; message: string }> | undefined) ?? [];
     for (const c of causas) (c.type === "error" ? r.errores : r.avisos).push(`${c.message} (${c.code})`);
