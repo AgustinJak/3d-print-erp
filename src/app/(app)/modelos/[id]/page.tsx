@@ -17,6 +17,7 @@ import { SeccionDatos } from "@/components/producto/datos";
 import { SeccionPrecioCosto, margenDe } from "@/components/producto/precio-costo";
 import { SeccionPoliticaPrecio } from "@/components/producto/politica-precio";
 import { SeccionCrearEnMl } from "@/components/producto/crear-en-ml";
+import { SeccionCrearEnShop } from "@/components/producto/crear-en-shop";
 import { SeccionFotos } from "@/components/producto/fotos";
 import { SeccionVariantes } from "@/components/producto/variantes";
 import { SeccionLoQueSeVende } from "@/components/producto/lo-que-se-vende";
@@ -177,6 +178,7 @@ export default function ProductoPage() {
           {!p.esInsumo && <SeccionPrecioCosto ficha={ficha} onCambio={cargar} />}
           {!p.esInsumo && <SeccionPoliticaPrecio ficha={ficha} onCambio={cargar} />}
           {!p.esInsumo && <SeccionCrearEnMl ficha={ficha} onCambio={cargar} />}
+          {!p.esInsumo && <SeccionCrearEnShop ficha={ficha} onCambio={cargar} />}
         </div>
         <SeccionFotos producto={p} onCambio={cargar} />
       </div>

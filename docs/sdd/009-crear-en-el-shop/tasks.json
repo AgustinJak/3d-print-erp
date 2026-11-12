@@ -1,0 +1,17 @@
+{
+  "$schema": "../_plantillas/tasks.schema.json",
+  "featureId": "009-crear-en-el-shop",
+  "epic": "ninguna",
+  "version": "1.0.0",
+  "status": "in-review",
+  "branch": "feat/003-precios-desde-bodega",
+  "baseBranch": "master",
+  "pullRequest": null,
+  "validation": { "approved": true, "approvedBy": "Agustín", "approvedAt": "2026-11-11", "notes": "Pedido en el chat; contrato 7c armado por la sesión del Shop." },
+  "updatedAt": "2026-11-11",
+  "tasks": [
+    { "id": "TASK-001", "title": "Borrador y envío firmado al Shop, con el mapeo", "description": "src/lib/crear-shop.ts y GET/POST /api/modelos/[id]/crear-shop.", "component": "backend", "status": "completed", "origin": "plan", "dependencies": [] },
+    { "id": "TASK-002", "title": "Sección Sin publicar en la web en la página del producto", "description": "src/components/producto/crear-en-shop.tsx.", "component": "frontend", "status": "completed", "origin": "plan", "dependencies": ["TASK-001"] },
+    { "id": "TASK-003", "title": "Probar en producción", "description": "Revisar en el Shop con un producto real (simular). La primera creación la elige Agustín.", "component": "frontend", "status": "pending", "origin": "plan", "dependencies": ["TASK-002"] }
+  ]
+}

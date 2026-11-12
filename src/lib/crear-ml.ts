@@ -82,7 +82,7 @@ export interface Creada {
  * de Shay quedan afuera por `ignorar`. Publicaciones del mismo producto tienen medidas distintas (una
  * katana con 6x100x6 y otra con 110x15x15): se toma la más grande, para no cotizar de menos.
  */
-async function paqueteDeSusPublicaciones(tenantId: string, modeloId: string): Promise<{ paquete: Paquete; mla: string } | null> {
+export async function paqueteDeSusPublicaciones(tenantId: string, modeloId: string): Promise<{ paquete: Paquete; mla: string } | null> {
   const mapeos = await prisma.mapeoCanal.findMany({
     where: { tenantId, canal: "mercadolibre", ignorar: false, unidades: 1, combinacion: { modeloId } },
     select: { clave: true },

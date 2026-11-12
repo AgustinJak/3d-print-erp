@@ -25,7 +25,14 @@ export interface ResultadoFlex extends EstadoFlex {
   motivo: string | null;
 }
 
+/**
+ * "a_pedido" con 0 días es sin Flex y sin tiempo de disponibilidad: entrega inmediata por el envío
+ * común de ML (Agustín, 2026-11-10).
+ */
 export type Entrega = { modo: "inmediata" } | { modo: "a_pedido"; dias: number };
+
+/** Los días que tiene que quedar con esa entrega; null = sin tiempo de disponibilidad. */
+export const diasDe = (entrega: Entrega): number | null => (entrega.modo === "inmediata" || entrega.dias === 0 ? null : entrega.dias);
 
 /** Lo que haría falta mandar para llevar una publicación al modo pedido. Vacío = ya está. */
 export function pasosPara(e: Pick<EstadoFlex, "flex" | "dias">, entrega: Entrega): string[] {
@@ -35,7 +42,8 @@ export function pasosPara(e: Pick<EstadoFlex, "flex" | "dias">, entrega: Entrega
     if (!e.flex) p.push("prender Flex");
   } else {
     if (e.flex) p.push("apagar Flex");
-    if (e.dias !== entrega.dias) p.push(`poner ${entrega.dias} días`);
+    const dias = diasDe(entrega);
+    if (e.dias !== dias) p.push(dias == null ? "sacar disponibilidad" : `poner ${dias} días`);
   }
   return p;
 }

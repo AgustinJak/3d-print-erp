@@ -81,6 +81,25 @@ interface FilaApi {
 
 const porOrden = (a: { orden: number | null }, b: { orden: number | null }) => (a.orden ?? 0) - (b.orden ?? 0);
 
+/**
+ * Las categorías activas del Shop, para elegir una al crear un producto allá (contrato 7c). Con la
+ * clave publicable: el Shop deja leerlas a cualquier navegador. "Padre › Hija" cuando tiene padre.
+ */
+export async function leerCategoriasShop(): Promise<Array<{ id: string; nombre: string }>> {
+  const clave = (process.env.SHOP_SUPABASE_PUBLISHABLE_KEY || CLAVE_PUBLICABLE_POR_DEFECTO).trim();
+  const base = (process.env.SHOP_SUPABASE_URL || URL_POR_DEFECTO).trim().replace(/\/+$/, "");
+  const r = await fetch(`${base}/rest/v1/categorias?select=id,nombre,parent_id,orden&activo=eq.true&order=orden.asc`, {
+    headers: { apikey: clave, Accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!r.ok) throw new Error(`el Shop respondió ${r.status} al leer las categorías`);
+  const filas = (await r.json()) as Array<{ id: string; nombre: string; parent_id: string | null }>;
+  const porId = new Map(filas.map((c) => [c.id, c]));
+  return filas
+    .map((c) => ({ id: c.id, nombre: c.parent_id && porId.get(c.parent_id) ? `${porId.get(c.parent_id)!.nombre} › ${c.nombre}` : c.nombre }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+}
+
 /** Los productos activos del Shop con sus grupos y opciones activas, en el orden de la tienda. */
 export async function leerCatalogoShop(): Promise<ProductoShop[]> {
   const clave = (process.env.SHOP_SUPABASE_PUBLISHABLE_KEY || CLAVE_PUBLICABLE_POR_DEFECTO).trim();

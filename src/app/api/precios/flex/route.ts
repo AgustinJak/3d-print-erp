@@ -15,7 +15,8 @@ const Cuerpo = z.object({
   mlas: z.array(z.string().regex(/^MLA\d+$/)).min(1).max(20),
   entrega: z.discriminatedUnion("modo", [
     z.object({ modo: z.literal("inmediata") }),
-    z.object({ modo: z.literal("a_pedido"), dias: z.number().int().min(1).max(DIAS_MAX) }),
+    // 0 días = sin Flex y sin tiempo de disponibilidad.
+    z.object({ modo: z.literal("a_pedido"), dias: z.number().int().min(0).max(DIAS_MAX) }),
   ]),
   aplicar: z.boolean().optional(),
 });

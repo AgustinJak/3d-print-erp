@@ -1,7 +1,7 @@
 import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { mlFetch } from "@/lib/mercadolibre";
-import { pasosPara, type Entrega, type EstadoFlex, type ResultadoFlex } from "@/lib/entrega-ml";
+import { diasDe as diasDeEntrega, pasosPara, type Entrega, type EstadoFlex, type ResultadoFlex } from "@/lib/entrega-ml";
 
 export { DIAS_MAX } from "@/lib/entrega-ml";
 export type { Entrega, EstadoFlex, ResultadoFlex } from "@/lib/entrega-ml";
@@ -141,7 +141,7 @@ export async function cambiarEntrega(tenantId: string, mlas: string[], entrega: 
       if (antes.flex == null) throw new Error("no se pudo leer la publicación");
       if (!pasosPara(antes, entrega).length) {
         estado = "sin_efecto";
-        motivo = entrega.modo === "inmediata" ? "ya tenía entrega inmediata y Flex" : `ya estaba a pedido, ${entrega.dias} días`;
+        motivo = entrega.modo === "inmediata" ? "ya tenía entrega inmediata y Flex" : diasDeEntrega(entrega) == null ? "ya estaba sin Flex y sin días" : `ya estaba a pedido, ${entrega.dias} días`;
       } else if (entrega.modo === "inmediata") {
         if (despues.dias != null) {
           pasos.push({ paso: "sacar disponibilidad", respuesta: (await ponerDias(tenantId, mla, null)) ?? null });
@@ -166,10 +166,12 @@ export async function cambiarEntrega(tenantId: string, mlas: string[], entrega: 
           await esperar(() => despues.flex === false);
           if (despues.flex) throw new Error("ML contestó bien pero Flex no se apagó");
         }
-        if (despues.dias !== entrega.dias) {
-          pasos.push({ paso: `poner ${entrega.dias} días`, respuesta: (await ponerDias(tenantId, mla, entrega.dias)) ?? null });
+        // Con 0 días se saca la disponibilidad: queda sin Flex y con entrega inmediata.
+        const dias = diasDeEntrega(entrega);
+        if (despues.dias !== dias) {
+          pasos.push({ paso: dias == null ? "sacar disponibilidad" : `poner ${dias} días`, respuesta: (await ponerDias(tenantId, mla, dias)) ?? null });
           await releer();
-          if (despues.dias !== entrega.dias) throw new Error("ML contestó bien pero los días no quedaron");
+          if (despues.dias !== dias) throw new Error(dias == null ? "ML contestó bien pero la disponibilidad sigue" : "ML contestó bien pero los días no quedaron");
         }
       }
     } catch (e) {

@@ -350,7 +350,7 @@ export default function ModelosPage() {
           <Button size="sm" variant="outline" onClick={() => abrirMasivo("inmediata")} disabled={!resumen.mlas.length} title="En ML: sin tiempo de disponibilidad y con Flex">
             <Zap className="h-3.5 w-3.5" /> Con stock: Flex ({resumen.mlas.length})
           </Button>
-          <Button size="sm" variant="outline" onClick={() => abrirMasivo("a_pedido")} disabled={!resumen.mlas.length} title="En ML: sin Flex y con días de disponibilidad">
+          <Button size="sm" variant="outline" onClick={() => abrirMasivo("a_pedido")} disabled={!resumen.mlas.length} title="En ML: sin Flex y con días de disponibilidad. Con 0 días queda sin Flex y con entrega inmediata.">
             <Clock className="h-3.5 w-3.5" /> Sin stock: a pedido ({resumen.mlas.length})
           </Button>
           <Button size="sm" variant="outline" onClick={() => abrirMasivo("crear")} disabled={!resumen.aCrear.length} title={!resumen.aCrear.length ? "Todo lo elegido ya está publicado en ML" : undefined}>

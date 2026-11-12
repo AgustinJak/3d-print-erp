@@ -51,7 +51,7 @@ export function ConfirmarFlex({ mlas, inmediata, onCerrar, onHecho }: { mlas: st
   }, [mlas]);
 
   const n = Number(dias);
-  const diasOk = Number.isInteger(n) && n >= 1 && n <= DIAS_MAX;
+  const diasOk = dias.trim() !== "" && Number.isInteger(n) && n >= 0 && n <= DIAS_MAX;
   const entrega: Entrega | null = inmediata ? { modo: "inmediata" } : diasOk ? { modo: "a_pedido", dias: n } : null;
   const pasosDe = (e: EstadoFlex) => (entrega && e.flex != null ? pasosPara(e, entrega) : []);
   const mandar = estados?.filter((e) => pasosDe(e).length) ?? [];
@@ -72,7 +72,7 @@ export function ConfirmarFlex({ mlas, inmediata, onCerrar, onHecho }: { mlas: st
     setResultados(todos);
     setAvance(null);
     const ok = todos.filter((r) => r.estado === "aplicado").length;
-    if (ok) toast.success(`${ok} ${ok === 1 ? "publicación quedó" : "publicaciones quedaron"} ${inmediata ? "con entrega inmediata" : "a pedido"}.`);
+    if (ok) toast.success(`${ok} ${ok === 1 ? "publicación quedó" : "publicaciones quedaron"} ${inmediata ? "con entrega inmediata" : entrega?.modo === "a_pedido" && entrega.dias === 0 ? "sin Flex y con entrega inmediata" : "a pedido"}.`);
     onHecho();
   }
 
@@ -98,12 +98,12 @@ export function ConfirmarFlex({ mlas, inmediata, onCerrar, onHecho }: { mlas: st
 
   const filas: Array<EstadoFlex & { estado?: ResultadoFlex["estado"]; motivo?: string | null }> = resultados ?? estados;
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 min-w-0">
       {!inmediata && !resultados && (
         <label className="flex items-center gap-2 text-sm">
           Días de disponibilidad
           <Input value={dias} onChange={(e) => setDias(e.target.value)} inputMode="numeric" className="h-8 w-20" disabled={avance != null} />
-          <span className="text-xs text-muted-foreground">hasta {DIAS_MAX}</span>
+          <span className="text-xs text-muted-foreground">{n === 0 && diasOk ? "0 = sin Flex y entrega inmediata" : `de 0 a ${DIAS_MAX}`}</span>
         </label>
       )}
       <div className="max-h-[50vh] overflow-y-auto rounded-md border divide-y text-sm">
@@ -113,10 +113,10 @@ export function ConfirmarFlex({ mlas, inmediata, onCerrar, onHecho }: { mlas: st
           // El stock del ERP es una pista: avisa si contradice lo que se está por hacer.
           const choca = e.estado == null && e.stockErp != null && (inmediata ? e.stockErp <= 0 : e.stockErp > 0);
           return (
-            <div key={e.mla} className={`px-3 py-2 flex items-center justify-between gap-2 ${e.estado == null && !pasos.length ? "opacity-60" : ""}`}>
-              <span className="min-w-0">
+            <div key={e.mla} className={`px-3 py-2 flex items-center justify-between gap-3 ${e.estado == null && !pasos.length ? "opacity-60" : ""}`}>
+              <span className="min-w-0 flex-1">
                 <span className="block truncate">{e.titulo ?? e.mla}</span>
-                <span className="text-xs text-muted-foreground">
+                <span className="block text-xs text-muted-foreground break-words">
                   {e.mla} · hoy {hoy(e)} · <span className={choca ? "text-amber-600" : ""}>{stock}</span>
                   {e.estado == null && (pasos.length ? ` · ${pasos.join(" y ")}` : " · ya está así")}
                   {e.motivo ? ` · ${e.motivo}` : ""}
@@ -130,9 +130,9 @@ export function ConfirmarFlex({ mlas, inmediata, onCerrar, onHecho }: { mlas: st
       {!resultados && (
         <p className="text-xs text-muted-foreground">
           {!entrega
-            ? `Los días van de 1 a ${DIAS_MAX}.`
+            ? `Los días van de 0 a ${DIAS_MAX}.`
             : mandar.length
-              ? `Se cambian ${mandar.length} de ${estados.length}. ${inmediata ? "Primero se saca la disponibilidad y después se prende Flex." : "Primero se apaga Flex y después se ponen los días (con Flex, ML los borra)."} El stock de ML no se toca.`
+              ? `Se cambian ${mandar.length} de ${estados.length}. ${inmediata ? "Primero se saca la disponibilidad y después se prende Flex." : n === 0 ? "Se apaga Flex y se saca la disponibilidad: queda con el envío común de ML." : "Primero se apaga Flex y después se ponen los días (con Flex, ML los borra)."} El stock de ML no se toca.`
               : "Nada para cambiar."}
         </p>
       )}
