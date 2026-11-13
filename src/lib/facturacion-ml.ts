@@ -1,6 +1,6 @@
 import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
-import { mlFetch } from "@/lib/mercadolibre";
+import { conCuentaMl, cuentasMl, mlFetch } from "@/lib/mercadolibre";
 import * as ads from "@/lib/publicidad-ml-api";
 import { revisarNetos, sincronizarFlex, type ResultadoNetos } from "@/lib/neto-ml";
 
@@ -18,6 +18,9 @@ import { revisarNetos, sincronizarFlex, type ResultadoNetos } from "@/lib/neto-m
  * - Cada BPAD dice qué cargo anula (`charge_bonified_id`).
  * - Las percepciones aparecen recién al cerrar el período. La API no da las "aproximadas" que
  *   muestra la pantalla de ML.
+ *
+ * Cada cuenta de ML tiene su facturación (docs/sdd/010 y 011): se lee una por una, y cada período y
+ * cada cargo guardan de cuál son. Lo de Shay y la publicidad por campaña son sólo de la principal.
  */
 
 /** ML deja 5 pedidos por minuto a la API de facturación. */
@@ -112,34 +115,18 @@ export async function sincronizarFacturacion(
   const hayTiempo = () => Date.now() + PAUSA_MS < fin;
   const out: ResultadoSincronizacion = { periodosLeidos: [], quedan: false, lineasNuevas: 0, campanasIdentificadas: 0 };
 
-  const lista = await pedirFacturacion<{ results?: Array<{ key: string; period_status?: string }> }>(
-    tenantId,
-    `/billing/integration/monthly/periods?group=ML&document_type=BILL&offset=0&limit=12`,
-    hayTiempo
-  );
-  if (!lista) return { ...out, quedan: true };
-  const periodos = (lista.results ?? []).filter((p) => p.key).sort((a, b) => a.key.localeCompare(b.key));
-  const ya = await prisma.periodoMl.findMany({ where: { tenantId }, select: { clave: true, grupo: true, completo: true, leidoEn: true } });
-  const de = new Map(ya.map((p) => [`${p.clave}|${p.grupo}`, p]));
-
-  for (const p of periodos) {
-    for (const grupo of ["ML", "MP"] as const) {
-      const leido = de.get(`${p.key}|${grupo}`);
-      if (leido?.completo) continue;
-      if (leido && Date.now() - leido.leidoEn.getTime() < RELEER_ABIERTO_MS) continue;
-      if (!hayTiempo()) {
-        out.quedan = true;
-        break;
-      }
-      const r = await leerPeriodo(tenantId, p.key, grupo, p.period_status ?? "OPEN", hayTiempo);
-      out.lineasNuevas += r.nuevas;
-      if (!r.terminado) out.quedan = true;
-      if (!out.periodosLeidos.includes(p.key)) out.periodosLeidos.push(p.key);
+  // Una cuenta por vez, la principal primero; la que no termina sigue en la pasada siguiente.
+  for (const c of await cuentasMl(tenantId)) {
+    if (!hayTiempo()) {
+      out.quedan = true;
+      break;
     }
-    if (out.quedan) break;
+    const cuenta = c.principal ? "" : c.id;
+    const r = await conCuentaMl(c.principal ? null : c.id, () => leerCuenta(tenantId, cuenta, hayTiempo, out));
+    if (!r) out.quedan = true;
   }
 
-  // Lo que sigue no usa la API de facturación: no tiene ese límite.
+  // Lo que sigue no usa la API de facturación: no tiene ese límite. Es de la principal.
   out.campanasIdentificadas = await identificarCampanas(tenantId, opts.backfill ? DIAS_DE_METRICAS : 5);
   await aplicarAShay(tenantId);
   // Lo de Mercado Pago, con el tiempo que quede: tampoco tiene ese límite.
@@ -150,13 +137,42 @@ export async function sincronizarFacturacion(
   return out;
 }
 
+/** Los períodos de una cuenta ('' = la principal). false = no terminó. */
+async function leerCuenta(tenantId: string, cuenta: string, hayTiempo: () => boolean, out: ResultadoSincronizacion): Promise<boolean> {
+  const lista = await pedirFacturacion<{ results?: Array<{ key: string; period_status?: string }> }>(
+    tenantId,
+    `/billing/integration/monthly/periods?group=ML&document_type=BILL&offset=0&limit=12`,
+    hayTiempo
+  );
+  if (!lista) return false;
+  const periodos = (lista.results ?? []).filter((p) => p.key).sort((a, b) => a.key.localeCompare(b.key));
+  const ya = await prisma.periodoMl.findMany({ where: { tenantId, cuentaMlId: cuenta }, select: { clave: true, grupo: true, completo: true, leidoEn: true } });
+  const de = new Map(ya.map((p) => [`${p.clave}|${p.grupo}`, p]));
+
+  for (const p of periodos) {
+    for (const grupo of ["ML", "MP"] as const) {
+      const leido = de.get(`${p.key}|${grupo}`);
+      if (leido?.completo) continue;
+      if (leido && Date.now() - leido.leidoEn.getTime() < RELEER_ABIERTO_MS) continue;
+      if (!hayTiempo()) return false;
+      const r = await leerPeriodo(tenantId, cuenta, p.key, grupo, p.period_status ?? "OPEN", hayTiempo);
+      out.lineasNuevas += r.nuevas;
+      if (!out.periodosLeidos.includes(p.key)) out.periodosLeidos.push(p.key);
+      if (!r.terminado) return false;
+    }
+  }
+  return true;
+}
+
 async function leerPeriodo(
   tenantId: string,
+  cuenta: string,
   clave: string,
   grupo: "ML" | "MP",
   estado: string,
   hayTiempo: () => boolean
 ): Promise<{ nuevas: number; terminado: boolean }> {
+  const cuentaMlId = cuenta || null;
   const resumen = await pedirFacturacion<ResumenPeriodo>(tenantId, `/billing/integration/periods/key/${clave}/summary/details?group=${grupo}&document_type=BILL`, hayTiempo);
   if (!resumen) return { nuevas: 0, terminado: false };
   const conceptos = [...(resumen.bill_includes?.charges ?? []), ...(resumen.bill_includes?.bonuses ?? [])].filter((c) => !DE_VENTA.test(c.type));
@@ -164,8 +180,8 @@ async function leerPeriodo(
   const base = { estado, total: resumen.bill_includes?.total_amount ?? 0, resumen: resumen as unknown as Prisma.InputJsonValue, leidoEn: new Date() };
   const guardar = (extra: { lineasTotal?: number; completo?: boolean }) =>
     prisma.periodoMl.upsert({
-      where: { tenantId_clave_grupo: { tenantId, clave, grupo } },
-      create: { tenantId, clave, grupo, ...base, ...extra },
+      where: { tenantId_clave_grupo_cuentaMlId: { tenantId, clave, grupo, cuentaMlId: cuenta } },
+      create: { tenantId, clave, grupo, cuentaMlId: cuenta, ...base, ...extra },
       update: { ...base, ...extra },
     });
 
@@ -175,7 +191,7 @@ async function leerPeriodo(
   }
 
   const tipos = [...clases.keys()].join(",");
-  let offset = await prisma.cargoMl.count({ where: { tenantId, periodo: clave, grupo } });
+  let offset = await prisma.cargoMl.count({ where: { tenantId, periodo: clave, grupo, cuentaMlId } });
   let total = Infinity;
   let nuevas = 0;
   let rearmo = false;
@@ -210,19 +226,20 @@ async function leerPeriodo(
         // Product Ads se cobra a la mañana siguiente, comprobado al centavo contra cada campaña.
         diaGasto: c.detail_sub_type === "PADS" || c.detail_sub_type === "BPAD" ? diaAnterior(dia) : dia,
         bonificaId: c.charge_bonified_id != null ? String(c.charge_bonified_id) : null,
+        cuentaMlId,
       });
     }
     if (filas.length) nuevas += (await prisma.cargoMl.createMany({ data: filas, skipDuplicates: true })).count;
     offset += r.results?.length ?? 0;
     if (!r.results?.length || offset >= total) {
-      const hay = await prisma.cargoMl.count({ where: { tenantId, periodo: clave, grupo } });
+      const hay = await prisma.cargoMl.count({ where: { tenantId, periodo: clave, grupo, cuentaMlId } });
       // Un tipo nuevo puede correr las posiciones: una sola vez, se lee de nuevo desde el principio.
       if (hay < total && !rearmo) {
         rearmo = true;
         offset = 0;
         continue;
       }
-      await guardar({ lineasTotal: total, completo: estado === "CLOSED" && hay >= total && (await cierraConElResumen(tenantId, clave, grupo, conceptos)) });
+      await guardar({ lineasTotal: total, completo: estado === "CLOSED" && hay >= total && (await cierraConElResumen(tenantId, cuentaMlId, clave, grupo, conceptos)) });
       return { nuevas, terminado: true };
     }
   }
@@ -233,8 +250,8 @@ async function leerPeriodo(
  * período no queda completo y se vuelve a leer: en marzo de 2026 el detalle vino vacío con un
  * resumen de $300.631, y darlo por bueno habría dejado ese mes sin cargos, sin ningún aviso.
  */
-async function cierraConElResumen(tenantId: string, clave: string, grupo: string, conceptos: ConceptoResumen[]): Promise<boolean> {
-  const filas = await prisma.cargoMl.groupBy({ by: ["tipo"], where: { tenantId, periodo: clave, grupo }, _sum: { monto: true } });
+async function cierraConElResumen(tenantId: string, cuentaMlId: string | null, clave: string, grupo: string, conceptos: ConceptoResumen[]): Promise<boolean> {
+  const filas = await prisma.cargoMl.groupBy({ by: ["tipo"], where: { tenantId, periodo: clave, grupo, cuentaMlId }, _sum: { monto: true } });
   const suma = new Map(filas.map((f) => [f.tipo, f._sum.monto ?? 0]));
   return conceptos.every((c) => Math.abs((suma.get(c.type) ?? 0) - Math.abs(c.amount)) <= 1);
 }
@@ -247,7 +264,7 @@ async function cierraConElResumen(tenantId: string, clave: string, grupo: string
 export async function identificarCampanas(tenantId: string, diasAtras: number): Promise<number> {
   const desde = new Date(Date.now() - diasAtras * 864e5).toISOString().slice(0, 10);
   const sinCampana = await prisma.cargoMl.findMany({
-    where: { tenantId, tipo: "PADS", campanaId: null, diaGasto: { gte: desde } },
+    where: { tenantId, tipo: "PADS", campanaId: null, diaGasto: { gte: desde }, cuentaMlId: null },
     select: { detalleId: true, diaGasto: true, monto: true },
   });
   if (sinCampana.length === 0) return 0;
@@ -294,13 +311,13 @@ export async function campanasDeShay(tenantId: string): Promise<number[]> {
 export async function publicidadDeCampanas(tenantId: string, anio: number, mes: number, ids: number[]): Promise<number | null> {
   const mm = `${anio}-${String(mes).padStart(2, "0")}`;
   const primera = await prisma.cargoMl.findFirst({
-    where: { tenantId, tipo: "PADS", campanaId: { not: null } },
+    where: { tenantId, tipo: "PADS", campanaId: { not: null }, cuentaMlId: null },
     orderBy: { diaGasto: "asc" },
     select: { diaGasto: true },
   });
   if (!primera || primera.diaGasto > `${mm}-01`) return null;
   const filas = await prisma.cargoMl.findMany({
-    where: { tenantId, clase: "publicidad", campanaId: { in: ids.map((i) => BigInt(i)) }, diaGasto: { gte: `${mm}-01`, lte: `${mm}-31` } },
+    where: { tenantId, clase: "publicidad", cuentaMlId: null, campanaId: { in: ids.map((i) => BigInt(i)) }, diaGasto: { gte: `${mm}-01`, lte: `${mm}-31` } },
     select: { monto: true, bonificacion: true },
   });
   return filas.reduce((s, f) => s + (f.bonificacion ? -f.monto : f.monto), 0);
@@ -325,9 +342,10 @@ export async function aplicarAShay(tenantId: string): Promise<void> {
       if (pub != null) await prisma.ventaTercero.update({ where: { id: c.id }, data: { publicidad: Math.round(pub * 100) / 100 } });
     }
     const clave = periodoDelMes(c.anio, c.mes);
-    const periodo = await prisma.periodoMl.findUnique({ where: { tenantId_clave_grupo: { tenantId, clave, grupo: "ML" } }, select: { completo: true } });
+    // Shay comparte la cuenta principal: sus percepciones son las de esa cuenta.
+    const periodo = await prisma.periodoMl.findUnique({ where: { tenantId_clave_grupo_cuentaMlId: { tenantId, clave, grupo: "ML", cuentaMlId: "" } }, select: { completo: true } });
     if (!periodo?.completo) continue;
-    const percepciones = await prisma.cargoMl.findMany({ where: { tenantId, periodo: clave, clase: "percepcion" }, select: { monto: true, bonificacion: true } });
+    const percepciones = await prisma.cargoMl.findMany({ where: { tenantId, periodo: clave, clase: "percepcion", cuentaMlId: null }, select: { monto: true, bonificacion: true } });
     const total = percepciones.reduce((s, f) => s + (f.bonificacion ? -f.monto : f.monto), 0);
     await prisma.gastoCompartido.upsert({
       where: { tenantId_anio_mes: { tenantId, anio: c.anio, mes: c.mes } },

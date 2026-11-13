@@ -860,6 +860,8 @@ model CargoMl {
   bonificaId   String?  @map("bonifica_id")
   campanaId    BigInt?  @map("campana_id")
   campana      String?
+  /// De qué cuenta de ML es (docs/sdd/010 y 011); null = la principal.
+  cuentaMlId   String?  @map("cuenta_ml_id")
   creadoEn     DateTime @default(now()) @map("creado_en")
 
   @@index([tenantId, diaGasto])
@@ -880,8 +882,10 @@ model PeriodoMl {
   /// Cerrado y con todas sus líneas: no se vuelve a leer.
   completo    Boolean  @default(false)
   leidoEn     DateTime @default(now()) @map("leido_en")
+  /// De qué cuenta de ML es (docs/sdd/010 y 011); '' = la principal. Cada cuenta tiene sus períodos.
+  cuentaMlId  String   @default("") @map("cuenta_ml_id")
 
-  @@id([tenantId, clave, grupo])
+  @@id([tenantId, clave, grupo, cuentaMlId])
   @@map("periodos_ml")
 }
 
@@ -898,6 +902,8 @@ model FlexMl {
   /// El envío no es de ningún pedido del ERP: no es plata de Sendero.
   deOtro    Boolean  @default(false) @map("de_otro")
   revisado  Boolean  @default(false)
+  /// De qué cuenta de ML es (docs/sdd/010 y 011); null = la principal.
+  cuentaMlId String? @map("cuenta_ml_id")
   creadoEn  DateTime @default(now()) @map("creado_en")
 
   @@index([tenantId, dia])

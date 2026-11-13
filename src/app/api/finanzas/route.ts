@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { saldoBilletera, yaOcurrio as yaOcurrioHoy } from "@/lib/billeteras";
-import { cargosPorMes, cargosVacios, ultimaLecturaDeMl } from "@/lib/resultado-mes";
+import { cargosPorMes, cargosVacios, ultimaLecturaDeMl, type CargosDelMes } from "@/lib/resultado-mes";
 import { NextRequest, NextResponse } from "next/server";
 
 type PedidoConItems = {
@@ -153,6 +153,32 @@ export async function GET(request: NextRequest) {
     const historicos = [...cargosMl].filter(([mm]) => mm >= desdeMes && mm >= billeteraEmpDesdeMes).map(([, c]) => c);
     const cargosHistoricos = historicos.reduce((s, c) => s + c.neto, 0);
     const flexHistorico = historicos.reduce((s, c) => s + c.flex.ingresos, 0);
+
+    // ─── Por cuenta de ML (docs/sdd/010 TASK-006 y 011) ────
+    // Lo que deja cada cuenta en el mes: sus ventas, sus cargos de ML y su Flex. Las ventas de la web
+    // y las de a mano van aparte. Los gastos y las billeteras son del negocio entero.
+    const otraCuenta = await prisma.cuentaMercadolibre.findFirst({ where: { tenantId, principal: false }, select: { id: true, nombre: true, nickname: true } });
+    let porCuenta: null | {
+      nombres: { principal: string; otra: string };
+      cuentas: Record<"principal" | "otra" | "fuera", { pedidos: number; ingresos: number; costoFab: number; ganancia: number; flex: number; cargos: CargosDelMes | null; resultado: number }>;
+    } = null;
+    if (otraCuenta) {
+      const principalCuenta = await prisma.cuentaMercadolibre.findFirst({ where: { tenantId, principal: true }, select: { nombre: true, nickname: true } });
+      const [deLaPrincipal, deLaOtra] = await Promise.all([cargosPorMes(tenantId, "principal"), cargosPorMes(tenantId, "otra")]);
+      const delMes = (mapa: Map<string, CargosDelMes>) => (claveMes(anioNum, mesNum) >= desdeMes && mapa.get(claveMes(anioNum, mesNum))) || cargosVacios(anioNum, mesNum);
+      const deQuien = (p: (typeof pedidosMes)[number]): "principal" | "otra" | "fuera" =>
+        p.canalVenta !== "mercadolibre" ? "fuera" : ((p.origenExterno ?? {}) as { cuenta_ml?: string | null }).cuenta_ml === otraCuenta.id ? "otra" : "principal";
+      const armar = (quien: "principal" | "otra" | "fuera", cargos: CargosDelMes | null) => {
+        const pedidos = pedidosMes.filter((p) => deQuien(p) === quien);
+        const t = calcularTotales(pedidos);
+        const flex = cargos?.flex.ingresos ?? 0;
+        return { pedidos: pedidos.length, ingresos: t.ingresos, costoFab: t.costoFab, ganancia: t.ganancia, flex, cargos, resultado: t.ganancia + flex - (cargos?.neto ?? 0) };
+      };
+      porCuenta = {
+        nombres: { principal: principalCuenta?.nombre ?? principalCuenta?.nickname ?? "Sendero 3D", otra: otraCuenta.nombre ?? otraCuenta.nickname ?? "Otra cuenta" },
+        cuentas: { principal: armar("principal", delMes(deLaPrincipal)), otra: armar("otra", delMes(deLaOtra)), fuera: armar("fuera", null) },
+      };
+    }
 
     // ─── Resúmenes mes/año ────────────────────────────────
     const mesData = calcularTotales(pedidosMes);
@@ -498,6 +524,7 @@ export async function GET(request: NextRequest) {
         mes: billeteraEmpMes + cargosDelMes.flex.ingresos - cargosDelMes.neto,
       },
       ml: { leidoEn: await ultimaLecturaDeMl(tenantId) },
+      porCuenta,
       gastosPorCategoria,
       datosMensuales,
       mesActual: mesNum,

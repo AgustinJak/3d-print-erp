@@ -53,3 +53,25 @@ plata), lo más vendido con barras y lo que hay que despachar. Números que cuen
 (Pedidos e Historial ya tenían avisos de `set-state-in-effect` de antes).
 
 **Queda:** Finanzas por cuenta (con la TASK-006 de la 010) e "Igualar a Sendero 3D".
+
+## 2026-11-13 · Claude, Finanzas por cuenta (con la TASK-006 de la 010)
+
+**La base.** `cargos_ml`, `flex_ml` y `periodos_ml` guardan de qué cuenta son (`cuenta_ml_id`;
+null o '' = la principal). Paso 1 de `prisma/sql/facturacion-por-cuenta.sql` aplicado (columnas y un
+único con la cuenta, que es lo que usa el upsert nuevo). El paso 2, después de desplegar, pasa la
+clave primaria de `periodos_ml` a incluir la cuenta.
+
+**La lectura.** `sincronizarFacturacion` lee los períodos de cada cuenta con su token
+(`conCuentaMl`), la principal primero; lo de Shay y la publicidad por campaña siguen siendo sólo de
+la principal. `sincronizarFlex` busca los cobros Flex en el Mercado Pago de cada cuenta. Probado con
+las dos cuentas reales: la principal leyó 28 cargos nuevos; Sendero Shop todavía no tiene períodos de
+facturación ni cobros.
+
+**La cuenta.** `cargosPorMes(tenant, cuenta)`: "todas", "principal" u "otra". Las percepciones van por
+cuenta (con su período cerrado, las de ML; si no, la principal usa lo cargado a mano). Shay, lo
+cargado a mano y los pagos a la logística van con la principal, así las partes suman el total.
+Comparado con la versión anterior: en "todas", los 13 meses dan igual al centavo.
+
+**La pantalla.** Finanzas tiene el selector y "Qué dejó cada cuenta": Sendero 3D, Sendero Shop y la
+web y directa, lado a lado en Todas (con la barra de cuánto aportó cada una), o sólo la elegida. El
+resultado del mes y las billeteras siguen siendo del negocio entero.

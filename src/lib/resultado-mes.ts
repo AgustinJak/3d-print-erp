@@ -14,7 +14,13 @@ import { periodoDelMes } from "@/lib/facturacion-ml";
  *   no hay número oficial: se usa lo cargado a mano en /shay, marcado como aproximado.
  * - **Otros cargos:** por la fecha del cargo.
  * - **Lo de Shay** se muestra aparte, para que los totales coincidan con la pantalla de ML.
+ *
+ * Por cuenta de ML (docs/sdd/010 y 011): `cuenta` = "principal" u "otra" deja sólo lo de esa cuenta.
+ * Shay, las percepciones cargadas a mano y los pagos a la logística de Flex (que son gastos del
+ * negocio) van con la principal, así lo de las dos cuentas suma lo de "todas".
  */
+
+export type CuentaDeCargos = "todas" | "principal" | "otra";
 
 export type EstadoPercepciones = "ml" | "aproximada" | "pendiente";
 
@@ -59,23 +65,30 @@ function agrupar(filas: Array<{ concepto: string; monto: number; bonificacion: b
 const claveDeMes = (anio: number, mes: number) => `${anio}-${String(mes).padStart(2, "0")}`;
 
 /** Los cargos de ML de todos los meses con datos, por "YYYY-MM". */
-export async function cargosPorMes(tenantId: string): Promise<Map<string, CargosDelMes>> {
-  const [lineas, periodos, cierres, compartidos, bonificaciones, pagosFlex] = await Promise.all([
+export async function cargosPorMes(tenantId: string, cuenta: CuentaDeCargos = "todas"): Promise<Map<string, CargosDelMes>> {
+  // null = la principal en cargos y Flex; '' en los períodos.
+  const deCuenta = cuenta === "todas" ? {} : { cuentaMlId: cuenta === "principal" ? null : { not: null } };
+  const periodoDeCuenta = cuenta === "todas" ? {} : cuenta === "principal" ? { cuentaMlId: "" } : { cuentaMlId: { not: "" } };
+  const conLaPrincipal = cuenta !== "otra";
+  const [lineas, periodos, cierresTodos, compartidosTodos, bonificaciones, pagosFlexTodos] = await Promise.all([
     prisma.cargoMl.findMany({
-      where: { tenantId },
-      select: { periodo: true, tipo: true, clase: true, concepto: true, bonificacion: true, monto: true, diaGasto: true, campanaId: true },
+      where: { tenantId, ...deCuenta },
+      select: { periodo: true, tipo: true, clase: true, concepto: true, bonificacion: true, monto: true, diaGasto: true, campanaId: true, cuentaMlId: true },
     }),
-    prisma.periodoMl.findMany({ where: { tenantId, grupo: "ML" }, select: { clave: true, completo: true } }),
+    prisma.periodoMl.findMany({ where: { tenantId, grupo: "ML", ...periodoDeCuenta }, select: { clave: true, completo: true, cuentaMlId: true } }),
     prisma.ventaTercero.findMany({
       where: { tenantId },
       select: { anio: true, mes: true, publicidad: true, bruto: true, brutoPropio: true, brutoOtros: true },
     }),
     prisma.gastoCompartido.findMany({ where: { tenantId }, select: { anio: true, mes: true, percepciones: true } }),
-    prisma.flexMl.findMany({ where: { tenantId }, select: { dia: true, monto: true, deOtro: true } }),
+    prisma.flexMl.findMany({ where: { tenantId, ...deCuenta }, select: { dia: true, monto: true, deOtro: true } }),
     prisma.gasto.findMany({ where: { tenantId, categoria: { contains: "flex", mode: "insensitive" }, fecha: { lte: new Date() } }, select: { fecha: true, monto: true } }),
   ]);
 
-  const completos = new Set(periodos.filter((p) => p.completo).map((p) => p.clave));
+  // Lo que es de la principal (Shay, lo cargado a mano, los pagos a la logística) no va con la otra.
+  const cierres = conLaPrincipal ? cierresTodos : [];
+  const compartidos = conLaPrincipal ? compartidosTodos : [];
+  const pagosFlex = conLaPrincipal ? pagosFlexTodos : [];
   const cierrePorMes = new Map(cierres.map((c) => [claveDeMes(c.anio, c.mes), c]));
   const aMano = new Map(compartidos.map((c) => [claveDeMes(c.anio, c.mes), c.percepciones]));
 
@@ -103,14 +116,23 @@ export async function cargosPorMes(tenantId: string): Promise<Map<string, Cargos
     const sinCampana = suma(pub.filter((l) => l.tipo === "PADS" && l.campanaId == null));
 
     const periodo = periodoDelMes(anio, mes);
-    const dePercepcion = lineas.filter((l) => l.periodo === periodo && l.clase === "percepcion");
-    const cerrado = completos.has(periodo);
-    const manual = aMano.get(mm) ?? 0;
-    const percepciones = cerrado
-      ? { total: dePercepcion.reduce((s, x) => s + firmado(x), 0), estado: "ml" as const, periodo, detalle: agrupar(dePercepcion) }
-      : manual > 0
-        ? { total: manual, estado: "aproximada" as const, periodo, detalle: [] }
-        : { total: 0, estado: "pendiente" as const, periodo, detalle: [] };
+    // Cada cuenta por su lado: con el período cerrado, lo que factura ML; si no, la principal usa lo
+    // cargado a mano en /shay (la aproximada) y la otra todavía no tiene número.
+    const porCuenta = [...new Set([...(conLaPrincipal ? [""] : []), ...periodos.filter((p) => p.clave === periodo && p.cuentaMlId !== "").map((p) => p.cuentaMlId)])];
+    const partes = porCuenta.map((cu) => {
+      const cerrado = periodos.some((p) => p.clave === periodo && p.cuentaMlId === cu && p.completo);
+      const suyas = lineas.filter((l) => l.periodo === periodo && l.clase === "percepcion" && (l.cuentaMlId ?? "") === cu);
+      if (cerrado) return { total: suyas.reduce((s, x) => s + firmado(x), 0), estado: "ml" as EstadoPercepciones, lineas: suyas };
+      const manual = cu === "" ? (aMano.get(mm) ?? 0) : 0;
+      return { total: manual, estado: (manual > 0 ? "aproximada" : "pendiente") as EstadoPercepciones, lineas: [] as typeof suyas };
+    });
+    const percepciones = {
+      total: partes.reduce((s, p) => s + p.total, 0),
+      // Todo cerrado es "ml"; si alguna es aproximada, el total también.
+      estado: (partes.length && partes.every((p) => p.estado === "ml") ? "ml" : partes.some((p) => p.estado === "aproximada") ? "aproximada" : "pendiente") as EstadoPercepciones,
+      periodo,
+      detalle: agrupar(partes.flatMap((p) => p.lineas)),
+    };
 
     const otrasLineas = delMes.filter((l) => l.clase === "otro");
     const otros = { total: otrasLineas.reduce((s, x) => s + firmado(x), 0), detalle: agrupar(otrasLineas) };

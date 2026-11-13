@@ -1,5 +1,9 @@
 "use client";
 
+import { motion } from "motion/react";
+import { SelectorDeCuenta } from "@/components/cuenta-activa";
+import { Segmentado } from "@/components/segmentado";
+import { FinanzasPorCuenta, type PorCuentaData } from "./por-cuenta";
 import { useEffect, useState, useCallback } from "react";
 import {
   ArrowLeft, ArrowRight, Wallet, Save, Download, Factory, Building2, ArrowRightLeft, Loader2, RefreshCw,
@@ -118,6 +122,8 @@ interface FinanzasData {
     mes: number;
   };
   ml: { leidoEn: string | null };
+  /** Lo que dejó cada cuenta de ML en el mes (docs/sdd/011); null con una sola cuenta. */
+  porCuenta: PorCuentaData | null;
   gastosPorCategoria: Record<string, number>;
   pedidosEnCurso: {
     total: number;
@@ -473,9 +479,15 @@ export default function FinanzasPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-2xl font-bold">Finanzas</h1>
+    <motion.div className="space-y-6" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: "easeOut" }}>
+      <div className="flex items-end justify-between flex-wrap gap-3">
+        <div className="space-y-2">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Finanzas</h1>
+            <p className="text-sm text-muted-foreground">El resultado del mes y las billeteras son del negocio entero; abajo, lo que dejó cada cuenta.</p>
+          </div>
+          <SelectorDeCuenta />
+        </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Button variant="outline" size="icon" onClick={prevMonth} title="Mes anterior">
             <ArrowLeft className="h-4 w-4" />
@@ -534,26 +546,22 @@ export default function FinanzasPage() {
         </Card>
       </div>
 
+      {data.porCuenta && <FinanzasPorCuenta data={data.porCuenta} nombreMes={MESES[mes - 1].toLowerCase()} />}
+
       {/* El resto, de a una cosa por vez */}
       <div className="space-y-4">
-        <div className="inline-flex rounded-md border text-sm overflow-hidden flex-wrap">
-          {([
+        <Segmentado
+          etiqueta="Qué mirar"
+          valor={seccion}
+          onChange={setSeccion}
+          opciones={[
             ["socios", "Socios"],
             ["anio", `Año ${anio}`],
             ["movimientos", "Movimientos"],
             ["gastos", "Gastos y cuotas"],
             ["curso", "Pedidos en curso"],
-          ] as const).map(([v, t], i) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setSeccion(v)}
-              className={`px-3 py-1.5 transition-colors ${seccion === v ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"} ${i > 0 ? "border-l" : ""}`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+          ]}
+        />
 
         {seccion === "socios" && socios.length > 0 && (
           <Card>
@@ -957,6 +965,6 @@ export default function FinanzasPage() {
           </form>
         </DialogContent>
       </Dialog>
-    </div>
+    </motion.div>
   );
 }

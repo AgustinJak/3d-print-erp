@@ -1,6 +1,6 @@
 import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
-import { conCuentaMl, getMlAccount, getValidAccessToken, mlFetch } from "@/lib/mercadolibre";
+import { conCuentaMl, cuentasMl, getValidAccessToken, mlFetch } from "@/lib/mercadolibre";
 
 /**
  * Lo que entra de verdad por cada venta de ML, y las bonificaciones Flex (docs/sdd/007).
@@ -232,10 +232,19 @@ export async function revisarNetos(tenantId: string, opts: { hasta: number; desd
  * queda aparte, porque no es de Sendero.
  */
 export async function sincronizarFlex(tenantId: string, opts: { hasta: number; desdeMes?: string }): Promise<{ nuevas: number; quedan: boolean }> {
-  const cuenta = await getMlAccount(tenantId);
-  if (!cuenta) return { nuevas: 0, quedan: false };
+  // Cada cuenta de ML cobra en su Mercado Pago (docs/sdd/010 y 011).
+  let nuevas = 0;
+  for (const c of await cuentasMl(tenantId)) {
+    const r = await flexDeCuenta(tenantId, { id: c.principal ? null : c.id, mlUserId: c.mlUserId }, opts);
+    nuevas += r.nuevas;
+    if (r.quedan) return { nuevas, quedan: true };
+  }
+  return { nuevas, quedan: false };
+}
+
+async function flexDeCuenta(tenantId: string, cuenta: { id: string | null; mlUserId: number | string }, opts: { hasta: number; desdeMes?: string }): Promise<{ nuevas: number; quedan: boolean }> {
   const yo = String(cuenta.mlUserId);
-  const token = await getValidAccessToken(tenantId);
+  const token = await getValidAccessToken(tenantId, cuenta.id);
 
   const ahora = new Date();
   const inicio = opts.desdeMes ? new Date(`${opts.desdeMes}-01T12:00:00Z`) : new Date(Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth() - 1, 1, 12));
@@ -263,6 +272,7 @@ export async function sincronizarFlex(tenantId: string, opts: { hasta: number; d
           dia: new Date(new Date(f).getTime() - 3 * 36e5).toISOString().slice(0, 10),
           monto: x.transaction_amount || 0,
           envioId: x.point_of_interaction?.transaction_data?.reference_id ?? null,
+          cuentaMlId: cuenta.id,
         });
       }
       if (filas.length) nuevas += (await prisma.flexMl.createMany({ data: filas, skipDuplicates: true })).count;
@@ -271,7 +281,7 @@ export async function sincronizarFlex(tenantId: string, opts: { hasta: number; d
   }
 
   // De qué pedido es cada una.
-  const sinVer = await prisma.flexMl.findMany({ where: { tenantId, revisado: false }, select: { pagoId: true, envioId: true } });
+  const sinVer = await prisma.flexMl.findMany({ where: { tenantId, revisado: false, cuentaMlId: cuenta.id }, select: { pagoId: true, envioId: true } });
   if (sinVer.length) {
     const pedidos = await prisma.pedido.findMany({ where: { tenantId, canalVenta: "mercadolibre" }, select: { id: true, origenExterno: true } });
     const porOrden = new Map<string, string>();
@@ -281,7 +291,7 @@ export async function sincronizarFlex(tenantId: string, opts: { hasta: number; d
       await Promise.all(
         sinVer.slice(i, i + POR_TANDA).map(async (f) => {
           if (!f.envioId) return;
-          const e = await mlFetch<{ order_id?: number }>(tenantId, `/shipments/${f.envioId}`).catch(() => null);
+          const e = await mlFetch<{ order_id?: number }>(tenantId, `/shipments/${f.envioId}`, { cuenta: cuenta.id }).catch(() => null);
           if (!e?.order_id) return;
           const pedidoId = porOrden.get(String(e.order_id)) ?? null;
           await prisma.flexMl.update({ where: { pagoId: f.pagoId }, data: { pedidoId, deOtro: !pedidoId, revisado: true } });

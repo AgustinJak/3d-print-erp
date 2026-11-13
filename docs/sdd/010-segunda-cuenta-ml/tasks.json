@@ -13,7 +13,7 @@
     "approvedAt": "2026-11-12",
     "notes": "\"dale\", con fotos iguales y la última parte del título distinta."
   },
-  "updatedAt": "2026-11-12",
+  "updatedAt": "2026-11-13",
   "tasks": [
     {
       "id": "TASK-001",
@@ -83,11 +83,12 @@
       "title": "Facturación y Finanzas por cuenta",
       "description": "cargos_ml, periodos_ml y flex_ml por cuenta; Finanzas separada y sumada; Shay sólo la principal.",
       "component": "backend",
-      "status": "pending",
+      "status": "in-progress",
       "origin": "plan",
       "dependencies": [
         "TASK-005"
-      ]
+      ],
+      "notes": "cargos_ml, flex_ml y periodos_ml con cuenta_ml_id (prisma/sql/facturacion-por-cuenta.sql; paso 1 aplicado, el paso 2 cambia la clave de periodos_ml después de desplegar). sincronizarFacturacion y sincronizarFlex recorren cada cuenta; cargosPorMes(tenant, cuenta) separa, y en 'todas' da igual que antes en los 13 meses. Finanzas: 'Qué dejó cada cuenta'. Probado con la cuenta real: Sendero Shop todavía sin períodos, cobros ni ventas."
     },
     {
       "id": "TASK-007",
