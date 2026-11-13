@@ -4,14 +4,15 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Box, ChevronDown, Download, Loader2, Plus, Search, Zap, Clock } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { AnimatePresence, motion } from "motion/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { TableSkeleton } from "@/components/data-loading";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EtiquetaDeCuenta, SelectorDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
 import { EmptyState } from "@/components/empty-state";
 import { PiezasNuevas } from "@/components/producto/piezas-nuevas";
 import { CrearMlMasivo } from "@/components/producto/crear-ml-masivo";
@@ -43,6 +44,9 @@ import {
  * producto, su stock y lo que vende, y se hace en cantidad lo de todos los días (crear en ML, la
  * entrega, activar). Lo que se elige es cada variante, y lo elegido se acumula aunque cambien los
  * filtros: así se arma una tanda de a grupos.
+ *
+ * Con dos cuentas de ML (docs/sdd/011), el selector de arriba dice cuál se mira: los filtros de ML, lo
+ * que se ve en cada producto y las publicaciones que toca cada acción son los de esa cuenta.
  */
 
 const PREFERENCIAS = "productos:vista";
@@ -96,9 +100,9 @@ export default function ModelosPage() {
   const [aplicandoMasivo, setAplicandoMasivo] = useState(false);
   // Lo que se manda queda fijo al abrir el diálogo: si no, al refrescar la lista después de aplicar
   // el diálogo volvería a leer ML o perdería sus resultados.
-  const [tanda, setTanda] = useState<{ mlas: string[]; aCrear: ResumenDeSeleccion["aCrear"]; mlasPrincipal: string[] }>({ mlas: [], aCrear: [], mlasPrincipal: [] });
-  // Las otras cuentas de ML conectadas (docs/sdd/010): con alguna, aparece "Copiar a…".
-  const [otrasCuentas, setOtrasCuentas] = useState<string[]>([]);
+  const [tanda, setTanda] = useState<Pick<ResumenDeSeleccion, "mlas" | "aCrear" | "mlasPrincipal" | "porCuenta">>({ mlas: [], aCrear: [], mlasPrincipal: [], porCuenta: { principal: 0, otra: 0 } });
+  // La cuenta de ML que se mira (docs/sdd/011) y la otra cuenta conectada, si hay.
+  const { alcance, cuentas, nombre: nombreDeLaCuenta } = useCuentaActiva();
 
   /* ─── Preferencias de la vista: quedan en el navegador ─── */
 
@@ -129,7 +133,6 @@ export default function ModelosPage() {
       const r = (await can.json()) as RespuestaDeCanales;
       setCanales(r.modelos ?? {});
       setLeidoEn(r.leidoEn ?? null);
-      setOtrasCuentas(r.otrasCuentas ?? []);
     }
   }, [mostrarConsolidados]);
 
@@ -159,20 +162,22 @@ export default function ModelosPage() {
 
   /* ─── Lo que se ve y lo elegido ────────────────────── */
 
-  const filas = useMemo(() => ordenar(filtrar(modelos, canales, filtros), orden), [modelos, canales, filtros, orden]);
+  // "Difieren entre cuentas" sólo tiene sentido mirando las dos.
+  const filtrosVigentes = useMemo(() => (alcance === "todas" || !filtros.difieren ? filtros : { ...filtros, difieren: false }), [filtros, alcance]);
+  const filas = useMemo(() => ordenar(filtrar(modelos, canales, filtrosVigentes, alcance), orden), [modelos, canales, filtrosVigentes, alcance, orden]);
   const grupos = useMemo(() => agruparFilas(filas, agrupar, orden), [filas, agrupar, orden]);
   const clavesALaVista = useMemo(() => [...new Set(filas.flatMap((f) => f.unidades.map((u) => u.clave)))], [filas]);
-  const resumen = useMemo(() => resumir(modelos, canales, elegidos), [modelos, canales, elegidos]);
+  const resumen = useMemo(() => resumir(modelos, canales, elegidos, alcance), [modelos, canales, elegidos, alcance]);
   const sku = useMemo(() => {
     const base = modelos.filter((m) => m.activo && !m.consolidadoEnId && !m.esInsumo);
     return { total: base.length, con: base.filter((m) => m.sku).length };
   }, [modelos]);
 
-  if (initialLoading) return <TableSkeleton cols={7} />;
+  if (initialLoading) return <Cargando />;
 
   const onAlternar = (claves: string[]) => setElegidos((prev) => alternar(prev, claves));
   const abrirMasivo = (que: NonNullable<typeof masivo>) => {
-    setTanda({ mlas: resumen.mlas, aCrear: resumen.aCrear, mlasPrincipal: resumen.mlasPrincipal });
+    setTanda({ mlas: resumen.mlas, aCrear: resumen.aCrear, mlasPrincipal: resumen.mlasPrincipal, porCuenta: resumen.porCuenta });
     setMasivo(que);
   };
   const variantesALaVista = filas.reduce((s, f) => s + f.unidades.filter((u) => u.comb).length, 0);
@@ -253,9 +258,15 @@ export default function ModelosPage() {
   /* ─── Render ──────────────────────────────────────── */
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <h1 className="text-2xl font-bold">Productos</h1>
+    <motion.div className="space-y-4" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: "easeOut" }}>
+      <div className="flex items-end justify-between gap-x-4 gap-y-3 flex-wrap">
+        <div className="space-y-2">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Productos</h1>
+            <p className="text-sm text-muted-foreground">Dónde está publicado cada uno, su stock y lo que vende.</p>
+          </div>
+          <SelectorDeCuenta />
+        </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={traerDeBodega} disabled={trayendo} title="Trae ya las piezas nuevas que Bodega haya subido">
             {trayendo ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
@@ -269,7 +280,9 @@ export default function ModelosPage() {
       </div>
 
       <FiltrosDeProductos
-        f={filtros}
+        f={filtrosVigentes}
+        alcance={alcance}
+        otraCuenta={cuentas.otra}
         onFiltros={(cambio) => setFiltros((prev) => ({ ...prev, ...cambio }))}
         categorias={categorias}
         orden={orden}
@@ -300,11 +313,11 @@ export default function ModelosPage() {
         <span className="tabular-nums">
           {cuantos(filas.length, "producto", "productos")}
           {variantesALaVista > filas.length && ` · ${variantesALaVista} variantes`}
-          {filtraVariantes(filtros) && " que pasan los filtros"}
+          {filtraVariantes(filtrosVigentes) && " que pasan los filtros"}
         </span>
         {filas.length > 0 && (
           <button type="button" className="text-primary hover:underline" onClick={() => onAlternar(clavesALaVista)}>
-            {todoElegido ? "Quitar de lo elegido todo lo que se ve" : filtrosPuestos(filtros) > 0 ? "Elegir todo lo que pasa los filtros" : "Elegir todo"}
+            {todoElegido ? "Quitar de lo elegido todo lo que se ve" : filtrosPuestos(filtrosVigentes) > 0 ? "Elegir todo lo que pasa los filtros" : "Elegir todo"}
           </button>
         )}
         {hayConVariantes && vista === "tabla" && (
@@ -329,57 +342,6 @@ export default function ModelosPage() {
         )}
       </div>
 
-      {/* Lo que se hace en cantidad, con lo elegido */}
-      {resumen.unidades > 0 && (
-        <Card className="flex flex-row flex-wrap items-center gap-2 p-3 border-primary/40 sticky top-2 z-10 shadow-md">
-          <div className="mr-1">
-            <p className="text-sm font-medium leading-tight">
-              {resumen.productosAMedias === 0 && resumen.unidades === resumen.productos.length
-                ? cuantos(resumen.productos.length, "producto elegido", "productos elegidos")
-                : `${cuantos(resumen.unidades, "variante elegida", "variantes elegidas")} de ${cuantos(resumen.productos.length, "producto", "productos")}`}
-            </p>
-            {resumen.conStock.length > 0 && resumen.sinStock.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                <button type="button" className="hover:text-primary hover:underline" title="Dejar elegidas sólo las que tienen stock" onClick={() => setElegidos(new Set(resumen.conStock))}>
-                  {resumen.conStock.length} con stock
-                </button>
-                {" · "}
-                <button type="button" className="hover:text-primary hover:underline" title="Dejar elegidas sólo las que no tienen stock" onClick={() => setElegidos(new Set(resumen.sinStock))}>
-                  {resumen.sinStock.length} sin stock
-                </button>
-                <span className="hidden sm:inline"> · tocá uno para quedarte sólo con esas</span>
-              </p>
-            )}
-          </div>
-          <Button size="sm" variant="outline" onClick={() => abrirMasivo("inmediata")} disabled={!resumen.mlas.length} title="En ML: sin tiempo de disponibilidad y con Flex">
-            <Zap className="h-3.5 w-3.5" /> Con stock: Flex ({resumen.mlas.length})
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => abrirMasivo("a_pedido")} disabled={!resumen.mlas.length} title="En ML: sin Flex y con días de disponibilidad. Con 0 días queda sin Flex y con entrega inmediata.">
-            <Clock className="h-3.5 w-3.5" /> Sin stock: a pedido ({resumen.mlas.length})
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => abrirMasivo("crear")} disabled={!resumen.aCrear.length} title={!resumen.aCrear.length ? "Todo lo elegido ya está publicado en ML" : undefined}>
-            Crear en ML ({resumen.aCrear.length})
-          </Button>
-          {otrasCuentas.length > 0 && (
-            <Button size="sm" variant="outline" onClick={() => abrirMasivo("copiar")} disabled={!resumen.mlasPrincipal.length} title={`Copiar las publicaciones de Sendero 3D a ${otrasCuentas[0]}`}>
-              Copiar a {otrasCuentas[0]} ({resumen.mlasPrincipal.length})
-            </Button>
-          )}
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
-              Más <ChevronDown className="h-3.5 w-3.5" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onClick={() => abrirMasivo("activar")}>Activar {cuantos(resumen.productos.length, "producto", "productos")}</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => abrirMasivo("desactivar")}>Desactivar {cuantos(resumen.productos.length, "producto", "productos")}</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setElegidos(new Set())}>
-            Limpiar
-          </Button>
-        </Card>
-      )}
-
       {/* La lista */}
       {filas.length === 0 ? (
         modelos.length === 0 ? (
@@ -388,7 +350,7 @@ export default function ModelosPage() {
           <EmptyState icon={Search} title="Sin resultados" description="Ningún producto pasa esos filtros." actionLabel="Sacar filtros" onAction={() => setFiltros({ ...FILTROS_INICIALES, estado: filtros.estado })} />
         )
       ) : vista === "tarjetas" ? (
-        <TarjetasDeProductos grupos={grupos} agrupado={agrupar !== "nada"} elegidos={elegidos} onAlternar={onAlternar} onAbrir={(id) => router.push(`/modelos/${id}`)} />
+        <TarjetasDeProductos grupos={grupos} agrupado={agrupar !== "nada"} elegidos={elegidos} onAlternar={onAlternar} onAbrir={(id) => router.push(`/modelos/${id}`)} alcance={alcance} />
       ) : (
         <>
           <div className="hidden md:block">
@@ -404,20 +366,85 @@ export default function ModelosPage() {
               }}
               verVariantes={verVariantes}
               onAbrir={(id) => router.push(`/modelos/${id}`)}
+              alcance={alcance}
             />
           </div>
           {/* En el teléfono la tabla no entra: tarjetas. */}
           <div className="md:hidden">
-            <TarjetasDeProductos grupos={grupos} agrupado={agrupar !== "nada"} elegidos={elegidos} onAlternar={onAlternar} onAbrir={(id) => router.push(`/modelos/${id}`)} />
+            <TarjetasDeProductos grupos={grupos} agrupado={agrupar !== "nada"} elegidos={elegidos} onAlternar={onAlternar} onAbrir={(id) => router.push(`/modelos/${id}`)} alcance={alcance} />
           </div>
         </>
       )}
+
+      {/* Lo que se hace en cantidad, con lo elegido: flota abajo mientras haya algo elegido */}
+      <AnimatePresence>
+        {resumen.unidades > 0 && (
+          <motion.div
+            key="acciones"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            transition={{ type: "spring", stiffness: 420, damping: 34 }}
+            className="sticky bottom-4 z-20 mx-auto flex w-fit max-w-full flex-wrap items-center gap-2 rounded-2xl border border-primary/30 bg-background/90 p-2.5 pl-4 shadow-xl shadow-primary/10 backdrop-blur-md"
+          >
+            <div className="mr-1">
+              <p className="text-sm font-medium leading-tight">
+                {resumen.productosAMedias === 0 && resumen.unidades === resumen.productos.length
+                  ? cuantos(resumen.productos.length, "producto elegido", "productos elegidos")
+                  : `${cuantos(resumen.unidades, "variante elegida", "variantes elegidas")} de ${cuantos(resumen.productos.length, "producto", "productos")}`}
+              </p>
+              <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                {cuentas.otra && <AQueCuentas porCuenta={resumen.porCuenta} />}
+                {resumen.conStock.length > 0 && resumen.sinStock.length > 0 && (
+                  <span>
+                    <button type="button" className="hover:text-primary hover:underline" title="Dejar elegidas sólo las que tienen stock" onClick={() => setElegidos(new Set(resumen.conStock))}>
+                      {resumen.conStock.length} con stock
+                    </button>
+                    {" · "}
+                    <button type="button" className="hover:text-primary hover:underline" title="Dejar elegidas sólo las que no tienen stock" onClick={() => setElegidos(new Set(resumen.sinStock))}>
+                      {resumen.sinStock.length} sin stock
+                    </button>
+                  </span>
+                )}
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => abrirMasivo("inmediata")} disabled={!resumen.mlas.length} title={`En ML (${nombreDeLaCuenta}): sin tiempo de disponibilidad y con Flex`}>
+              <Zap className="h-3.5 w-3.5" /> Con stock: Flex ({resumen.mlas.length})
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => abrirMasivo("a_pedido")} disabled={!resumen.mlas.length} title={`En ML (${nombreDeLaCuenta}): sin Flex y con días de disponibilidad. Con 0 días queda sin Flex y con entrega inmediata.`}>
+              <Clock className="h-3.5 w-3.5" /> Sin stock: a pedido ({resumen.mlas.length})
+            </Button>
+            {alcance !== "otra" && (
+              <Button size="sm" variant="outline" onClick={() => abrirMasivo("crear")} disabled={!resumen.aCrear.length} title={!resumen.aCrear.length ? `Todo lo elegido ya está publicado en ${cuentas.principal}` : `Crear en ${cuentas.principal}`}>
+                Crear en ML ({resumen.aCrear.length})
+              </Button>
+            )}
+            {cuentas.otra && alcance !== "principal" && (
+              <Button size="sm" variant="outline" onClick={() => abrirMasivo("copiar")} disabled={!resumen.mlasPrincipal.length} title={!resumen.mlasPrincipal.length ? `Todo lo elegido ya está copiado en ${cuentas.otra}` : `Copiar las publicaciones de ${cuentas.principal} a ${cuentas.otra}`}>
+                Copiar a {cuentas.otra} ({resumen.mlasPrincipal.length})
+              </Button>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
+                Más <ChevronDown className="h-3.5 w-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => abrirMasivo("activar")}>Activar {cuantos(resumen.productos.length, "producto", "productos")}</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => abrirMasivo("desactivar")}>Desactivar {cuantos(resumen.productos.length, "producto", "productos")}</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button size="sm" variant="ghost" onClick={() => setElegidos(new Set())}>
+              Limpiar
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ─── En cantidad ────────────────────────────── */}
       <Dialog open={masivo === "crear"} onOpenChange={(o) => !o && setMasivo(null)}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Crear en Mercado Libre ({tanda.aCrear.length})</DialogTitle>
+            <DialogTitle>Crear en Mercado Libre{cuentas.otra ? `, en ${cuentas.principal}` : ""} ({tanda.aCrear.length})</DialogTitle>
             <DialogDescription>Las variantes elegidas que no están publicadas. No se crea nada hasta que confirmes; quedan pausadas.</DialogDescription>
           </DialogHeader>
           {masivo === "crear" && (
@@ -437,7 +464,7 @@ export default function ModelosPage() {
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              Copiar a {otrasCuentas[0] ?? "otra cuenta"}: {cuantos(tanda.mlasPrincipal.length, "publicación", "publicaciones")}
+              Copiar a {cuentas.otra ?? "otra cuenta"}: {cuantos(tanda.mlasPrincipal.length, "publicación", "publicaciones")}
             </DialogTitle>
             <DialogDescription>Mismas fotos, descripción, precio y stock; el título cambia en su última parte. No se crea nada hasta que confirmes, y quedan pausadas.</DialogDescription>
           </DialogHeader>
@@ -452,6 +479,11 @@ export default function ModelosPage() {
               {masivo === "inmediata" ? "Entrega inmediata con Flex" : "A pedido, sin Flex"}: {cuantos(tanda.mlas.length, "publicación", "publicaciones")}
             </DialogTitle>
             <DialogDescription>Las publicaciones de ML de las variantes elegidas, como están hoy. No se manda nada hasta que confirmes.</DialogDescription>
+            {cuentas.otra && (
+              <p className="flex flex-wrap items-center gap-x-2 rounded-md bg-muted/60 px-2.5 py-1.5 text-xs text-muted-foreground">
+                <AQueCuentas porCuenta={tanda.porCuenta} />
+              </p>
+            )}
           </DialogHeader>
           {(masivo === "inmediata" || masivo === "a_pedido") && <ConfirmarFlex mlas={tanda.mlas} inmediata={masivo === "inmediata"} onCerrar={() => setMasivo(null)} onHecho={fetchModelos} />}
         </DialogContent>
@@ -517,6 +549,61 @@ export default function ModelosPage() {
           </form>
         </DialogContent>
       </Dialog>
+    </motion.div>
+  );
+}
+
+/** A qué cuentas les llega un cambio: cuántas publicaciones de cada una. */
+function AQueCuentas({ porCuenta }: { porCuenta: ResumenDeSeleccion["porCuenta"] }) {
+  if (!porCuenta.principal && !porCuenta.otra) return <span>Sin publicaciones de ML en lo elegido</span>;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-2">
+      Se aplica a
+      {porCuenta.principal > 0 && (
+        <span className="inline-flex items-center gap-1 font-medium text-foreground">
+          <EtiquetaDeCuenta de="principal" /> · {porCuenta.principal}
+        </span>
+      )}
+      {porCuenta.otra > 0 && (
+        <span className="inline-flex items-center gap-1 font-medium text-foreground">
+          <EtiquetaDeCuenta de="otra" /> · {porCuenta.otra}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** La forma de la página mientras carga, para que no salte al llegar los datos. */
+function Cargando() {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-40" />
+          <Skeleton className="h-4 w-72" />
+        </div>
+        <Skeleton className="h-9 w-44" />
+      </div>
+      <Skeleton className="h-9 w-full" />
+      <div className="flex gap-2">
+        {[28, 36, 24, 20, 24].map((w, i) => (
+          <Skeleton key={i} className="h-8 rounded-full" style={{ width: `${w * 4}px` }} />
+        ))}
+      </div>
+      <div className="rounded-xl border bg-card">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-3 border-b px-3 py-2.5 last:border-b-0">
+            <Skeleton className="h-4 w-4" />
+            <Skeleton className="h-11 w-11 rounded-lg" />
+            <div className="flex-1 space-y-1.5">
+              <Skeleton className="h-4 w-1/3" />
+              <Skeleton className="h-3 w-1/5" />
+            </div>
+            <Skeleton className="h-5 w-24 rounded-full" />
+            <Skeleton className="h-5 w-24 rounded-full" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

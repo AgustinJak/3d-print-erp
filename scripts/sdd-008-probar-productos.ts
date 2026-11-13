@@ -9,6 +9,7 @@
 import {
   agrupar,
   alternar,
+  diferenciasDe,
   estadoDeTilde,
   filtrar,
   FILTROS_INICIALES,
@@ -128,6 +129,38 @@ const ver = (x: Partial<Filtros>) => ids(filtrar(productos, canales, con(x)));
   ok(e.size === 1 && e.has("k95"), "tildar de nuevo el producto saca sólo las suyas", [...e]);
   const a = resumir(productos, canales, new Set(["angel-unica", "blanco", "m:suelto"]));
   ok(a.aCrear.length === 1 && a.aCrear[0].combinacionId === "angel-unica" && a.productosAMedias === 1 && a.productos.length === 3, "a crear: sólo las variantes sin publicación", a);
+}
+
+// Dos cuentas de ML (docs/sdd/011): qué se ve y a qué se le aplica según la cuenta elegida.
+{
+  const SHOP = "Sendero Shop";
+  const dos = prod("dos", { nombre: "Con las dos cuentas" });
+  const cs: Record<string, CanalesDeModelo> = {
+    dos: canal([
+      comb("igual", { stock: 1, publicaciones: [pub("MLA10", { flex: true, precio: 100 }), pub("MLA20", { flex: true, precio: 100, cuenta: SHOP, copiaDe: "MLA10" })] }),
+      comb("distinta", { publicaciones: [pub("MLA11", { flex: true, precio: 100 }), pub("MLA21", { dias: 5, precio: 120, estado: "paused", cuenta: SHOP, copiaDe: "MLA11" })] }),
+      comb("sin-copia", { publicaciones: [pub("MLA12", { premium: true }), pub("MLA13")] }),
+      comb("nada"),
+    ]),
+  };
+  const todas = cs.dos.combinaciones;
+  ok(diferenciasDe(todas[0]).length === 0, "igual en las dos cuentas: sin diferencias");
+  ok(diferenciasDe(todas[1]).join() === "Flex,días,precio", "distinta: dice en qué (que esté pausada no cuenta)", diferenciasDe(todas[1]));
+  ok(diferenciasDe(todas[2]).length === 0 && diferenciasDe(todas[3]).length === 0, "sin copia no hay con qué comparar");
+  ok(diferenciasDe({ publicaciones: [pub("A", { premium: true, flex: true }), pub("B", { flex: false }), pub("C", { cuenta: SHOP, flex: false })] }).length === 0, "sin saber de cuál es copia, compara con la del mismo tipo");
+  const v = (x: Partial<Filtros>, a: Parameters<typeof filtrar>[3]) => ids(filtrar([dos], cs, con(x), a));
+  ok(v({ difieren: true }, "todas") === "dos:distinta", "el filtro de las que difieren", v({ difieren: true }, "todas"));
+  ok(v({ ml: "sin" }, "otra") === "dos:sin-copia,nada" && v({ ml: "sin" }, "principal") === "dos:nada", "sin publicar mira la cuenta elegida: en la otra, las sin copiar", [v({ ml: "sin" }, "otra"), v({ ml: "sin" }, "principal")]);
+  ok(v({ entrega: "flex" }, "otra") === "dos:igual" && v({ entrega: "flex" }, "principal") === "dos:igual,distinta", "la entrega también", [v({ entrega: "flex" }, "otra")]);
+  ok(v({ ml: "pausados" }, "principal") === "" && v({ ml: "pausados" }, "todas") === "dos:distinta", "pausados, por cuenta");
+  const e = new Set(["igual", "distinta", "sin-copia", "nada"]);
+  const rt = resumir([dos], cs, e, "todas");
+  ok(rt.mlas.length === 6 && rt.porCuenta.principal === 4 && rt.porCuenta.otra === 2, "en Todas, las publicaciones de las dos cuentas, con cuántas de cada una", rt.porCuenta);
+  ok(rt.mlasPrincipal.join() === "MLA12,MLA13" && rt.aCrear.map((x) => x.combinacionId).join() === "nada", "a copiar: las que no tienen copia; a crear: la que no está en la principal", [rt.mlasPrincipal, rt.aCrear]);
+  const rp = resumir([dos], cs, e, "principal");
+  ok(rp.mlas.join() === "MLA10,MLA11,MLA12,MLA13" && rp.porCuenta.otra === 0 && rp.mlasPrincipal.length === 0 && rp.aCrear.length === 1, "en Sendero 3D no se toca la otra cuenta ni se ofrece copiar", rp);
+  const ro = resumir([dos], cs, e, "otra");
+  ok(ro.mlas.join() === "MLA20,MLA21" && ro.porCuenta.principal === 0 && ro.aCrear.length === 0 && ro.mlasPrincipal.length === 2, "en Sendero Shop sólo sus publicaciones; no se crea en la principal", ro);
 }
 
 console.log(`\n${fallas ? `✗ ${fallas} de ${pruebas} fallaron` : `✓ ${pruebas} de ${pruebas}`}`);

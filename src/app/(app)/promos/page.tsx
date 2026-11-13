@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { motion } from "motion/react";
 import { AlertTriangle, ChevronDown, ExternalLink, Loader2, MoreHorizontal, Percent, RefreshCw, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/empty-state";
+import { Segmentado } from "@/components/segmentado";
+import { PuntoDeCuenta, SelectorDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
 import { json, pedir, pesos } from "@/components/producto/seccion";
 import { ConfirmarPromos } from "@/components/promos/confirmar-promos";
 import type { CambioDePromoRegistrado, CandidataCalculada, FilaPromo, ResumenPromos } from "@/lib/promos-ml";
@@ -29,6 +32,9 @@ import { conPrecio, nombreDeTipo, precioParaPct, type PedidoDePromo, type TipoDe
  * puede sumar y cuánto deja a ese precio, avisos, y prender o cambiar promos en cantidad.
  *
  * El ERP nunca prende una promo solo: todo pasa por la vista previa y lo confirma Agustín.
+ *
+ * Con dos cuentas de ML (docs/sdd/011), el selector de arriba dice cuál se mira: cada una tiene sus
+ * publicaciones y sus campañas.
  */
 
 type Pestana = "avisos" | "campana" | "todas" | "historial";
@@ -74,12 +80,21 @@ function Tarjeta({ titulo, valor, detalle, tono }: { titulo: string; valor: stri
 }
 
 function Producto({ f }: { f: FilaPromo }) {
+  const { alcance, cuentas } = useCuentaActiva();
   return (
     <div className="min-w-0">
       <p className="font-medium truncate">{f.producto}</p>
-      <a href={linkMl(f.mla)} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1">
-        {f.mla} <ExternalLink className="h-3 w-3" />
-      </a>
+      <span className="text-xs text-muted-foreground inline-flex flex-wrap items-center gap-1">
+        {alcance === "todas" && cuentas.otra && (
+          <span className="inline-flex items-center gap-1 font-medium text-foreground/80">
+            <PuntoDeCuenta de={f.cuentaMl} />
+            {f.cuentaMl === "principal" ? cuentas.principal : cuentas.otra} ·
+          </span>
+        )}
+        <a href={linkMl(f.mla)} target="_blank" rel="noreferrer" className="hover:underline inline-flex items-center gap-1">
+          {f.mla} <ExternalLink className="h-3 w-3" />
+        </a>
+      </span>
     </div>
   );
 }
@@ -247,7 +262,9 @@ type Masiva = "cambiar" | "sumar" | "sacar";
 function BarraMasiva({ d, elegidas, onLimpiar, onPedir }: { d: ResumenPromos; elegidas: Set<string>; onLimpiar: () => void; onPedir: (p: PedidoDePromo[], t: string, pct?: number) => void }) {
   const [accion, setAccion] = useState<Masiva>("cambiar");
   const [pct, setPct] = useState(String(d.promoGeneral));
-  const campanas = d.campanas.filter((c) => c.aptas > 0 && ["SELLER_CAMPAIGN", "PRICE_DISCOUNT", "DEAL", "SELLER_COUPON_CAMPAIGN"].includes(c.tipo));
+  const cuentasElegidas = new Set(d.filas.filter((f) => elegidas.has(f.mla)).map((f) => f.cuentaMl));
+  // Sumar a una campaña es de una cuenta: se ofrecen las de la cuenta de lo elegido.
+  const campanas = d.campanas.filter((c) => c.aptas > 0 && cuentasElegidas.has(c.cuenta) && ["SELLER_CAMPAIGN", "PRICE_DISCOUNT", "DEAL", "SELLER_COUPON_CAMPAIGN"].includes(c.tipo));
   const [campanaId, setCampanaId] = useState(() => campanas.find((c) => c.tipo === "SELLER_CAMPAIGN")?.id ?? campanas[0]?.id ?? "");
   const campana = campanas.find((c) => c.id === campanaId) ?? null;
   const n = Number(pct.replace(",", "."));
@@ -293,7 +310,7 @@ function BarraMasiva({ d, elegidas, onLimpiar, onPedir }: { d: ResumenPromos; el
           {accion === "sumar" && (
             <select value={campanaId} onChange={(e) => setCampanaId(e.target.value)} className="h-8 rounded-md border bg-transparent px-2 max-w-[240px]">
               {campanas.map((c) => (
-                <option key={c.id} value={c.id}>
+                <option key={`${c.cuenta}|${c.id}`} value={c.id}>
                   {c.nombre || nombreDeTipo(c.tipo)} ({nombreDeTipo(c.tipo)})
                 </option>
               ))}
@@ -324,24 +341,32 @@ function BarraMasiva({ d, elegidas, onLimpiar, onPedir }: { d: ResumenPromos; el
 
 /** Una campaña: las publicaciones aptas, con un % para todas y selección en cantidad (REQ-4, REQ-5). */
 function PorCampana({ d, q, onPedir }: { d: ResumenPromos; q: string; onPedir: (p: PedidoDePromo[], t: string, pct?: number) => void }) {
+  const { alcance, cuentas } = useCuentaActiva();
+  const mostrarCuenta = alcance === "todas" && !!cuentas.otra;
   const visibles = d.campanas.filter((c) => c.aptas > 0 || c.adentro > 0);
-  const [id, setId] = useState<string>(() => visibles.find((c) => c.tipo === "SELLER_CAMPAIGN")?.id ?? visibles[0]?.id ?? "");
-  const campana = visibles.find((c) => c.id === id) ?? null;
+  // Una campaña es de una cuenta: se identifica con las dos cosas.
+  const claveDe = (c: { id: string; cuenta: string }) => `${c.cuenta}|${c.id}`;
+  const [id, setId] = useState<string>(() => {
+    const c = visibles.find((x) => x.tipo === "SELLER_CAMPAIGN") ?? visibles[0];
+    return c ? claveDe(c) : "";
+  });
+  const campana = visibles.find((c) => claveDe(c) === id) ?? visibles[0] ?? null;
   const [pct, setPct] = useState<string>(String(d.promoGeneral));
   const [elegidas, setElegidas] = useState<Set<string>>(new Set());
 
   useEffect(() => setElegidas(new Set()), [id]);
 
   const mismo = (c: { id: string | null; tipo: string }) => (campana?.tipo === "PRICE_DISCOUNT" ? c.tipo === "PRICE_DISCOUNT" : c.id === campana?.id);
+  const deLaCampana = d.filas.filter((f) => f.cuentaMl === campana?.cuenta);
   const aptas = useMemo(
     () =>
-      d.filas
+      deLaCampana
         .map((f) => ({ f, c: f.candidatas.find(mismo) as CandidataCalculada | undefined }))
         .filter((x): x is { f: FilaPromo; c: CandidataCalculada } => !!x.c),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [d.filas, campana]
   );
-  const adentro = d.filas.filter((f) => coincide(f, q) && ((f.activa && mismo(f.activa)) || f.pendientes.some(mismo) || f.cupones.some(mismo)));
+  const adentro = deLaCampana.filter((f) => coincide(f, q) && ((f.activa && mismo(f.activa)) || f.pendientes.some(mismo) || f.cupones.some(mismo)));
   const pctNum = Number(pct.replace(",", "."));
   const conPct = aptas.map((x) => ({ ...x, p: precioParaPct(x.c, x.f.publicado, Number.isFinite(pctNum) ? pctNum : d.promoGeneral) }));
   // Se muestran las que coinciden con el buscador; lo tildado antes de buscar sigue tildado.
@@ -361,12 +386,15 @@ function PorCampana({ d, q, onPedir }: { d: ResumenPromos; q: string; onPedir: (
       <div className="flex flex-wrap gap-2">
         {visibles.map((c) => (
           <button
-            key={c.id}
+            key={claveDe(c)}
             type="button"
-            onClick={() => setId(c.id)}
-            className={`rounded-md border px-3 py-1.5 text-left text-sm transition-colors ${c.id === id ? "border-primary bg-primary/5" : "hover:bg-muted"}`}
+            onClick={() => setId(claveDe(c))}
+            className={`rounded-xl border px-3 py-2 text-left text-sm transition-all duration-150 active:scale-[0.98] ${campana && claveDe(c) === claveDe(campana) ? "border-primary bg-primary/5 shadow-sm" : "hover:bg-muted"}`}
           >
-            <span className="font-medium">{c.nombre || nombreDeTipo(c.tipo)}</span>
+            <span className="font-medium inline-flex items-center gap-1.5">
+              {mostrarCuenta && <PuntoDeCuenta de={c.cuenta} />}
+              {c.nombre || nombreDeTipo(c.tipo)}
+            </span>
             <span className="block text-xs text-muted-foreground">
               {nombreDeTipo(c.tipo)}
               {c.pctFijo ? ` ${c.pctFijo} %` : ""} · {c.adentro} adentro · {c.aptas} aptas
@@ -564,7 +592,11 @@ export default function PaginaPromos() {
     cargar();
   }
 
-  const d = datos;
+  const { alcance } = useCuentaActiva();
+  const d = useMemo<ResumenPromos | null>(
+    () => (datos && alcance !== "todas" ? { ...datos, filas: datos.filas.filter((f) => f.cuentaMl === alcance), campanas: datos.campanas.filter((c) => c.cuenta === alcance) } : datos),
+    [datos, alcance]
+  );
   const conAviso = useMemo(() => d?.filas.filter((f) => f.avisos.length) ?? [], [d]);
   const cuenta = (t: TipoDeAviso) => conAviso.filter((f) => f.avisos.some((a) => a.tipo === t)).length;
   const avisosVisibles = (filtro === "todos" ? conAviso : conAviso.filter((f) => f.avisos.some((a) => a.tipo === filtro))).filter((f) => coincide(f, q));
@@ -572,15 +604,18 @@ export default function PaginaPromos() {
   const pedirCambio = (pedidos: PedidoDePromo[], titulo: string, pct?: number) => setCambio({ pedidos, titulo, pct });
 
   return (
-    <div className="space-y-5 max-w-6xl">
+    <motion.div className="space-y-5 max-w-6xl" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: "easeOut" }}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Percent className="h-6 w-6 text-primary" /> Promos
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Las promos de Mercado Libre de cada publicación, a cuáles se puede sumar y cuánto deja. Nada se prende solo.
-          </p>
+        <div className="space-y-2">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+              <Percent className="h-6 w-6 text-primary" /> Promos
+            </h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Las promos de Mercado Libre de cada publicación, a cuáles se puede sumar y cuánto deja. Nada se prende solo.
+            </p>
+          </div>
+          <SelectorDeCuenta />
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={leerDeMl} disabled={!!leyendo} title={d?.leidoEn ? `Última lectura completa ${haceCuanto(d.leidoEn)}` : undefined}>
@@ -620,24 +655,21 @@ export default function PaginaPromos() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-          <div className="flex rounded-md border overflow-hidden text-sm w-fit">
-            {(
-              [
-                ["avisos", `Avisos (${conAviso.length})`],
-                ["campana", "Por campaña"],
-                ["todas", `Todas (${d.filas.length})`],
-                ["historial", "Historial"],
-              ] as const
-            ).map(([v, texto]) => (
-              <button key={v} type="button" onClick={() => setPestana(v)} className={`px-3 py-1.5 transition-colors ${pestana === v ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
-                {texto}
-              </button>
-            ))}
-          </div>
+          <Segmentado
+            etiqueta="Qué mirar"
+            valor={pestana}
+            onChange={setPestana}
+            opciones={[
+              ["avisos", `Avisos (${conAviso.length})`],
+              ["campana", "Por campaña"],
+              ["todas", `Todas (${d.filas.length})`],
+              ["historial", "Historial"],
+            ]}
+          />
             {pestana !== "historial" && (
               <div className="relative flex-1 min-w-[200px] max-w-sm">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar producto o publicación" className="pl-7 h-8" />
+                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar producto o publicación" className="pl-7 h-8 rounded-full" />
               </div>
             )}
           </div>
@@ -668,7 +700,7 @@ export default function PaginaPromos() {
             </div>
           )}
 
-          {pestana === "campana" && <PorCampana d={d} q={q} onPedir={pedirCambio} />}
+          {pestana === "campana" && <PorCampana key={alcance} d={d} q={q} onPedir={pedirCambio} />}
 
           {pestana === "todas" &&
             (todasVisibles.length ? (
@@ -715,6 +747,6 @@ export default function PaginaPromos() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </motion.div>
   );
 }

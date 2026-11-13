@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { AnimatePresence, motion } from "motion/react";
 import { AlertTriangle, ExternalLink, Loader2, RefreshCw, Search, Tag, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,8 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/empty-state";
+import { Segmentado } from "@/components/segmentado";
+import { EtiquetaDeCuenta, PuntoDeCuenta, SelectorDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
 import { json, pedir, pesos } from "@/components/producto/seccion";
 import { ConfiguracionDePrecios } from "@/components/precios/configuracion";
 import { MargenMasivo } from "@/components/precios/margen-masivo";
@@ -23,6 +26,9 @@ import type { Deja, FilaDeCanal, FilaErp, OpcionesMl, Propuesta, ResultadoFila }
  *
  * El precio se decide en Bodega; acá sólo se ve la diferencia con lo publicado y se aprueba. Nada
  * sale sin el click de confirmación, y lo que cambia más de 30 % pide confirmarlo aparte.
+ *
+ * Con dos cuentas de ML (docs/sdd/011), el selector de arriba dice cuál se mira en la pestaña de
+ * Mercado Libre: lo que se ve y lo que se aplica son las publicaciones de esa cuenta.
  */
 
 type Pestana = "combinaciones" | "mercadolibre" | "shop" | "erp" | "historial" | "configuracion";
@@ -125,6 +131,7 @@ function PantallaPrecios() {
   const [aplicando, setAplicando] = useState(false);
   const [resultados, setResultados] = useState<Map<string, ResultadoFila>>(new Map());
   const [historial, setHistorial] = useState<Cambio[] | null>(null);
+  const { alcance, cuentas } = useCuentaActiva();
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -160,7 +167,10 @@ function PantallaPrecios() {
   );
   const canal = (c: "mercadolibre" | "shop") =>
     (datos?.canales ?? []).filter((f) => f.canal === c && (!modelo || f.modeloId === modelo) && busca(f.combinacion, f.titulo, f.clave));
-  const ml = useMemo(() => canal("mercadolibre"), [datos, modelo, q]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ml = useMemo(() => canal("mercadolibre").filter((f) => alcance === "todas" || f.cuentaMl === alcance), [datos, modelo, q, alcance]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** De qué cuenta es cada clave de ML: para decir a cuántas de cada una llega un cambio. */
+  const cuentaDeClave = useMemo(() => new Map((datos?.canales ?? []).filter((f) => f.canal === "mercadolibre").map((f) => [f.clave, f.cuentaMl])), [datos]);
+  const cuentaDeMla = useMemo(() => new Map([...cuentaDeClave].map(([k, v]) => [k.split("|")[0], v])), [cuentaDeClave]);
   const shop = useMemo(() => canal("shop"), [datos, modelo, q]); // eslint-disable-line react-hooks/exhaustive-deps
   const erp = useMemo(() => (datos?.erp ?? []).filter((f) => (!modelo || f.modeloId === modelo) && busca(f.modelo)), [datos, modelo, q]); // eslint-disable-line react-hooks/exhaustive-deps
   const nombreModelo = modelo ? (datos?.combinaciones.find((c) => c.modeloId === modelo)?.modelo ?? "este producto") : null;
@@ -248,10 +258,10 @@ function PantallaPrecios() {
   const cuenta = (filas: Array<{ motivo: string | null; diferencia: number | null }>) => filas.filter((f) => !f.motivo && conDiferencia(f)).length;
 
   return (
-    <div className="space-y-4 p-4 md:p-6">
+    <motion.div className="space-y-4" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: "easeOut" }}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold">Precios</h1>
+        <div className="space-y-2 max-w-3xl">
+          <h1 className="text-2xl font-bold tracking-tight">Precios</h1>
           {datos && (
             <p className="text-sm text-muted-foreground">
               {datos.gastos.origen === "erp"
@@ -266,6 +276,7 @@ function PantallaPrecios() {
                 : "El margen, la promo y el redondeo de cada pieza, si los tiene, van en Bodega."}
             </p>
           )}
+          <SelectorDeCuenta />
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           {(
@@ -295,25 +306,26 @@ function PantallaPrecios() {
       )}
 
       <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex rounded-md border overflow-hidden text-sm">
-          {(
-            [
-              ["combinaciones", `Combinaciones (${combinaciones.length})`],
-              ["mercadolibre", `Mercado Libre (${cuenta(ml)})`],
-              ["shop", `Web (${cuenta(shop)})`],
-              ["erp", `ERP (${cuenta(erp)})`],
-              ["historial", "Historial"],
-              ["configuracion", "Configuración"],
-            ] as const
-          ).map(([v, label]) => (
-            <button key={v} type="button" onClick={() => cambiarPestana(v)} className={`px-3 py-1.5 ${pestana === v ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <Segmentado
+          etiqueta="Qué mirar"
+          valor={pestana}
+          onChange={cambiarPestana}
+          opciones={[
+            ["combinaciones", <>Combinaciones <Contador n={combinaciones.length} /></>],
+            ["mercadolibre", <>Mercado Libre <Contador n={cuenta(ml)} resaltar /></>],
+            ["shop", <>Web <Contador n={cuenta(shop)} resaltar /></>],
+            ["erp", <>ERP <Contador n={cuenta(erp)} resaltar /></>],
+            ["historial", "Historial"],
+            ["configuracion", "Configuración"],
+          ]}
+        />
         {(pestana === "mercadolibre" || pestana === "shop" || pestana === "erp") && (
-          <div className="flex rounded-md border overflow-hidden text-sm">
-            {(
+          <Segmentado
+            chico
+            etiqueta="Filtro"
+            valor={filtro}
+            onChange={setFiltro}
+            opciones={
               [
                 ["diferencias", "Con diferencias"],
                 ["aplicables", "Se pueden aplicar"],
@@ -321,21 +333,19 @@ function PantallaPrecios() {
                 ...(pestana === "erp" ? [] : ([["falta-mapear", "Falta mapear"]] as const)),
                 ["todas", "Todas"],
               ] as Array<readonly [Filtro, string]>
-            ).map(([v, label]) => (
-              <button key={v} type="button" onClick={() => setFiltro(v)} className={`px-3 py-1.5 ${filtro === v ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
-                {label}
-              </button>
-            ))}
-          </div>
+            }
+          />
         )}
         {pestana !== "historial" && pestana !== "configuracion" && (
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar producto, SKU o publicación" className="pl-7 h-8" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar producto, SKU o publicación" className="pl-7 h-8 rounded-full" />
           </div>
         )}
       </div>
 
+      <AnimatePresence mode="wait" initial={false}>
+      <motion.div key={pestana} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.15 }}>
       {pestana === "configuracion" ? (
         <ConfiguracionDePrecios onGuardado={cargar} />
       ) : cargando && !datos ? (
@@ -367,8 +377,11 @@ function PantallaPrecios() {
               : pedirConfirmacion("mercadolibre", filas.map(aplicableDeCanal))
           }
           onFlex={pestana === "mercadolibre" ? (prender, mlas) => setFlex({ prender, mlas }) : undefined}
+          conCuenta={pestana === "mercadolibre" && alcance === "todas" && !!cuentas.otra}
         />
       )}
+      </motion.div>
+      </AnimatePresence>
 
       <Dialog open={!!flex} onOpenChange={(o) => !o && setFlex(null)}>
         <DialogContent className="sm:max-w-lg">
@@ -379,6 +392,7 @@ function PantallaPrecios() {
                   {flex.prender ? "Entrega inmediata con Flex" : "A pedido, sin Flex"}: {flex.mlas.length} {flex.mlas.length === 1 ? "publicación" : "publicaciones"}
                 </DialogTitle>
                 <DialogDescription>Así están hoy en Mercado Libre. No se manda nada hasta que confirmes.</DialogDescription>
+                {cuentas.otra && <AQueCuentas cuentas={flex.mlas.map((m) => cuentaDeMla.get(m) ?? null)} />}
               </DialogHeader>
               <ConfirmarFlex mlas={flex.mlas} inmediata={flex.prender} onCerrar={() => setFlex(null)} onHecho={cargar} />
             </>
@@ -401,6 +415,7 @@ function PantallaPrecios() {
                       ? "En la web va cada producto entero, con todas sus combinaciones: el Shop decide cómo guardarlo (base, extras y reglas) y escribe todo o nada. Queda todo en el historial."
                       : "Se manda sólo el precio, de a una publicación. Queda todo en el historial."}
                 </DialogDescription>
+                {confirmar.canal === "mercadolibre" && cuentas.otra && <AQueCuentas cuentas={confirmar.filas.map((f) => cuentaDeClave.get(f.clave) ?? null)} />}
               </DialogHeader>
               <div className="max-h-64 overflow-y-auto divide-y text-sm">
                 {confirmar.filas.map((f) => (
@@ -438,7 +453,29 @@ function PantallaPrecios() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </motion.div>
+  );
+}
+
+/** Un número junto al nombre de una pestaña; resaltado si hay algo para hacer. */
+function Contador({ n, resaltar }: { n: number; resaltar?: boolean }) {
+  return <span className={`rounded-full px-1.5 text-[11px] tabular-nums leading-4 ${resaltar && n > 0 ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>{n}</span>;
+}
+
+/** A cuántas publicaciones de cada cuenta llega un cambio (docs/sdd/011, RN-3). */
+function AQueCuentas({ cuentas }: { cuentas: Array<"principal" | "otra" | null> }) {
+  const n = (c: "principal" | "otra") => cuentas.filter((x) => x === c).length;
+  return (
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-muted/60 px-2.5 py-1.5 text-xs text-muted-foreground">
+      Se aplica a
+      {(["principal", "otra"] as const).map((c) =>
+        n(c) > 0 ? (
+          <span key={c} className="inline-flex items-center gap-1 font-medium text-foreground">
+            <EtiquetaDeCuenta de={c} /> · {n(c)}
+          </span>
+        ) : null
+      )}
+    </p>
   );
 }
 
@@ -474,7 +511,7 @@ function TablaCombinaciones({ filas, opciones, onMargenGuardado }: { filas: Prop
     });
   if (!filas.length) return <EmptyState icon={Tag} title="Nada para mostrar" description="No hay combinaciones activas con ese filtro." />;
   return (
-    <Card className="overflow-x-auto">
+    <Card className="overflow-x-auto rounded-xl py-0 gap-0 shadow-xs">
       {elegidos.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 p-3 border-b text-sm bg-primary/5">
           <span>
@@ -517,7 +554,7 @@ function TablaCombinaciones({ filas, opciones, onMargenGuardado }: { filas: Prop
         </button>
       </div>
       <table className="w-full text-sm">
-        <thead className="text-xs text-muted-foreground">
+        <thead className="text-xs text-muted-foreground bg-muted/40">
           <tr className="border-b">
             <th className="p-2 w-8">
               {!verFaltan && (
@@ -611,8 +648,8 @@ function BarraDeSeleccion({
 }) {
   if (!n) return null;
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 p-3 border-b bg-muted/40 text-sm">
-      <span>
+    <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 p-3 border-b bg-primary/[0.06] backdrop-blur-md text-sm">
+      <span className="font-medium">
         {n} {n === 1 ? "elegida" : "elegidas"}
       </span>
       <div className="flex flex-wrap gap-2">
@@ -647,6 +684,7 @@ function TablaCanal({
   onAlternar,
   onAplicar,
   onFlex,
+  conCuenta,
 }: {
   canal: "mercadolibre" | "shop";
   filas: FilaDeCanal[];
@@ -656,6 +694,8 @@ function TablaCanal({
   onAplicar: (filas: FilaDeCanal[]) => void;
   /** ML: entrega inmediata con Flex (true) o a pedido sin Flex (false) en las elegidas (spec 007). */
   onFlex?: (prender: boolean, mlas: string[]) => void;
+  /** Mirando las dos cuentas de ML: cada fila dice de cuál es (docs/sdd/011). */
+  conCuenta?: boolean;
 }) {
   // En la web cuenta el producto: si alguna de sus combinaciones cambia, se aplica entero.
   const productosConCambio = new Set(filas.filter((f) => f.canal === "shop" && !f.motivo && conDiferencia(f)).map((f) => f.producto));
@@ -669,7 +709,7 @@ function TablaCanal({
   const mlasElegidas = [...new Set(elegidasTodas.map((f) => f.clave.split("|")[0]))];
   if (!filas.length) return <EmptyState icon={Tag} title="Nada para mostrar" description="No hay publicaciones con ese filtro." />;
   return (
-    <Card className="overflow-x-auto">
+    <Card className="overflow-x-auto rounded-xl py-0 gap-0 shadow-xs">
       <BarraDeSeleccion
         n={elegidasTodas.length}
         aplicables={elegidasAca.length}
@@ -684,7 +724,7 @@ function TablaCanal({
         </p>
       )}
       <table className="w-full text-sm">
-        <thead className="text-xs text-muted-foreground">
+        <thead className="text-xs text-muted-foreground bg-muted/40">
           <tr className="border-b">
             <th className="w-8 p-2">
               {seleccionables.length > 0 && (
@@ -711,7 +751,7 @@ function TablaCanal({
           {filas.map((f) => {
             const puede = sePuede(f);
             return (
-              <tr key={f.clave} className="border-b last:border-0 align-top">
+              <tr key={f.clave} className={`border-b last:border-0 align-top transition-colors hover:bg-muted/40 ${elegidas.has(f.clave) ? "bg-primary/[0.06]" : ""}`}>
                 <td className="p-2">{(puede || ml) && <input type="checkbox" checked={elegidas.has(f.clave)} onChange={() => onAlternar(f.clave)} aria-label="Elegir" />}</td>
                 <td className="p-2">
                   {f.modeloId ? (
@@ -721,7 +761,8 @@ function TablaCanal({
                   ) : (
                     <span className="text-muted-foreground">sin mapear</span>
                   )}
-                  <div className="text-xs text-muted-foreground flex items-center gap-1">
+                  <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-1">
+                    {conCuenta && f.cuentaMl && <CuentaDeFila de={f.cuentaMl} />}
                     {f.enlace ? (
                       <a href={f.enlace} target="_blank" rel="noreferrer" className="hover:underline inline-flex items-center gap-0.5">
                         {f.clave.replace(/\|$/, "")} <ExternalLink className="h-3 w-3" />
@@ -770,6 +811,16 @@ function TablaCanal({
   );
 }
 
+function CuentaDeFila({ de }: { de: "principal" | "otra" }) {
+  const { cuentas } = useCuentaActiva();
+  return (
+    <span className="inline-flex items-center gap-1 font-medium text-foreground/80">
+      <PuntoDeCuenta de={de} />
+      {de === "principal" ? cuentas.principal : cuentas.otra} ·
+    </span>
+  );
+}
+
 function TablaErp({
   filas,
   elegidas,
@@ -788,14 +839,14 @@ function TablaErp({
   const elegidasAca = aplicables.filter((f) => elegidas.has(f.modeloId));
   if (!filas.length) return <EmptyState icon={Tag} title="Nada para mostrar" description="No hay productos con ese filtro." />;
   return (
-    <Card className="overflow-x-auto">
+    <Card className="overflow-x-auto rounded-xl py-0 gap-0 shadow-xs">
       <BarraDeSeleccion n={elegidasAca.length} onAplicar={() => onAplicar(elegidasAca)} onLimpiar={() => elegidasAca.forEach((f) => onAlternar(f.modeloId))} />
       <p className="p-3 border-b text-xs text-muted-foreground">
         El precio de venta del ERP es el de personalizados de la combinación más barata; cada opción suma la diferencia con esa (el pedido a mano suma lo mismo que da la
         combinación).
       </p>
       <table className="w-full text-sm">
-        <thead className="text-xs text-muted-foreground">
+        <thead className="text-xs text-muted-foreground bg-muted/40">
           <tr className="border-b">
             <th className="w-8 p-2" />
             <th className="text-left font-medium p-2">Producto</th>
@@ -867,9 +918,9 @@ function TablaHistorial({ cambios }: { cambios: Cambio[] | null }) {
   if (!cambios.length) return <EmptyState icon={Tag} title="Todavía no se aplicó ningún precio" description="Cada precio que se aplique desde acá queda anotado." />;
   const CANAL: Record<string, string> = { mercadolibre: "Mercado Libre", shop: "Web", erp: "ERP" };
   return (
-    <Card className="overflow-x-auto">
+    <Card className="overflow-x-auto rounded-xl py-0 gap-0 shadow-xs">
       <table className="w-full text-sm">
-        <thead className="text-xs text-muted-foreground">
+        <thead className="text-xs text-muted-foreground bg-muted/40">
           <tr className="border-b">
             <th className="text-left font-medium p-2">Cuándo</th>
             <th className="text-left font-medium p-2">Canal</th>

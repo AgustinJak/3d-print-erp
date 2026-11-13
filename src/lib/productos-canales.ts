@@ -17,7 +17,7 @@ export async function canalesDeModelos(tenantId: string): Promise<RespuestaDeCan
   const [mapeos, combinaciones, mueven, filasDeStock, ventas] = await Promise.all([
     prisma.mapeoCanal.findMany({
       where: { tenantId, ignorar: false, combinacionId: { not: null }, canal: { in: ["mercadolibre", "shop"] } },
-      select: { canal: true, clave: true, combinacionId: true, precioLectura: true, precioLeidoEn: true, cuentaMlId: true, combinacion: { select: { modeloId: true } } },
+      select: { canal: true, clave: true, combinacionId: true, precioLectura: true, precioLeidoEn: true, precioPublicado: true, muestra: true, cuentaMlId: true, combinacion: { select: { modeloId: true } } },
     }),
     prisma.combinacion.findMany({
       where: { tenantId, activo: true },
@@ -96,7 +96,7 @@ export async function canalesDeModelos(tenantId: string): Promise<RespuestaDeCan
     const lectura = m.precioLectura as unknown as LecturaMl | null;
     const estado = lectura?.estado === "active" ? "active" : lectura?.estado === "paused" ? "paused" : "otro";
     if (comb && !comb.publicaciones.some((x) => x.mla === mla)) {
-      comb.publicaciones.push({ mla, estado, flex: !!lectura?.flex, dias: lectura?.disponibilidad ?? null, premium: lectura?.tipo === "gold_pro", cuenta: m.cuentaMlId ? (nombreDeCuenta.get(m.cuentaMlId) ?? "otra cuenta") : null });
+      comb.publicaciones.push({ mla, estado, flex: !!lectura?.flex, dias: lectura?.disponibilidad ?? null, premium: lectura?.tipo === "gold_pro", cuenta: m.cuentaMlId ? (nombreDeCuenta.get(m.cuentaMlId) ?? "otra cuenta") : null, precio: m.precioPublicado ?? null, copiaDe: (m.muestra as { copiaDe?: string } | null)?.copiaDe ?? null });
     }
     if (vistas.has(`${m.combinacion.modeloId}|${mla}`)) continue;
     vistas.add(`${m.combinacion.modeloId}|${mla}`);

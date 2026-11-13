@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronRight, AlertTriangle, ShoppingCart, GripVertical, CalendarClock, Clock, Copy, PackageCheck, Printer } from "lucide-react";
 import { toast } from "sonner";
+import { motion } from "motion/react";
 import {
   DragDropContext,
   Droppable,
@@ -30,6 +31,28 @@ import { ESTADOS_PEDIDO, PRIORIDADES, CANALES_VENTA } from "@/lib/constants";
 import { useDatosEnVivo } from "@/hooks/use-datos-en-vivo";
 import { PedidoDialog } from "./pedido-dialog";
 import { nombreDeItem } from "@/lib/items";
+import { PuntoDeCuenta, SelectorDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
+
+/**
+ * De qué cuenta de ML es un pedido (docs/sdd/011). Las ventas de la otra cuenta llevan su nombre como
+ * etiqueta (docs/sdd/010); null = no es de Mercado Libre.
+ */
+function cuentaDePedido(p: { canalVenta: string; etiquetas: string[] }, otra: string | null): "principal" | "otra" | null {
+  if (p.canalVenta !== "mercadolibre") return null;
+  return otra && p.etiquetas.includes(otra) ? "otra" : "principal";
+}
+
+/** El punto de la cuenta de un pedido de ML, mirando las dos cuentas. */
+function CuentaDelPedido({ p }: { p: { canalVenta: string; etiquetas: string[] } }) {
+  const { alcance, cuentas } = useCuentaActiva();
+  const de = cuentaDePedido(p, cuentas.otra);
+  if (!de || alcance !== "todas" || !cuentas.otra) return null;
+  return (
+    <span title={de === "principal" ? cuentas.principal : cuentas.otra} className="inline-flex">
+      <PuntoDeCuenta de={de} />
+    </span>
+  );
+}
 
 interface VarianteInfo {
   nombre: string;
@@ -188,6 +211,9 @@ function PedidosContenido() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [mlExpanded, setMlExpanded] = useState(false);
+  // La cuenta de ML que se mira (docs/sdd/011): con una, se ven sus ventas; las de la web y las de
+  // a mano van con Sendero 3D.
+  const { alcance, cuentas } = useCuentaActiva();
 
   const fetchPedidos = useCallback(async () => {
     const res = await fetch("/api/pedidos");
@@ -205,7 +231,9 @@ function PedidosContenido() {
       p.id.toLowerCase().includes(search.toLowerCase()) ||
       p.notas?.toLowerCase().includes(search.toLowerCase());
     const matchEstado = filterEstado === "todos" || p.estado === filterEstado;
-    return matchSearch && matchEstado;
+    const deCuenta = cuentaDePedido(p, cuentas.otra);
+    const matchCuenta = alcance === "todas" || (alcance === "otra" ? deCuenta === "otra" : deCuenta !== "otra");
+    return matchSearch && matchEstado && matchCuenta;
   });
 
   // Si filtro = "todos", separamos los pedidos en ESPERANDO_LIQUIDACION_ML para
@@ -345,9 +373,18 @@ function PedidosContenido() {
   if (initialLoading) return <TableSkeleton cols={7} />;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <h1 className="text-2xl font-bold">Pedidos</h1>
+    <motion.div className="space-y-4" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: "easeOut" }}>
+      <div className="flex items-end justify-between gap-x-4 gap-y-3 flex-wrap">
+        <div className="space-y-2">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Pedidos</h1>
+            <p className="text-sm text-muted-foreground">
+              {filtered.length} {filtered.length === 1 ? "pedido" : "pedidos"}
+              {filterEstado !== "todos" || search || alcance !== "todas" ? " con estos filtros" : " en curso"}
+            </p>
+          </div>
+          <SelectorDeCuenta />
+        </div>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -372,7 +409,7 @@ function PedidosContenido() {
             placeholder="Buscar por cliente, ID o notas..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+            className="pl-9 rounded-full"
           />
         </div>
         <Select value={filterEstado} onValueChange={(v) => setFilterEstado(v ?? "todos")}>
@@ -446,7 +483,8 @@ function PedidosContenido() {
                                 )}
                                 <div className="flex-1 flex items-start justify-between">
                                   <div>
-                                    <p className="font-semibold">
+                                    <p className="font-semibold inline-flex items-center gap-1.5">
+                                      <CuentaDelPedido p={p} />
                                       {p.cliente?.nombre || <span className="text-muted-foreground">Sin cliente</span>}
                                     </p>
                                     <div className="flex items-center gap-2 mt-0.5">
@@ -536,7 +574,7 @@ function PedidosContenido() {
               <div
                 ref={provided.innerRef}
                 {...provided.droppableProps}
-                className="hidden md:block rounded-md border overflow-x-auto"
+                className="hidden md:block rounded-xl border bg-card shadow-xs overflow-x-auto"
               >
                 <Table>
                   <TableHeader>
@@ -614,6 +652,7 @@ function PedidosContenido() {
                         </TableCell>
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-1.5">
+                            <CuentaDelPedido p={p} />
                             {p.cliente?.nombre || <span className="text-muted-foreground">Sin cliente</span>}
                             {p.etiquetas.includes("flex") && (
                               <Badge className="h-4 px-1 text-[9px] bg-blue-500/15 text-blue-500 border-blue-500/30 hover:bg-blue-500/20">
@@ -1080,7 +1119,7 @@ function PedidosContenido() {
         pedido={editingPedido}
         onSaved={handleSaved}
       />
-    </div>
+    </motion.div>
   );
 }
 

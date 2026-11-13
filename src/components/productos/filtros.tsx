@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, LayoutGrid, Search, SlidersHorizontal, TableIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FILTROS_INICIALES, type Agrupar, type CategoriaLista, type Filtros, type Orden } from "@/lib/productos-lista";
+import { FILTROS_INICIALES, type Agrupar, type Alcance, type CategoriaLista, type Filtros, type Orden } from "@/lib/productos-lista";
 
 /**
  * La barra de Productos (docs/sdd/008): buscar, agrupar, ordenar y filtrar. Cada filtro es una
@@ -28,7 +28,7 @@ const ORDENES: Array<[Orden, string]> = [
 ];
 
 const claseDePildora = (puesto: boolean) =>
-  `inline-flex items-center gap-1 rounded-full border h-8 text-xs transition-colors ${
+  `inline-flex items-center gap-1 rounded-full border h-8 text-xs transition-all duration-150 active:scale-[0.97] ${
     puesto ? "border-primary/60 bg-primary/10 text-foreground" : "border-input bg-background text-muted-foreground hover:bg-muted/60"
   }`;
 
@@ -111,7 +111,7 @@ export function filtrosPuestos(f: Filtros): number {
     (f.texto.trim() ? 1 : 0) +
     (f.categorias.length ? 1 : 0) +
     (["sku", "ml", "web", "stock", "entrega"] as const).filter((k) => f[k] !== FILTROS_INICIALES[k]).length +
-    (["con3mf", "conImagen", "conVariantes"] as const).filter((k) => f[k]).length
+    (["con3mf", "conImagen", "conVariantes", "difieren"] as const).filter((k) => f[k]).length
   );
 }
 
@@ -128,6 +128,8 @@ export function FiltrosDeProductos({
   consolidados,
   onConsolidados,
   sku,
+  alcance,
+  otraCuenta,
 }: {
   f: Filtros;
   onFiltros: (cambio: Partial<Filtros>) => void;
@@ -141,6 +143,10 @@ export function FiltrosDeProductos({
   consolidados: boolean;
   onConsolidados: (v: boolean) => void;
   sku: { con: number; total: number };
+  /** Qué cuenta de ML se mira: los filtros de ML y de entrega miran ésa. */
+  alcance: Alcance;
+  /** El nombre de la otra cuenta, si hay. */
+  otraCuenta: string | null;
 }) {
   const deMas = (f.sku !== "todos" ? 1 : 0) + (f.con3mf ? 1 : 0) + (f.conImagen ? 1 : 0) + (f.conVariantes ? 1 : 0) + (consolidados ? 1 : 0);
   const [masFiltros, setMasFiltros] = useState(deMas > 0);
@@ -189,7 +195,7 @@ export function FiltrosDeProductos({
           valor={f.ml}
           neutro="todos"
           onChange={(ml) => onFiltros({ ml })}
-          opciones={[["todos", "Todos"], ["publicados", "Publicados"], ["pausados", "Pausados"], ["sin", "Sin publicar"]]}
+          opciones={[["todos", "Todos"], ["publicados", "Publicados"], ["pausados", "Pausados"], ["sin", alcance === "otra" ? "Sin copiar" : "Sin publicar"]]}
         />
         <Pildora
           etiqueta="Entrega"
@@ -198,6 +204,11 @@ export function FiltrosDeProductos({
           onChange={(entrega) => onFiltros({ entrega })}
           opciones={[["todas", "Todas"], ["flex", "Con Flex"], ["a_pedido", "A pedido"], ["ninguna", "Sin Flex ni días"]]}
         />
+        {alcance === "todas" && otraCuenta && (
+          <Interruptor puesto={f.difieren} onChange={() => onFiltros({ difieren: !f.difieren })} titulo={`Las variantes que no tienen el mismo Flex, los mismos días o el mismo precio en ${otraCuenta}`}>
+            <span aria-hidden>≠</span> Difieren entre cuentas
+          </Interruptor>
+        )}
         <Pildora etiqueta="Stock" valor={f.stock} neutro="todos" onChange={(stock) => onFiltros({ stock })} opciones={[["todos", "Todos"], ["con", "Con stock"], ["sin", "Sin stock"]]} />
         <Pildora etiqueta="Web" valor={f.web} neutro="todos" onChange={(web) => onFiltros({ web })} opciones={[["todos", "Todos"], ["si", "En la web"], ["no", "No está"]]} />
         <Interruptor puesto={masFiltros || deMas > 0} onChange={() => setMasFiltros(!masFiltros)}>

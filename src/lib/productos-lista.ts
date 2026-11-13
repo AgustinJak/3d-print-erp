@@ -17,6 +17,45 @@ export interface PublicacionMl {
   premium: boolean;
   /** De otra cuenta de ML (docs/sdd/010): su nombre. null = la principal. */
   cuenta?: string | null;
+  /** El precio publicado, según la última lectura (docs/sdd/011). */
+  precio?: number | null;
+  /** Si es copia de una publicación de la principal: el MLA original. */
+  copiaDe?: string | null;
+}
+
+/**
+ * A qué cuenta de ML se mira y se le aplican los cambios (docs/sdd/011): las dos, sólo la principal
+ * (Sendero 3D) o sólo la otra (Sendero Shop).
+ */
+export type Alcance = "todas" | "principal" | "otra";
+
+export const esDelAlcance = (x: Pick<PublicacionMl, "cuenta">, a: Alcance) => a === "todas" || (a === "principal" ? !x.cuenta : !!x.cuenta);
+
+/** Las publicaciones de una variante en la cuenta (o las cuentas) que se están mirando. */
+export const publicacionesDe = (comb: Pick<CombinacionLista, "publicaciones"> | null | undefined, a: Alcance): PublicacionMl[] =>
+  (comb?.publicaciones ?? []).filter((x) => esDelAlcance(x, a));
+
+export type Diferencia = "Flex" | "días" | "precio";
+
+/**
+ * En qué difiere una variante entre las dos cuentas. Se compara cada publicación de la principal
+ * con la de la otra cuenta del mismo tipo (Clásica con Clásica), o con su copia si se sabe cuál es.
+ * Sólo lo que se pudo leer de las dos; que falte la copia o que esté pausada no es una diferencia:
+ * se ve aparte.
+ */
+export function diferenciasDe(comb: Pick<CombinacionLista, "publicaciones"> | null | undefined): Diferencia[] {
+  const pubs = (comb?.publicaciones ?? []).filter((x) => x.estado !== "otro");
+  const otras = pubs.filter((x) => x.cuenta);
+  if (!otras.length) return [];
+  const out = new Set<Diferencia>();
+  for (const p of pubs.filter((x) => !x.cuenta)) {
+    const o = otras.find((x) => x.copiaDe === p.mla) ?? otras.find((x) => !x.copiaDe && x.premium === p.premium);
+    if (!o) continue;
+    if (o.flex !== p.flex) out.add("Flex");
+    if ((o.dias ?? null) !== (p.dias ?? null)) out.add("días");
+    if (o.precio != null && p.precio != null && Math.round(o.precio) !== Math.round(p.precio)) out.add("precio");
+  }
+  return [...out];
 }
 
 export interface CombinacionLista {
@@ -97,6 +136,8 @@ export interface Filtros {
   web: "todos" | "si" | "no";
   stock: "todos" | "con" | "sin";
   entrega: "todas" | "flex" | "a_pedido" | "ninguna";
+  /** Sólo las variantes que no están igual en las dos cuentas (docs/sdd/011). */
+  difieren: boolean;
 }
 
 export const FILTROS_INICIALES: Filtros = {
@@ -111,6 +152,7 @@ export const FILTROS_INICIALES: Filtros = {
   web: "todos",
   stock: "todos",
   entrega: "todas",
+  difieren: false,
 };
 
 export type Orden = "nuevo" | "antiguo" | "az" | "za" | "vendidos30" | "menos_vendidos30" | "vendidos" | "stock_mas" | "stock_menos" | "costo_mas" | "costo_menos";
@@ -146,10 +188,12 @@ export function unidadesDe(p: Pick<ProductoLista, "id">, c: CanalesDeModelo | un
 }
 
 /** Los filtros que miran cada variante: con alguno puesto, un producto puede verse a medias. */
-export const filtraVariantes = (f: Filtros) => f.ml !== "todos" || f.web !== "todos" || f.stock !== "todos" || f.entrega !== "todas";
+export const filtraVariantes = (f: Filtros) => f.ml !== "todos" || f.web !== "todos" || f.stock !== "todos" || f.entrega !== "todas" || f.difieren;
 
-function pasaUnidad(u: Unidad, f: Filtros): boolean {
-  const pubs = u.comb?.publicaciones ?? [];
+function pasaUnidad(u: Unidad, f: Filtros, alcance: Alcance): boolean {
+  // Lo de ML y la entrega miran sólo la cuenta elegida: "sin publicar" en Sendero Shop es sin copiar.
+  const pubs = publicacionesDe(u.comb, alcance);
+  if (f.difieren && !diferenciasDe(u.comb).length) return false;
   if (f.ml === "publicados" && !pubs.some((x) => x.estado === "active")) return false;
   if (f.ml === "pausados" && !pubs.some((x) => x.estado === "paused")) return false;
   if (f.ml === "sin" && pubs.length > 0) return false;
@@ -184,14 +228,14 @@ function pasaProducto(p: ProductoLista, f: Filtros): boolean {
 }
 
 /** Los productos que pasan los filtros, cada uno con las variantes que se ven. */
-export function filtrar(productos: ProductoLista[], canales: Record<string, CanalesDeModelo>, f: Filtros): Fila[] {
+export function filtrar(productos: ProductoLista[], canales: Record<string, CanalesDeModelo>, f: Filtros, alcance: Alcance = "todas"): Fila[] {
   const porVariante = filtraVariantes(f);
   const out: Fila[] = [];
   for (const p of productos) {
     if (!pasaProducto(p, f)) continue;
     const c = canales[p.id];
     const todas = unidadesDe(p, c);
-    const unidades = porVariante ? todas.filter((u) => pasaUnidad(u, f)) : todas;
+    const unidades = porVariante ? todas.filter((u) => pasaUnidad(u, f, alcance)) : todas;
     if (!unidades.length) continue;
     out.push({ p, c, todas, unidades, parcial: unidades.length < todas.length });
   }
@@ -288,21 +332,26 @@ export interface ResumenDeSeleccion {
   productos: string[];
   /** Los productos con sólo algunas de sus variantes elegidas: activar o desactivar los toca enteros. */
   productosAMedias: number;
-  /** Variantes elegidas sin publicación de ML. */
+  /** Variantes elegidas sin publicación en la cuenta principal: las que se pueden crear. Vacío mirando sólo la otra cuenta. */
   aCrear: Array<{ modeloId: string; combinacionId: string; nombre: string }>;
-  /** Publicaciones activas y pausadas de las variantes elegidas. */
+  /** Publicaciones activas y pausadas de las variantes elegidas, en la cuenta (o cuentas) que se mira. */
   mlas: string[];
-  /** Las de la cuenta principal: las que se pueden copiar a otra cuenta (docs/sdd/010). */
+  /** Cuántas de esas son de cada cuenta: lo que se muestra antes de aplicar un cambio. */
+  porCuenta: { principal: number; otra: number };
+  /**
+   * Las de la cuenta principal que todavía no tienen copia en la otra: las que se pueden copiar
+   * (docs/sdd/010). Vacío mirando sólo la principal.
+   */
   mlasPrincipal: string[];
   conStock: string[];
   sinStock: string[];
 }
 
 /** Qué hay elegido, mirando todos los productos y no sólo los que se ven con los filtros de ahora. */
-export function resumir(productos: ProductoLista[], canales: Record<string, CanalesDeModelo>, elegidos: ReadonlySet<string>): ResumenDeSeleccion {
-  const r: ResumenDeSeleccion = { unidades: 0, productos: [], productosAMedias: 0, aCrear: [], mlas: [], mlasPrincipal: [], conStock: [], sinStock: [] };
+export function resumir(productos: ProductoLista[], canales: Record<string, CanalesDeModelo>, elegidos: ReadonlySet<string>, alcance: Alcance = "todas"): ResumenDeSeleccion {
+  const r: ResumenDeSeleccion = { unidades: 0, productos: [], productosAMedias: 0, aCrear: [], mlas: [], porCuenta: { principal: 0, otra: 0 }, mlasPrincipal: [], conStock: [], sinStock: [] };
   if (!elegidos.size) return r;
-  const mlas = new Set<string>();
+  const mlas = new Map<string, boolean>();
   const principal = new Set<string>();
   for (const p of productos) {
     const todas = unidadesDe(p, canales[p.id]);
@@ -313,15 +362,19 @@ export function resumir(productos: ProductoLista[], canales: Record<string, Cana
     if (suyas.length < todas.length) r.productosAMedias++;
     for (const u of suyas) {
       if (!u.comb) continue;
-      if (!u.comb.publicaciones.length) r.aCrear.push({ modeloId: p.id, combinacionId: u.comb.id, nombre: u.comb.nombre });
-      for (const x of u.comb.publicaciones) if (x.estado !== "otro") {
-        mlas.add(x.mla);
-        if (!x.cuenta) principal.add(x.mla);
+      const todasLasPubs = u.comb.publicaciones;
+      if (alcance !== "otra" && !todasLasPubs.some((x) => !x.cuenta)) r.aCrear.push({ modeloId: p.id, combinacionId: u.comb.id, nombre: u.comb.nombre });
+      const copiadas = new Set(todasLasPubs.map((x) => x.copiaDe).filter(Boolean));
+      for (const x of todasLasPubs) {
+        if (x.estado === "otro") continue;
+        if (esDelAlcance(x, alcance)) mlas.set(x.mla, !!x.cuenta);
+        if (alcance !== "principal" && !x.cuenta && !copiadas.has(x.mla)) principal.add(x.mla);
       }
       ((u.comb.stock ?? 0) > 0 ? r.conStock : r.sinStock).push(u.clave);
     }
   }
-  r.mlas = [...mlas];
+  r.mlas = [...mlas.keys()];
+  for (const deOtra of mlas.values()) r.porCuenta[deOtra ? "otra" : "principal"]++;
   r.mlasPrincipal = [...principal];
   return r;
 }

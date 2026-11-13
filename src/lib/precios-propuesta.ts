@@ -69,6 +69,8 @@ export interface FilaDeCanal {
   /** Por qué pide la confirmación aparte: cambia más de 30 % o ML sacaría la promoción. */
   aparte: string | null;
   etiquetas: string[];
+  /** ML: de qué cuenta es la publicación (docs/sdd/011); null en la web. */
+  cuentaMl: "principal" | "otra" | null;
   /**
    * Shop: el producto al que pertenece la clave. En la web se aplica el producto entero (todas sus
    * combinaciones juntas), porque el Shop guarda base + extras y no un precio por combinación.
@@ -130,9 +132,6 @@ const diferencia = (publicado: number | null, propuesto: number | null) =>
 
 export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
   const cx = await cargarContextoDePrecios(tenantId);
-  const nombreDeCuenta = new Map(
-    (await prisma.cuentaMercadolibre.findMany({ where: { tenantId, principal: false }, select: { id: true, nombre: true, nickname: true } })).map((c) => [c.id, c.nombre ?? c.nickname ?? "otra cuenta"])
-  );
   const [combinaciones, mapeos, modelos] = await Promise.all([
     preciosDeCombinaciones(tenantId, {}, cx),
     prisma.mapeoCanal.findMany({
@@ -181,8 +180,6 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
       else motivo = motivoMl(lectura, m.precioLeidoEn);
 
       const etiquetas: string[] = [];
-      // De otra cuenta de ML (docs/sdd/010): se dice cuál.
-      if (canal === "mercadolibre" && m.cuentaMlId) etiquetas.push(nombreDeCuenta.get(m.cuentaMlId) ?? "otra cuenta");
       if (lectura?.estado === "paused") etiquetas.push("pausada");
       if (lectura?.catalogo) etiquetas.push("catálogo");
       if (lectura?.promo) etiquetas.push("en campaña");
@@ -217,6 +214,8 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
         },
         aparte: campana?.sacaPromo ? "ML saca la promoción" : esGrande(dif.pct) ? `cambia más de ${CAMBIO_GRANDE_PCT} %` : null,
         etiquetas,
+        // De qué cuenta es (docs/sdd/010 y 011): la pantalla la filtra y la marca con su color.
+        cuentaMl: canal === "mercadolibre" ? (m.cuentaMlId ? "otra" : "principal") : null,
         producto: canal === "shop" ? productoDeClave(m.clave) : null,
         ignorada: !!lecturaShop?.ignorada,
       };

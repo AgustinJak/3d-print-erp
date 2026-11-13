@@ -1,0 +1,89 @@
+{
+  "$schema": "../_plantillas/tasks.schema.json",
+  "featureId": "011-cuentas-y-rediseno",
+  "epic": "ninguna",
+  "version": "1.0.0",
+  "status": "in-progress",
+  "branch": "feat/003-precios-desde-bodega",
+  "baseBranch": "master",
+  "pullRequest": null,
+  "validation": {
+    "approved": true,
+    "approvedBy": "Agustín",
+    "approvedAt": "2026-11-12",
+    "notes": "Productos primero; al entrar, Todas; rediseño sobre todo en Productos, Precios, Pedidos e Historial, Panel y Finanzas."
+  },
+  "updatedAt": "2026-11-13",
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "El selector de cuenta, compartido",
+      "description": "Sendero 3D, Sendero Shop o Todas: una elección para todo el ERP, con el color de cada cuenta. GET /api/ml/cuentas.",
+      "component": "frontend",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "completedAt": "2026-11-13",
+      "notes": "components/cuenta-activa.tsx: proveedor en el layout, la elección en sessionStorage, SelectorDeCuenta y EtiquetaDeCuenta."
+    },
+    {
+      "id": "TASK-002",
+      "title": "Productos: por cuenta, y las dos lado a lado",
+      "description": "Filtros y acciones de ML sobre la cuenta elegida; en Todas, una columna por cuenta, las diferencias marcadas y el filtro de las que difieren; el desglose por cuenta antes de aplicar.",
+      "component": "frontend",
+      "status": "in-progress",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-001"
+      ],
+      "notes": "Lógica en lib/productos-lista (alcance, diferenciasDe, porCuenta) con 12 pruebas nuevas. Falta verla andando con sesión iniciada."
+    },
+    {
+      "id": "TASK-003",
+      "title": "Productos: el rediseño",
+      "description": "Lista en filas con foto, variantes que se abren con animación, barra de acciones flotante, carga con la forma de la página.",
+      "component": "frontend",
+      "status": "in-progress",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002"
+      ],
+      "notes": "Hecho con motion. Falta verlo andando con sesión iniciada."
+    },
+    {
+      "id": "TASK-004",
+      "title": "Igualar a Sendero 3D",
+      "description": "Llevar Flex, días y precio de la principal a su copia, de a varias, con confirmación.",
+      "component": "backend",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002"
+      ]
+    },
+    {
+      "id": "TASK-005",
+      "title": "Precios y Promos: selector y rediseño",
+      "description": "La cuenta elegida filtra y limita lo que se escribe; mismo estilo que Productos.",
+      "component": "frontend",
+      "status": "in-progress",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-001"
+      ],
+      "notes": "Precios: la pestaña de ML filtra por la cuenta elegida, cada fila dice de qué cuenta es y la confirmación dice a cuántas de cada una llega (FilaDeCanal.cuentaMl). Promos: las campañas se leen de cada cuenta (campanasDeMl) y cada una cuenta sólo sus publicaciones; filas y campañas se filtran por la cuenta. Estilo: pestañas con Segmentado y entrada animada. Falta verlo con sesión iniciada."
+    },
+    {
+      "id": "TASK-006",
+      "title": "Pedidos e Historial, Panel y Finanzas: filtro por cuenta y rediseño",
+      "description": "La cuenta como filtro de lectura; Finanzas con el desglose por cuenta (junto con la TASK-006 de la 010).",
+      "component": "frontend",
+      "status": "in-progress",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-001"
+      ],
+      "notes": "Pedidos e Historial: filtro por cuenta (las ventas de la otra llevan su nombre como etiqueta; web y a mano van con Sendero 3D) y el punto de color en Todas. Panel rediseñado (Hoy / el mes / lo más vendido / para despachar, números animados, carga con forma). Falta Finanzas por cuenta, junto con la TASK-006 de la 010."
+    }
+  ]
+}

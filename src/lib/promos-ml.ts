@@ -1,6 +1,6 @@
 import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
-import { getMlAccount, mlFetch } from "@/lib/mercadolibre";
+import { cuentasMl, mlFetch } from "@/lib/mercadolibre";
 import { cargarContextoDePrecios, preciosDeCombinaciones } from "@/lib/precios-combinacion";
 import { margenDe, type GastosVenta } from "@/lib/precios-formula";
 import type { LecturaMl } from "@/lib/precios-ml";
@@ -65,11 +65,23 @@ async function promoGeneral(tenantId: string): Promise<number> {
   return typeof v === "number" ? v : PROMO_GENERAL;
 }
 
-export async function campanasDeMl(tenantId: string): Promise<CampanaMl[]> {
-  const cuenta = await getMlAccount(tenantId);
-  if (!cuenta) throw new Error("No hay una cuenta de Mercado Libre conectada.");
-  const r = await mlFetch<{ results?: Record<string, unknown>[] }>(tenantId, `/seller-promotions/users/${cuenta.mlUserId}?app_version=v2`);
-  return (r.results ?? []).map(normalizarCampana);
+/** De qué cuenta de ML es algo (docs/sdd/011). */
+export type DeCuentaMl = "principal" | "otra";
+
+/**
+ * Las campañas de cada cuenta de ML (docs/sdd/010 y 011): cada vendedor tiene las suyas. Si una
+ * cuenta no contesta, se siguen mostrando las de la otra.
+ */
+export async function campanasDeMl(tenantId: string): Promise<Array<CampanaMl & { cuenta: DeCuentaMl }>> {
+  const cuentas = await cuentasMl(tenantId);
+  if (!cuentas.length) throw new Error("No hay una cuenta de Mercado Libre conectada.");
+  const porCuenta = await Promise.all(
+    cuentas.map(async (c) => {
+      const r = await mlFetch<{ results?: Record<string, unknown>[] }>(tenantId, `/seller-promotions/users/${c.mlUserId}?app_version=v2`, { cuenta: c.id }).catch(() => null);
+      return (r?.results ?? []).map((x) => ({ ...normalizarCampana(x), cuenta: (c.principal ? "principal" : "otra") as DeCuentaMl }));
+    })
+  );
+  return porCuenta.flat();
 }
 
 async function promosDeMl(tenantId: string, mla: string): Promise<PromoDePublicacion[]> {
@@ -91,7 +103,7 @@ async function guardarLectura(tenantId: string, mla: string, promos: PromoDePubl
 async function publicaciones(tenantId: string) {
   const ms = await prisma.mapeoCanal.findMany({
     where: { tenantId, canal: "mercadolibre", ignorar: false, combinacionId: { not: null } },
-    select: { clave: true, combinacionId: true, unidades: true, precioPublicado: true, precioLectura: true, combinacion: { select: { nombre: true } } },
+    select: { clave: true, combinacionId: true, unidades: true, precioPublicado: true, precioLectura: true, cuentaMlId: true, combinacion: { select: { nombre: true } } },
   });
   const porMla = new Map<string, (typeof ms)[number]>();
   for (const m of ms) {
@@ -164,9 +176,12 @@ export interface FilaPromo {
   avisos: AvisoDePromo[];
   leidoEn: string | null;
   error: string | null;
+  /** De qué cuenta de ML es la publicación (docs/sdd/011). */
+  cuentaMl: DeCuentaMl;
 }
 
 export interface CampanaResumen extends CampanaMl {
+  cuenta: DeCuentaMl;
   /** Publicaciones del ERP que están adentro, y las que se pueden sumar. */
   adentro: number;
   aptas: number;
@@ -185,7 +200,7 @@ export async function resumenPromos(tenantId: string): Promise<ResumenPromos> {
   const [pubs, lecturas, campanas, general, cx, tarifas] = await Promise.all([
     publicaciones(tenantId),
     prisma.promoMlLectura.findMany({ where: { tenantId } }),
-    campanasDeMl(tenantId).catch(() => [] as CampanaMl[]),
+    campanasDeMl(tenantId).catch(() => [] as Array<CampanaMl & { cuenta: DeCuentaMl }>),
     promoGeneral(tenantId),
     cargarContextoDePrecios(tenantId),
     tarifasGuardadas(tenantId),
@@ -241,20 +256,28 @@ export async function resumenPromos(tenantId: string): Promise<ResumenPromos> {
       avisos: lect && !lect.error ? avisosDe(esperada, activa, publicado) : [],
       leidoEn: lect?.leidoEn.toISOString() ?? null,
       error: lect?.error ?? null,
+      cuentaMl: m.cuentaMlId ? "otra" : "principal",
     });
   }
 
   const resumen: CampanaResumen[] = campanas
     .filter((c) => c.estado === "started" || c.estado === "pending")
-    .map((c) => ({
-      ...c,
-      adentro: filas.filter((f) => f.activa?.id === c.id || f.cupones.some((x) => x.id === c.id) || f.pendientes.some((x) => x.id === c.id)).length,
-      aptas: filas.filter((f) => f.candidatas.some((x) => x.id === c.id)).length,
-    }));
+    .map((c) => {
+      // Una campaña es de una cuenta: sólo cuentan sus publicaciones.
+      const suyas = filas.filter((f) => f.cuentaMl === c.cuenta);
+      return {
+        ...c,
+        adentro: suyas.filter((f) => f.activa?.id === c.id || f.cupones.some((x) => x.id === c.id) || f.pendientes.some((x) => x.id === c.id)).length,
+        aptas: suyas.filter((f) => f.candidatas.some((x) => x.id === c.id)).length,
+      };
+    });
   // El descuento propio no es una campaña de ML pero se ofrece igual.
-  const propias = filas.filter((f) => f.candidatas.some((x) => x.tipo === "PRICE_DISCOUNT")).length;
-  if (propias) {
-    resumen.push({ id: "PRICE_DISCOUNT", tipo: "PRICE_DISCOUNT", subtipo: null, estado: "started", nombre: "Descuento propio", desde: null, hasta: null, pctFijo: null, adentro: filas.filter((f) => f.activa?.tipo === "PRICE_DISCOUNT").length, aptas: propias });
+  for (const cuenta of ["principal", "otra"] as const) {
+    const suyas = filas.filter((f) => f.cuentaMl === cuenta);
+    const propias = suyas.filter((f) => f.candidatas.some((x) => x.tipo === "PRICE_DISCOUNT")).length;
+    if (propias) {
+      resumen.push({ id: `PRICE_DISCOUNT${cuenta === "otra" ? "|otra" : ""}`, tipo: "PRICE_DISCOUNT", subtipo: null, estado: "started", nombre: "Descuento propio", desde: null, hasta: null, pctFijo: null, cuenta, adentro: suyas.filter((f) => f.activa?.tipo === "PRICE_DISCOUNT").length, aptas: propias });
+    }
   }
 
   const fechas = lecturas.map((l) => l.leidoEn.getTime());

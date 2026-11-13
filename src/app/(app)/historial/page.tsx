@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Search, Trash2, Undo2, History } from "lucide-react";
 import { toast } from "sonner";
+import { motion } from "motion/react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +18,7 @@ import { TableSkeleton } from "@/components/data-loading";
 import { EmptyState } from "@/components/empty-state";
 import { CANALES_VENTA } from "@/lib/constants";
 import { nombreDeItem } from "@/lib/items";
+import { PuntoDeCuenta, SelectorDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
 
 interface VarianteInfo {
   nombre: string;
@@ -45,6 +47,8 @@ interface Pedido {
   updatedAt: string;
   precioEnvio: number;
   canalVenta: string;
+  /** Las ventas de la otra cuenta de ML llevan su nombre (docs/sdd/010). */
+  etiquetas: string[];
   cliente: { id: string; nombre: string } | null;
   items: ItemPedido[];
 }
@@ -72,6 +76,13 @@ export default function HistorialPage() {
   const [filterCliente, setFilterCliente] = useState("todos");
   const [filterCanal, setFilterCanal] = useState("todos");
   const [initialLoading, setInitialLoading] = useState(true);
+  // La cuenta de ML que se mira (docs/sdd/011): las ventas de la web y las de a mano van con Sendero 3D.
+  const { alcance, cuentas } = useCuentaActiva();
+  const cuentaDe = (p: Pedido): "principal" | "otra" | null => (p.canalVenta !== "mercadolibre" ? null : cuentas.otra && p.etiquetas?.includes(cuentas.otra) ? "otra" : "principal");
+  const punto = (p: Pedido) => {
+    const de = cuentaDe(p);
+    return de && alcance === "todas" && cuentas.otra ? <PuntoDeCuenta de={de} className="mr-1.5" /> : null;
+  };
 
   const fetchPedidos = useCallback(async () => {
     const params = new URLSearchParams();
@@ -106,9 +117,10 @@ export default function HistorialPage() {
   const calcCosto = (p: Pedido) =>
     p.items.reduce((s, i) => s + i.costoUnitario * i.cantidad, 0);
 
-  const filtered = pedidos.filter((p) =>
-    p.cliente?.nombre.toLowerCase().includes(search.toLowerCase()) ||
-    p.id.toLowerCase().includes(search.toLowerCase())
+  const filtered = pedidos.filter(
+    (p) =>
+      (p.cliente?.nombre.toLowerCase().includes(search.toLowerCase()) || p.id.toLowerCase().includes(search.toLowerCase())) &&
+      (alcance === "todas" || (alcance === "otra" ? cuentaDe(p) === "otra" : cuentaDe(p) !== "otra"))
   );
 
   const totalIngresos = filtered.reduce((s, p) => s + calcTotal(p), 0);
@@ -135,9 +147,12 @@ export default function HistorialPage() {
   if (initialLoading) return <TableSkeleton cols={7} />;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold">Historial de Pedidos</h1>
+    <motion.div className="space-y-4" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: "easeOut" }}>
+      <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-3">
+        <div className="space-y-2">
+          <h1 className="text-2xl font-bold tracking-tight">Historial de Pedidos</h1>
+          <SelectorDeCuenta />
+        </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="outline" className="py-1 px-3">
             {filtered.length} pedidos
@@ -230,7 +245,7 @@ export default function HistorialPage() {
                   <CardContent className="pt-4 pb-3 space-y-2">
                     <div className="flex items-start justify-between">
                       <div>
-                        <p className="font-semibold">{p.cliente?.nombre || "Sin cliente"}</p>
+                        <p className="font-semibold inline-flex items-center">{punto(p)}{p.cliente?.nombre || "Sin cliente"}</p>
                         <p className="text-xs text-muted-foreground">
                           {new Date(p.updatedAt).toLocaleDateString("es-AR")}
                         </p>
@@ -292,7 +307,7 @@ export default function HistorialPage() {
                         {new Date(p.updatedAt).toLocaleDateString("es-AR")}
                       </TableCell>
                       <TableCell className="font-medium">
-                        {p.cliente?.nombre || "Sin cliente"}
+                        <span className="inline-flex items-center">{punto(p)}{p.cliente?.nombre || "Sin cliente"}</span>
                       </TableCell>
                       <TableCell className="text-sm">
                         {p.items.map((i, idx) => (
@@ -360,6 +375,6 @@ export default function HistorialPage() {
           </div>
         </>
       )}
-    </div>
+    </motion.div>
   );
 }
