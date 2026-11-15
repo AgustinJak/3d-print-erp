@@ -26,6 +26,7 @@ import {
   getShipmentCosts,
   getShipment,
   cuentaMlEnCurso,
+  mlFetch,
   type MlOrder,
 } from "@/lib/mercadolibre";
 import type { Prisma } from "@/generated/prisma";
@@ -738,6 +739,22 @@ function parseFechaDia(iso?: string | null): Date | null {
   return m ? new Date(`${m[1]}T12:00:00`) : null;
 }
 
+/** Una etiqueta liberada desde esta hora (de Argentina) ya no se despacha ese día. */
+const HORA_DE_CORTE = 13;
+
+/** La hora local de una fecha de ML ("2026-11-16T22:09:27.000-03:00" → 22). */
+export function horaDe(iso: string): number {
+  const m = iso.match(/T(\d{2}):/);
+  return m ? Number(m[1]) : 0;
+}
+
+/** El día siguiente al que ML da la etiqueta de un pedido a pedido; el domingo pasa al lunes. */
+export function diaDespuesDeLaEtiqueta(dia: Date): Date {
+  const d = new Date(dia.getTime() + 864e5);
+  if (d.getDay() === 0) d.setTime(d.getTime() + 864e5);
+  return d;
+}
+
 // Substatus de `ready_to_ship` que indican que el paquete YA salió del vendedor
 // (lo dejó en el correo / lo retiró el transportista / está en tránsito). ML los
 // muestra como "En camino" aunque el status todavía sea ready_to_ship.
@@ -780,7 +797,7 @@ export interface FechasEnvio {
  *  - despacho: el límite de despacho más temprano (deadline operativo)
  *  - liquidación: la entrega (real si todo está entregado, si no estimada) + 8 días
  */
-async function resolverFechasEnvio(
+export async function resolverFechasEnvio(
   tenantId: string,
   orders: MlOrder[]
 ): Promise<FechasEnvio> {
@@ -805,9 +822,25 @@ async function resolverFechasEnvio(
       // El envío ya salió del vendedor (en camino o entregado)
       if (envioYaSalio(s.status, s.substatus)) enviado = true;
 
-      const d =
+      // Cuándo hay que despachar (2026-11-15). Con la etiqueta lista ML deja de mandar
+      // `estimated_schedule_limit`, y `estimated_delivery_time` es cuándo le llega al COMPRADOR: daba
+      // un día o más de tarde. El límite real de despacho está en el SLA del envío ("tenés tiempo
+      // hasta mañana a las 14 hs" = expected_date). Se lee sólo si el envío no salió.
+      const sla =
+        !envioYaSalio(s.status, s.substatus) && s.substatus !== "manufacturing"
+          ? await mlFetch<{ expected_date?: string | null }>(tenantId, `/shipments/${sid}/sla`).catch(() => null)
+          : null;
+      let d =
+        parseFechaDia(sla?.expected_date) ??
         parseFechaDia(opt?.estimated_schedule_limit?.date) ??
         parseFechaDia(opt?.estimated_delivery_time?.date);
+      // A pedido (Agustín, 2026-11-15): mientras ML dice "esperando disponibilidad de stock" el envío
+      // está en `manufacturing`, y el límite es la hora en que ML LIBERA la etiqueta (la de la
+      // compra más los días de disponibilidad). Si la libera antes de las 13 h se despacha ese día;
+      // si no, al día siguiente, y un domingo pasa al lunes. Con "Ya tengo el producto" deja de estar
+      // en manufacturing y vuelve a valer la fecha de ML.
+      const etiqueta = opt?.estimated_schedule_limit?.date;
+      if (d && s.substatus === "manufacturing" && etiqueta && horaDe(etiqueta) >= HORA_DE_CORTE) d = diaDespuesDeLaEtiqueta(d);
       if (d && (!despacho || d < despacho)) despacho = d;
 
       const entregado = parseFechaDia(s.status_history?.date_delivered);
