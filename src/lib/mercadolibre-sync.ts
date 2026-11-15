@@ -27,6 +27,7 @@ import {
   getShipment,
   cuentaMlEnCurso,
   mlFetch,
+  getValidAccessToken,
   type MlOrder,
 } from "@/lib/mercadolibre";
 import type { Prisma } from "@/generated/prisma";
@@ -872,6 +873,29 @@ export async function resolverFechasEnvio(
       liquidacion = addDiasCorridos(base, DIAS_LIQUIDACION);
       liquidacionEstimada = true;
     }
+  }
+
+  // Sin envío de ML ("acordás la entrega", 2026-11-15): no hay entrega de la cual contar 8 días, y
+  // el pedido quedaba esperando el cobro para siempre (tres desde julio). La fecha es la que da
+  // Mercado Pago para liberar la plata, la más tardía de los pagos aprobados. Mientras no se liberó
+  // queda como estimada y se vuelve a leer: MP da primero una fecha lejana y la acerca cuando la
+  // venta se concreta (Agustín, 2026-11-15).
+  if (shipmentIds.length === 0) {
+    let todoLiberado = true;
+    for (const pago of orders.flatMap((o) => o.payments ?? [])) {
+      if (pago.status && pago.status !== "approved") continue;
+      // `/payments` de ML no trae la fecha de liberación: la da Mercado Pago, con el token de la cuenta.
+      const token = await getValidAccessToken(tenantId).catch(() => null);
+      const r = token
+        ? await fetch(`https://api.mercadopago.com/v1/payments/${pago.id}`, { headers: { Authorization: `Bearer ${token}` } })
+            .then((x) => (x.ok ? (x.json() as Promise<{ money_release_date?: string | null; money_release_status?: string | null }>) : null))
+            .catch(() => null)
+        : null;
+      if (r?.money_release_status !== "released") todoLiberado = false;
+      const libera = parseFechaDia(r?.money_release_date ?? null);
+      if (libera && (!liquidacion || libera > liquidacion)) liquidacion = libera;
+    }
+    if (liquidacion) liquidacionEstimada = !todoLiberado;
   }
 
   return { despacho, liquidacion, liquidacionEstimada, enviado, esFlex };

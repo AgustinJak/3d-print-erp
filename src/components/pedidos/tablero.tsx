@@ -27,6 +27,8 @@ export interface PedidoDelTablero {
   estado: string;
   prioridad: string;
   fechaEntrega: string | null;
+  /** Cuándo libera la plata ML: en "Esperando cobro" es la fecha que importa. */
+  fechaLiquidacionMl?: string | null;
   canalVenta: string;
   etiquetas: string[];
   precioEnvio: number;
@@ -58,10 +60,22 @@ function cuando(fecha: string | null): { texto: string; tarde: boolean; pronto: 
   return { texto: new Date(fecha).toLocaleDateString("es-AR", { day: "numeric", month: "short" }), tarde: false, pronto: false };
 }
 
+/** Cuándo se cobra: "Cobra 24 nov", "Cobra hoy", o "Sin fecha de cobro" (para revisar). */
+function cobro(fecha: string | null): { texto: string; tarde: boolean; pronto: boolean } {
+  if (!fecha) return { texto: "Sin fecha de cobro", tarde: true, pronto: false };
+  const dia = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diff = Math.round((dia(new Date(fecha)) - dia(new Date())) / 864e5);
+  if (diff < 0) return { texto: `Cobro vencido hace ${-diff} d`, tarde: true, pronto: false };
+  if (diff === 0) return { texto: "Cobra hoy", tarde: false, pronto: true };
+  return { texto: `Cobra ${new Date(fecha).toLocaleDateString("es-AR", { day: "numeric", month: "short" })}`, tarde: false, pronto: false };
+}
+
 function Tarjeta({ p, arrastrando, onAbrir }: { p: PedidoDelTablero; arrastrando: boolean; onAbrir: () => void }) {
   const { alcance, cuentas } = useCuentaActiva();
   const foto = p.items.find((i) => i.modelo?.imagenUrl)?.modelo?.imagenUrl ?? null;
-  const fecha = cuando(p.fechaEntrega);
+  // Esperando el cobro, lo que importa es cuándo entra la plata, no cuándo se despachó.
+  const esperandoCobro = p.estado === "ESPERANDO_LIQUIDACION_ML";
+  const fecha = esperandoCobro ? cobro(p.fechaLiquidacionMl ?? null) : cuando(p.fechaEntrega);
   const deCuenta = p.canalVenta === "mercadolibre" ? (cuentas.otra && p.etiquetas.includes(cuentas.otra) ? "otra" : "principal") : null;
   const piezas = p.items.reduce((s, i) => s + i.cantidad, 0);
   return (
@@ -119,7 +133,9 @@ function Tarjeta({ p, arrastrando, onAbrir }: { p: PedidoDelTablero; arrastrando
 
 export function TableroDePedidos({ pedidos, onEstado, onAbrir }: { pedidos: PedidoDelTablero[]; onEstado: (id: string, estado: string) => void; onAbrir: (id: string) => void }) {
   // Dentro de cada columna, primero lo que hay que despachar antes.
-  const orden = (a: PedidoDelTablero, b: PedidoDelTablero) => (a.fechaEntrega ?? "9999").localeCompare(b.fechaEntrega ?? "9999");
+  // Esperando cobro, por la fecha de cobro (los que no tienen, primero: hay que revisarlos).
+  const fechaDe = (p: PedidoDelTablero) => (p.estado === "ESPERANDO_LIQUIDACION_ML" ? (p.fechaLiquidacionMl ?? "0000") : (p.fechaEntrega ?? "9999"));
+  const orden = (a: PedidoDelTablero, b: PedidoDelTablero) => fechaDe(a).localeCompare(fechaDe(b));
   const columnas = ETAPAS.map((e) => ({ ...e, pedidos: pedidos.filter((p) => e.estados.includes(p.estado)).sort(orden) })).filter(
     // Reclamos sólo si hay alguno.
     (c) => c.clave !== "reclamo" || c.pedidos.length > 0
