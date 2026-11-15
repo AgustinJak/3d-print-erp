@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Button } from "@/components/ui/button";
 import { PuntoDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
 import { ESTADOS_PEDIDO, PRIORIDADES } from "@/lib/constants";
-import { nombreDeItem } from "@/lib/items";
+import { nombreDeItem, variantesDeItem } from "@/lib/items";
 
 /**
  * El detalle de un pedido (docs/sdd/011): lo que hay que saber de un vistazo, sin el formulario. El
@@ -147,7 +147,7 @@ export function DetalleDePedido({ pedido, onCerrar, onEditar }: { pedido: Pedido
               <ul className="space-y-3">
                 {p.items.map((i) => {
                   const sub = i.precioUnitario * i.cantidad + i.ajusteManual;
-                  const variantes = (i.variantesInfo ?? []).map((v) => v.nombre).filter(Boolean);
+                  const variantes = variantesDeItem(i);
                   return (
                     <li key={i.id} className="flex items-center gap-4">
                       {i.modelo?.imagenUrl ? (

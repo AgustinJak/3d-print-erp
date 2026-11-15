@@ -17,7 +17,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/data-loading";
 import { EmptyState } from "@/components/empty-state";
 import { CANALES_VENTA } from "@/lib/constants";
-import { nombreDeItem } from "@/lib/items";
+import { nombreConVariantes, nombreDeItem } from "@/lib/items";
 import { PuntoDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
 
 interface VarianteInfo {
@@ -259,7 +259,7 @@ export default function HistorialPage() {
                     <div className="space-y-0.5">
                       {p.items.map((i, idx) => (
                         <p key={idx} className="text-sm">
-                          <span className="text-muted-foreground">{i.cantidad}x</span> {nombreDeItem(i)}
+                          <span className="text-muted-foreground">{i.cantidad}x</span> {nombreConVariantes(i)}
                         </p>
                       ))}
                     </div>

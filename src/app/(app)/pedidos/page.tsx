@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, Suspense } from "react";
+import React, { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Plus, Search, Pencil, Trash2, ChevronDown, ChevronRight, AlertTriangle, ShoppingCart, GripVertical, CalendarClock, Clock, Copy, PackageCheck, Printer } from "lucide-react";
 import { toast } from "sonner";
@@ -33,7 +33,7 @@ import { PedidoDialog } from "./pedido-dialog";
 import { TableroDePedidos } from "@/components/pedidos/tablero";
 import { DetalleDePedido } from "@/components/pedidos/detalle";
 import { Segmentado } from "@/components/segmentado";
-import { nombreDeItem } from "@/lib/items";
+import { nombreConVariantes, nombreDeItem } from "@/lib/items";
 import { PuntoDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
 
 /**
@@ -235,9 +235,24 @@ function PedidosContenido() {
     } catch {}
   };
 
+  // Cambios de estado que todavía se están guardando (2026-11-15). Mientras haya alguno, no se
+  // vuelve a leer la lista: una lectura a mitad de camino traía el estado viejo de los que seguían
+  // guardándose, y las tarjetas del tablero volvían a su columna un momento.
+  const guardando = useRef(0);
+  const leerAlTerminar = useRef(false);
+
   const fetchPedidos = useCallback(async () => {
+    if (guardando.current > 0) {
+      leerAlTerminar.current = true;
+      return;
+    }
     const res = await fetch("/api/pedidos");
-    setPedidos(await res.json());
+    const datos = await res.json();
+    if (guardando.current > 0) {
+      leerAlTerminar.current = true;
+      return;
+    }
+    setPedidos(datos);
     setInitialLoading(false);
   }, []);
 
@@ -284,15 +299,38 @@ function PedidosContenido() {
     fetchPedidos();
   };
 
+  /**
+   * Cambia el estado en la pantalla en el acto y lo guarda atrás. Si falla, vuelve al de antes y lo
+   * dice. La lista se relee una sola vez, cuando terminan de guardarse todos.
+   */
   const handleStatusChange = async (id: string, estado: string) => {
-    await fetch(`/api/pedidos/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ estado }),
-    });
+    const antes = pedidos.find((p) => p.id === id)?.estado;
+    if (!antes || antes === estado) return;
+    setPedidos((prev) => prev.map((p) => (p.id === id ? { ...p, estado: estado as Pedido["estado"] } : p)));
+    guardando.current++;
+    let ok = false;
+    try {
+      const r = await fetch(`/api/pedidos/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estado }),
+      });
+      ok = r.ok;
+    } catch {
+      ok = false;
+    }
+    guardando.current--;
     const label = ESTADOS_PEDIDO[estado as keyof typeof ESTADOS_PEDIDO]?.label ?? estado;
-    toast.success(`Estado actualizado a "${label}"`);
-    fetchPedidos();
+    if (!ok) {
+      setPedidos((prev) => prev.map((p) => (p.id === id ? { ...p, estado: antes } : p)));
+      toast.error(`No se pudo pasar a "${label}"`);
+    } else {
+      toast.success(`Pasó a "${label}"`, { id: "estado-pedido" });
+    }
+    if (guardando.current === 0) {
+      leerAlTerminar.current = false;
+      fetchPedidos();
+    }
   };
 
   const handlePrioridadChange = async (id: string, prioridad: string) => {
@@ -535,7 +573,7 @@ function PedidosContenido() {
                                 {p.items.map((item) => (
                                   <div key={item.id} className="text-sm">
                                     <span className="text-muted-foreground mr-1">{item.cantidad}×</span>
-                                    <span className="font-medium">{nombreDeItem(item)}</span>
+                                    <span className="font-medium">{nombreConVariantes(item)}</span>
                                     <StockDeItem comps={p.cobertura?.componentes[item.id]} />
                                   </div>
                                 ))}
@@ -987,7 +1025,7 @@ function PedidosContenido() {
                         {p.items.map((item) => (
                           <div key={item.id}>
                             <span className="text-muted-foreground mr-1">{item.cantidad}×</span>
-                            {nombreDeItem(item)}
+                            {nombreConVariantes(item)}
                           </div>
                         ))}
                       </div>
@@ -1071,7 +1109,7 @@ function PedidosContenido() {
                                   {item.cantidad > 1 && (
                                     <span className="text-muted-foreground mr-1">{item.cantidad}×</span>
                                   )}
-                                  {nombreDeItem(item)}
+                                  {nombreConVariantes(item)}
                                 </span>
                               ))}
                             </div>

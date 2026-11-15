@@ -3,7 +3,7 @@
 import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
 import { AlertTriangle, Package, Zap } from "lucide-react";
 import { PuntoDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
-import { nombreDeItem } from "@/lib/items";
+import { nombreConVariantes } from "@/lib/items";
 
 /**
  * Pedidos como tablero por etapa (docs/sdd/011, con la guía de unslop): cada columna es un momento
@@ -89,7 +89,7 @@ function Tarjeta({ p, arrastrando, onAbrir }: { p: PedidoDelTablero; arrastrando
             <span className="truncate">{p.cliente?.nombre ?? "Sin cliente"}</span>
           </p>
           <p className="mt-0.5 line-clamp-2 text-[13px] leading-[18px] text-muted-foreground">
-            {p.items.map((i) => `${i.cantidad > 1 ? `${i.cantidad}× ` : ""}${nombreDeItem(i)}`).join(", ")}
+            {p.items.map((i) => `${i.cantidad > 1 ? `${i.cantidad}× ` : ""}${nombreConVariantes(i)}`).join(", ")}
           </p>
         </div>
       </div>
