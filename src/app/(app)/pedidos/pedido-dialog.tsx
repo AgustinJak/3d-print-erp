@@ -1,4 +1,5 @@
 "use client";
+import { parsePrice } from "@/lib/utils";
 
 import { useEffect, useState, useCallback } from "react";
 import { Plus, Trash2, Info, ShoppingCart, Truck, Package, FileText, Calculator, Store } from "lucide-react";
@@ -283,8 +284,9 @@ export function PedidoDialog({ open, onOpenChange, pedido, onSaved }: Props) {
     );
   };
 
-  // Elimina puntos de miles antes de parsear (ej: "30.995" → 30995)
-  const parsePrice = (s: string) => parseFloat(s.replace(/\./g, "").replace(",", ".")) || 0;
+  // Los montos se leen con `parsePrice` (lib/utils): distingue el punto de miles ("30.995") del
+  // decimal con que vienen de la base ("19911.9"). Borrar todos los puntos multiplicaba por 10
+  // los precios de ML con centavos (2026-11-15).
 
   const calcSubtotal = (item: ItemForm) => {
     const qty = parseInt(item.cantidad) || 0;

@@ -1,4 +1,5 @@
 "use client";
+import { parsePrice } from "@/lib/utils";
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -112,7 +113,7 @@ function FilaOpcion({
   async function guardar() {
     setGuardando(true);
     try {
-      await pedir(base, json("PATCH", { ...(grupo.tipo !== "insumo" ? { nombre: v.nombre } : {}), precioAdicional: Number(v.precioAdicional.replace(/\./g, "").replace(",", ".")) || 0 }));
+      await pedir(base, json("PATCH", { ...(grupo.tipo !== "insumo" ? { nombre: v.nombre } : {}), precioAdicional: parsePrice(v.precioAdicional) }));
       toast.success("Opción guardada");
       setEditando(false);
       onCambio();

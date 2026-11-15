@@ -1,4 +1,5 @@
 "use client";
+import { parsePrice } from "@/lib/utils";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -141,7 +142,7 @@ function Ganancia({ valor, chico }: { valor: number | null; chico?: boolean }) {
 function Metrica({ titulo, children, className = "text-right" }: { titulo: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={className}>
-      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{titulo}</p>
+      <p className="text-xs text-muted-foreground">{titulo}</p>
       {children}
     </div>
   );
@@ -402,7 +403,7 @@ function EditarCampana({ c, onCerrar, onAplicado }: { c: FilaCampana; onCerrar: 
   const [estado, setEstado] = useState<string>(c.estado);
   const [pedido, setPedido] = useState<PedidoDeCambio | null>(null);
 
-  const num = (s: string) => Number(s.replace(/\./g, "").replace(",", "."));
+  const num = (s: string) => (s.trim() ? parsePrice(s) : NaN);
   const roasNum = num(roas);
 
   function revisar() {
@@ -635,7 +636,7 @@ export default function PaginaPublicidad() {
     <div className="space-y-5 max-w-6xl">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+          <h1 className="text-[28px] leading-[1.15] font-medium flex items-center gap-2">
             <Megaphone className="h-6 w-6 text-primary" /> Publicidad
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">Product Ads de Mercado Libre, con lo que deja cada campaña según el costo de cada producto.</p>
