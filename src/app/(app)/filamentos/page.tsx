@@ -132,7 +132,7 @@ export default function FilamentosPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Filamentos</h1>
+        <h1 className="text-[28px] leading-[1.15] font-medium">Filamentos</h1>
         <Button onClick={openCreate}>
           <Plus className="mr-2 h-4 w-4" />
           Nuevo Filamento

@@ -35,7 +35,6 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useIsDemoTenant } from "@/components/current-user-provider";
@@ -83,6 +82,18 @@ const navPersonal = [
   { title: "Casa", href: "/casa", icon: Home },
 ];
 
+/** Todas las secciones por grupo: la barra de arriba las usa para decir dónde estás. */
+export const GRUPOS_DE_NAVEGACION: Array<{ titulo: string | null; items: typeof navInicio }> = [
+  { titulo: null, items: navInicio },
+  { titulo: "Ventas", items: navVentas },
+  { titulo: "Taller", items: navTaller },
+  { titulo: "Catálogo", items: navCatalogo },
+  { titulo: "Mercado Libre y web", items: navCanales },
+  { titulo: "Plata", items: navPlata },
+  { titulo: "Sistema", items: navSistema },
+  { titulo: "Personal", items: navPersonal },
+];
+
 export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -114,11 +125,12 @@ export function AppSidebar() {
           {items.map((item) => (
             <SidebarMenuItem key={item.href}>
               <SidebarMenuButton
-                className="cursor-pointer"
+                className="cursor-pointer text-sidebar-foreground/80 data-active:text-sidebar-foreground"
                 isActive={isActive(item.href)}
+                tooltip={item.title}
                 onClick={() => handleNav(item.href)}
               >
-                <item.icon className="h-4 w-4" />
+                <item.icon className="h-4 w-4" strokeWidth={1.5} />
                 <span>{item.title}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -129,12 +141,13 @@ export function AppSidebar() {
   );
 
   return (
-    <Sidebar>
-      <SidebarHeader className="border-b border-sidebar-border px-4 py-3">
-        <div className="flex items-center justify-between">
-          <Link href="/" className="text-lg font-bold text-primary hover:opacity-80 transition-opacity">Sendero 3D</Link>
-          <ThemeToggle />
-        </div>
+    <Sidebar collapsible="icon">
+      <SidebarHeader className="h-14 justify-center border-b border-sidebar-border px-3">
+        <Link href="/" className="flex items-center gap-2.5 rounded-md px-1 transition-opacity hover:opacity-80" title="Sendero 3D">
+          {/* La marca: un bloque naranja filamento, como una pieza en la cama de impresión. */}
+          <span aria-hidden className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-primary text-[11px] font-semibold text-primary-foreground">S</span>
+          <span className="truncate text-[15px] font-semibold group-data-[collapsible=icon]:hidden">Sendero 3D</span>
+        </Link>
       </SidebarHeader>
 
       <SidebarContent>
@@ -151,8 +164,8 @@ export function AppSidebar() {
       <SidebarFooter className="border-t border-sidebar-border p-2">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={handleLogout}>
-              <LogOut className="h-4 w-4" />
+            <SidebarMenuButton onClick={handleLogout} tooltip="Cerrar sesión" className="text-sidebar-foreground/70">
+              <LogOut className="h-4 w-4" strokeWidth={1.5} />
               <span>Cerrar sesión</span>
             </SidebarMenuButton>
           </SidebarMenuItem>

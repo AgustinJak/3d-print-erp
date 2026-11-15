@@ -180,7 +180,7 @@ export default function StockPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
+          <h1 className="text-[28px] leading-[1.15] font-medium flex items-center gap-2">
             <Boxes className="h-6 w-6" /> Stock
           </h1>
           <p className="text-sm text-muted-foreground">

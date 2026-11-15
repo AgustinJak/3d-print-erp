@@ -25,7 +25,7 @@ export default async function PiezaDeBodega({ params }: { params: Promise<{ id: 
 
   return (
     <div className="space-y-3 p-4 md:p-6">
-      <h1 className="text-2xl font-bold">Pieza de Bodega</h1>
+      <h1 className="text-[28px] leading-[1.15] font-medium">Pieza de Bodega</h1>
       {modelos.length ? (
         <>
           <p className="text-sm text-muted-foreground">Esta pieza la usan varios productos:</p>

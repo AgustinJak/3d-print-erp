@@ -37,7 +37,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="w-full max-w-sm space-y-6 p-8">
         <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold text-primary">Sendero 3D</h1>
+          <h1 className="text-[28px] leading-[1.15] font-semibold">Sendero 3D</h1>
           <p className="text-muted-foreground">Ingresá a tu cuenta</p>
         </div>
 

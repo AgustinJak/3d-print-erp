@@ -424,7 +424,7 @@ function IntegracionesContent() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+          <h1 className="text-[28px] leading-[1.15] font-medium flex items-center gap-2">
             <Plug className="h-6 w-6" /> Integraciones
           </h1>
           <p className="text-sm text-muted-foreground">

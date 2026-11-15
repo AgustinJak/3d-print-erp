@@ -190,7 +190,7 @@ export default function ClientesPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Clientes</h1>
+        <h1 className="text-[28px] leading-[1.15] font-medium">Clientes</h1>
         <Button onClick={openCreate}>
           <Plus className="mr-2 h-4 w-4" />
           Nuevo Cliente

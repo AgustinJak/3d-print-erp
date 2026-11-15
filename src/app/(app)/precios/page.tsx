@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/empty-state";
 import { Segmentado } from "@/components/segmentado";
-import { EtiquetaDeCuenta, PuntoDeCuenta, SelectorDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
+import { EtiquetaDeCuenta, PuntoDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
 import { json, pedir, pesos } from "@/components/producto/seccion";
 import { ConfiguracionDePrecios } from "@/components/precios/configuracion";
 import { MargenMasivo } from "@/components/precios/margen-masivo";
@@ -261,7 +261,7 @@ function PantallaPrecios() {
     <motion.div className="space-y-4" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: "easeOut" }}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="space-y-2 max-w-3xl">
-          <h1 className="text-2xl font-bold tracking-tight">Precios</h1>
+          <h1 className="text-[28px] leading-[1.15] font-medium">Precios</h1>
           {datos && (
             <p className="text-sm text-muted-foreground">
               {datos.gastos.origen === "erp"
@@ -276,7 +276,6 @@ function PantallaPrecios() {
                 : "El margen, la promo y el redondeo de cada pieza, si los tiene, van en Bodega."}
             </p>
           )}
-          <SelectorDeCuenta />
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           {(
@@ -648,7 +647,7 @@ function BarraDeSeleccion({
 }) {
   if (!n) return null;
   return (
-    <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 p-3 border-b bg-primary/[0.06] backdrop-blur-md text-sm">
+    <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 p-3 border-b bg-muted text-sm">
       <span className="font-medium">
         {n} {n === 1 ? "elegida" : "elegidas"}
       </span>

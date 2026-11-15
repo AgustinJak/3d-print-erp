@@ -30,8 +30,11 @@ import { InlineDateEdit } from "@/components/inline-date-edit";
 import { ESTADOS_PEDIDO, PRIORIDADES, CANALES_VENTA } from "@/lib/constants";
 import { useDatosEnVivo } from "@/hooks/use-datos-en-vivo";
 import { PedidoDialog } from "./pedido-dialog";
+import { TableroDePedidos } from "@/components/pedidos/tablero";
+import { DetalleDePedido } from "@/components/pedidos/detalle";
+import { Segmentado } from "@/components/segmentado";
 import { nombreDeItem } from "@/lib/items";
-import { PuntoDeCuenta, SelectorDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
+import { PuntoDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
 
 /**
  * De qué cuenta de ML es un pedido (docs/sdd/011). Las ventas de la otra cuenta llevan su nombre como
@@ -214,6 +217,23 @@ function PedidosContenido() {
   // La cuenta de ML que se mira (docs/sdd/011): con una, se ven sus ventas; las de la web y las de
   // a mano van con Sendero 3D.
   const { alcance, cuentas } = useCuentaActiva();
+  // El pedido que se está mirando (el detalle, antes del editor).
+  const [detalle, setDetalle] = useState<string | null>(null);
+  // Tablero por etapa o la lista de antes (docs/sdd/011). Se recuerda en el navegador.
+  const [vista, setVistaCruda] = useState<"tablero" | "lista">("tablero");
+  useEffect(() => {
+    try {
+      // Se lee después del primer dibujo: en el servidor no hay navegador.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (localStorage.getItem("pedidos:vista") === "lista") setVistaCruda("lista");
+    } catch {}
+  }, []);
+  const setVista = (v: "tablero" | "lista") => {
+    setVistaCruda(v);
+    try {
+      localStorage.setItem("pedidos:vista", v);
+    } catch {}
+  };
 
   const fetchPedidos = useCallback(async () => {
     const res = await fetch("/api/pedidos");
@@ -377,13 +397,12 @@ function PedidosContenido() {
       <div className="flex items-end justify-between gap-x-4 gap-y-3 flex-wrap">
         <div className="space-y-2">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Pedidos</h1>
+            <h1 className="text-[28px] leading-[1.15] font-medium">Pedidos</h1>
             <p className="text-sm text-muted-foreground">
               {filtered.length} {filtered.length === 1 ? "pedido" : "pedidos"}
               {filterEstado !== "todos" || search || alcance !== "todas" ? " con estos filtros" : " en curso"}
             </p>
           </div>
-          <SelectorDeCuenta />
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -402,18 +421,19 @@ function PedidosContenido() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <div className="relative">
+      <div className="flex flex-wrap items-center gap-2">
+        <Segmentado etiqueta="Vista" valor={vista} onChange={setVista} opciones={[["tablero", "Tablero"], ["lista", "Lista"]]} />
+        <div className="relative min-w-[220px] flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Buscar por cliente, ID o notas..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 rounded-full"
+            className="pl-9"
           />
         </div>
         <Select value={filterEstado} onValueChange={(v) => setFilterEstado(v ?? "todos")}>
-          <SelectTrigger>
+          <SelectTrigger className="w-full sm:w-56">
             <SelectValue placeholder="Filtrar por estado" />
           </SelectTrigger>
           <SelectContent>
@@ -425,6 +445,15 @@ function PedidosContenido() {
         </Select>
       </div>
 
+      {vista === "tablero" && (
+        <TableroDePedidos
+          pedidos={filtered}
+          onEstado={handleStatusChange}
+          onAbrir={setDetalle}
+        />
+      )}
+
+      {vista === "lista" && (<>
       {/* Empty state */}
       {filtered.length === 0 ? (
         pedidos.length === 0 ? (
@@ -1112,6 +1141,17 @@ function PedidosContenido() {
           )}
         </Card>
       )}
+      </>)}
+
+      <DetalleDePedido
+        pedido={pedidos.find((x) => x.id === detalle) ?? null}
+        onCerrar={() => setDetalle(null)}
+        onEditar={(id) => {
+          const p = pedidos.find((x) => x.id === id);
+          setDetalle(null);
+          if (p) openEdit(p);
+        }}
+      />
 
       <PedidoDialog
         open={dialogOpen}

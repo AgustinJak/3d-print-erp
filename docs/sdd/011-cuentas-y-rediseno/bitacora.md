@@ -75,3 +75,57 @@ Comparado con la versión anterior: en "todas", los 13 meses dan igual al centav
 **La pantalla.** Finanzas tiene el selector y "Qué dejó cada cuenta": Sendero 3D, Sendero Shop y la
 web y directa, lado a lado en Todas (con la barra de cuánto aportó cada una), o sólo la elegida. El
 resultado del mes y las billeteras siguen siendo del negocio entero.
+
+## 2026-11-15 · Claude, el rediseño con la guía de unslop
+
+Agustín pidió seguir la skill unslop (Damir Sokolovsky, CC BY 4.0) todo lo que se pueda y dejar de
+lado sus reglas visuales anteriores. Revisada antes de instalar (sin hooks ni servidores; scripts
+opcionales sin red salvo la página que capturan) y copiada en `.claude/skills/unslop`, fija en el
+commit 620163e.
+
+**Dirección (aprobada el 2026-11-15).** Producto: el sistema interno de un taller que fabrica y vende
+figuras, soportes y accesorios por ML, la web y en mano. Carácter: exacto, de taller, un poco
+cálido. Mundo: el taller (filamento, piezas, etiquetas de envío). Momentos: las fotos de los
+productos y la plata del mes. Firma: el punto de cuenta (violeta Sendero 3D, verde azulado Sendero
+Shop), sólo como punto.
+
+**Todo el ERP.** Gama gris grafito en vez del tinte lila; un solo acento, naranja filamento
+(#c2410c claro, #f0883e oscuro con texto oscuro); bordes finos al 8 %. Títulos a 28 px, peso 500,
+sin letra apretada; el logo como texto. Selector de cuenta y pestañas sin resorte ni píldora.
+Fuera: el punto que latía en Tendencias, la etiqueta en mayúsculas de Publicidad, el vidrio de la
+barra de Precios, el agrandado de los colores de Categorías.
+
+**Panel.** El título es el día; "Hoy" como cinco números en una grilla con bordes finos, íconos
+grises; el mes con la ganancia neta como cifra clave (acento) y debajo cómo se llega a ella; la
+billetera sin degradé. Cifras en mono tabular. Las barras de lo más vendido se animan con
+transform, la primera con el acento. Una sola entrada al cargar; los números sólo cuentan al cambiar.
+
+**Productos.** Chips neutros con el punto de estado (sólo lo pausado y lo que difiere tienen tono),
+sin agrandar fotos ni levantar tarjetas, filtros y vistas sin el acento, barra de acciones sin vidrio
+ni sombra violeta.
+
+Verificado: tipos y lint. Falta verlo con sesión iniciada.
+
+## 2026-11-15 · Claude, el rediseño de estructura
+
+Agustín, después del primer pase: "solo veo un recolor y fuentes". Eligió cuatro cambios de
+estructura:
+
+- **El marco.** Barra de arriba fija (`components/barra-superior.tsx`) con dónde estás (grupo /
+  sección), el selector de cuenta sólo en las secciones de ML (sale de cada página; en el teléfono va
+  en una fila debajo), el buscador (Ctrl K, `abrirBuscador`) y el tema. La barra lateral se achica a
+  íconos (`collapsible="icon"`), con la marca: un bloque naranja con la S.
+- **Panel.** El gráfico principal: lo vendido en el mes acumulado día por día contra el mes
+  anterior, dibujado en SVG (`components/panel/grafico-del-mes.tsx`), con la lectura de cada día al
+  pasar el mouse y el cambio contra el mismo día del mes anterior. Al lado, la ganancia neta con cómo
+  se llega a ella, y la billetera. `/api/dashboard` suma `ventasDiarias` (por fecha del pedido, sin
+  cancelados).
+- **Productos.** Tocar un producto abre su ficha al costado (`components/productos/panel-de-producto.tsx`):
+  foto, stock, vendidos, costo y cada variante con sus publicaciones por cuenta, sin salir de la lista
+  ni perder filtros ni lo elegido. "Abrir la ficha completa" lleva a la página de siempre.
+- **Pedidos.** Tablero por etapa (`components/pedidos/tablero.tsx`): a pagar, por hacer, en producción,
+  listo para despachar, esperando cobro de ML y reclamos si hay. Tarjetas con la foto del producto, el
+  cliente, qué lleva, cuándo y cuánto; arrastrar a otra columna cambia el estado. La lista de antes
+  queda como vista alternativa.
+
+Los botones dejaron de usar `transition-all` y el salto al apretar (ahora una escala de 0,98).

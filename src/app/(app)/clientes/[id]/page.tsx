@@ -149,7 +149,7 @@ export default function ClienteDetailPage() {
           </Button>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-bold">{cliente.nombre}</h1>
+              <h1 className="text-[28px] leading-[1.15] font-medium">{cliente.nombre}</h1>
               {plataformaLabel && (
                 <Badge variant="secondary" className="text-xs">
                   {plataformaLabel}

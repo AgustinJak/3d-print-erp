@@ -35,6 +35,13 @@ const pages: PageEntry[] = [
   { name: "Integraciones", href: "/integraciones", icon: Plug, keywords: "integraciones webhook shop sendero api logs", hideOnDemo: true },
 ];
 
+const EVENTO = "sendero:abrir-buscador";
+
+/** Abre el buscador desde un botón (la barra de arriba), igual que Ctrl+K. */
+export function abrirBuscador() {
+  window.dispatchEvent(new Event(EVENTO));
+}
+
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
@@ -48,8 +55,13 @@ export function CommandPalette() {
         setOpen((o) => !o);
       }
     };
+    const abrir = () => setOpen(true);
     document.addEventListener("keydown", down);
-    return () => document.removeEventListener("keydown", down);
+    window.addEventListener(EVENTO, abrir);
+    return () => {
+      document.removeEventListener("keydown", down);
+      window.removeEventListener(EVENTO, abrir);
+    };
   }, []);
 
   const navigate = useCallback((href: string) => {
@@ -63,20 +75,20 @@ export function CommandPalette() {
     <div className="fixed inset-0 z-50">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/40"
         onClick={() => setOpen(false)}
       />
       {/* Dialog */}
       <div className="absolute left-1/2 top-[20%] -translate-x-1/2 w-full max-w-[520px] px-4">
         <Command
-          className="rounded-xl border bg-popover text-popover-foreground shadow-2xl overflow-hidden"
+          className="rounded-xl border bg-popover text-popover-foreground shadow-[0_8px_24px_rgba(0,0,0,0.12)] overflow-hidden"
           loop
         >
           <div className="flex items-center border-b px-3 gap-2">
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
             <Command.Input
               autoFocus
-              placeholder="Buscar secciones..."
+              placeholder="Buscar una sección"
               className="flex h-12 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
             <kbd className="hidden sm:inline-flex h-5 items-center gap-1 rounded border bg-muted px-1.5 text-[10px] font-medium text-muted-foreground">
@@ -85,9 +97,9 @@ export function CommandPalette() {
           </div>
           <Command.List className="max-h-[300px] overflow-y-auto p-2">
             <Command.Empty className="py-6 text-center text-sm text-muted-foreground">
-              Sin resultados.
+              Sin resultados
             </Command.Empty>
-            <Command.Group heading="Navegacion" className="text-xs text-muted-foreground px-2 py-1.5">
+            <Command.Group heading="Secciones" className="text-xs text-muted-foreground px-2 py-1.5">
               {visiblePages.map((page) => (
                 <Command.Item
                   key={page.href}

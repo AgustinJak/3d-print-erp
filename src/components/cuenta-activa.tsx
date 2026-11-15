@@ -122,7 +122,7 @@ export function SelectorDeCuenta({ className = "" }: { className?: string }) {
     { valor: "otra", texto: cuentas.otra, puntos: ["otra"] },
   ];
   return (
-    <div role="radiogroup" aria-label="Cuenta de Mercado Libre" className={`inline-flex items-center rounded-full border bg-muted/50 p-0.5 text-sm ${className}`}>
+    <div role="radiogroup" aria-label="Cuenta de Mercado Libre" className={`inline-flex items-center rounded-[10px] border bg-muted/60 p-0.5 text-sm ${className}`}>
       {opciones.map((o) => {
         const puesta = alcance === o.valor;
         return (
@@ -132,9 +132,9 @@ export function SelectorDeCuenta({ className = "" }: { className?: string }) {
             role="radio"
             aria-checked={puesta}
             onClick={() => setAlcance(o.valor)}
-            className={`relative inline-flex h-8 items-center gap-1.5 rounded-full px-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${puesta ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            className={`relative inline-flex h-8 items-center gap-1.5 rounded-md px-3 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${puesta ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
           >
-            {puesta && <motion.span layoutId={`cuenta-${id}`} className="absolute inset-0 rounded-full bg-background shadow-sm ring-1 ring-border" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+            {puesta && <motion.span layoutId={`cuenta-${id}`} className="absolute inset-0 rounded-md bg-background shadow-[0_1px_2px_rgba(0,0,0,0.06)] ring-1 ring-border" transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }} />}
             <span className="relative inline-flex items-center -space-x-0.5">
               {o.puntos.map((p) => (
                 <PuntoDeCuenta key={p} de={p} className="ring-2 ring-background" />

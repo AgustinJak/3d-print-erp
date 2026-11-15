@@ -191,6 +191,27 @@ export async function GET() {
       .sort((a, b) => b.totalVendido - a.totalVendido)
       .slice(0, 5);
 
+    // ─── Lo vendido día por día, este mes y el anterior (docs/sdd/011) ───
+    // Por la fecha del pedido, sin cancelados: lo que se vendió cada día, no lo cobrado. En ML el
+    // precio de cada línea ya es el neto de la venta.
+    const inicioAnterior = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+    const porDia = await prisma.$queryRaw<Array<{ dia: string; total: number; pedidos: number }>>`
+      SELECT to_char(p.fecha_pedido AT TIME ZONE 'America/Argentina/Buenos_Aires', 'YYYY-MM-DD') AS dia,
+             sum(i.precio_unitario * i.cantidad + i.ajuste_manual)::float AS total,
+             count(DISTINCT p.id)::int AS pedidos
+      FROM pedidos p
+      JOIN items_pedido i ON i.pedido_id = p.id
+      WHERE p.tenant_id = ${tenantId} AND p.estado <> 'CANCELADO'
+        AND p.fecha_pedido >= ${inicioAnterior} AND p.fecha_pedido < ${finMes}
+      GROUP BY 1
+      ORDER BY 1
+    `;
+    const claveDe = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const ventasDiarias = {
+      actual: { mes: claveDe(inicioMes), dias: porDia.filter((d) => d.dia.startsWith(claveDe(inicioMes))) },
+      anterior: { mes: claveDe(inicioAnterior), dias: porDia.filter((d) => d.dia.startsWith(claveDe(inicioAnterior))) },
+    };
+
     const colaDe = (canal: string) => cola.find((c) => c.canal === canal)?._count._all ?? 0;
 
     return NextResponse.json({
@@ -227,6 +248,7 @@ export async function GET() {
         productos: faltante._count._all,
       },
       modelosTop,
+      ventasDiarias,
     });
   } catch (e) {
     if (e instanceof NextResponse) return e;

@@ -118,7 +118,7 @@ export default function CategoriasPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Categorias</h1>
+        <h1 className="text-[28px] leading-[1.15] font-medium">Categorias</h1>
         <Button onClick={openCreate}>
           <Plus className="mr-2 h-4 w-4" />
           Nueva Categoria
@@ -358,7 +358,7 @@ export default function CategoriasPage() {
                   <button
                     key={color}
                     type="button"
-                    className={`h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 ${form.color === color ? "border-foreground scale-110" : "border-transparent"}`}
+                    className={`h-6 w-6 rounded-full border-2 transition-[box-shadow] hover:ring-2 hover:ring-foreground/20 ${form.color === color ? "border-foreground scale-110" : "border-transparent"}`}
                     style={{ backgroundColor: color }}
                     onClick={() => updateField("color", color)}
                   />

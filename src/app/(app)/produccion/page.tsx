@@ -130,7 +130,7 @@ export default function ProduccionPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-2xl font-bold">Cola de Producción</h1>
+        <h1 className="text-[28px] leading-[1.15] font-medium">Cola de Producción</h1>
         <div className="flex gap-3">
           <Badge variant="outline" className="text-sm py-1 px-3">
             <Factory className="mr-1 h-4 w-4" />

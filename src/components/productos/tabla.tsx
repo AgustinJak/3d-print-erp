@@ -28,10 +28,12 @@ function Tilde({ estado, onChange, etiqueta }: { estado: EstadoDeTilde; onChange
   return <input ref={ref} type="checkbox" aria-label={etiqueta} checked={estado === "todas"} onChange={onChange} className="h-4 w-4 rounded border-input accent-primary cursor-pointer align-middle" />;
 }
 
+// Los chips son neutros: el color lo lleva el punto de estado. Sólo lo pausado y lo que difiere
+// entre cuentas tienen tono, porque piden atención (unslop: una sola cosa resalta).
 const TONO = {
-  verde: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  verde: "bg-muted text-foreground",
   ambar: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  azul: "bg-sky-500/10 text-sky-700 dark:text-sky-400",
+  azul: "bg-muted text-foreground",
   gris: "bg-muted text-muted-foreground",
   hueco: "border border-dashed border-muted-foreground/30 text-muted-foreground",
   distinto: "bg-amber-500/15 text-amber-800 dark:text-amber-300 ring-1 ring-amber-500/30",
@@ -39,7 +41,7 @@ const TONO = {
 
 function Chip({ tono, children, titulo }: { tono: keyof typeof TONO; children: React.ReactNode; titulo?: string }) {
   return (
-    <span title={titulo} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] leading-4 whitespace-nowrap ${TONO[tono]}`}>
+    <span title={titulo} className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs leading-4 whitespace-nowrap ${TONO[tono]}`}>
       {children}
     </span>
   );
@@ -58,12 +60,12 @@ function ChipDePublicacion({ x }: { x: PublicacionMl }) {
       {x.estado === "paused" && " · pausada"}
       {x.flex && (
         <>
-          <Zap className="h-3 w-3" /> Flex
+          <Zap className="h-3 w-3" strokeWidth={1.5} /> Flex
         </>
       )}
       {x.dias != null && (
         <>
-          <Clock className="h-3 w-3" /> {x.dias} d
+          <Clock className="h-3 w-3" strokeWidth={1.5} /> {x.dias} d
         </>
       )}
       {x.precio != null && <span className="tabular-nums opacity-80">· {pesos(x.precio)}</span>}
@@ -110,17 +112,21 @@ function ResumenDeCuenta({ f, de, conDiferencias }: { f: Fila; de: DeCuenta; con
   if (!pubs.length && !faltan) return <span className="text-xs text-muted-foreground">—</span>;
   return (
     <div className="flex flex-wrap gap-1">
-      {activas > 0 && <Chip tono="verde">{activas} {activas === 1 ? "activa" : "activas"}</Chip>}
+      {activas > 0 && (
+        <Chip tono="verde">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> {activas} {activas === 1 ? "activa" : "activas"}
+        </Chip>
+      )}
       {pausadas > 0 && <Chip tono="ambar">{pausadas} {pausadas === 1 ? "pausada" : "pausadas"}</Chip>}
       {sinLeer > 0 && <Chip tono="gris">{sinLeer} sin leer</Chip>}
       {flex > 0 && (
         <Chip tono="azul">
-          <Zap className="h-3 w-3" /> {flex} Flex
+          <Zap className="h-3 w-3" strokeWidth={1.5} /> {flex} Flex
         </Chip>
       )}
       {aPedido > 0 && (
         <Chip tono="gris">
-          <Clock className="h-3 w-3" /> {aPedido} a pedido
+          <Clock className="h-3 w-3" strokeWidth={1.5} /> {aPedido} a pedido
         </Chip>
       )}
       {faltan > 0 && <Chip tono="hueco">{faltan} {de === "otra" ? "sin copiar" : "sin publicar"}</Chip>}
@@ -136,7 +142,7 @@ function ResumenDeCuenta({ f, de, conDiferencias }: { f: Fila; de: DeCuenta; con
 function Stock({ n }: { n: number | null | undefined }) {
   if (n == null) return <span className="text-muted-foreground">—</span>;
   // Casi todo se hace a pedido: un cero es lo normal, no una alarma.
-  return <span className={n > 0 ? "font-semibold" : "text-muted-foreground"}>{n}</span>;
+  return <span className={n > 0 ? "font-medium" : "text-muted-foreground"}>{n}</span>;
 }
 
 function Vendidas({ d30, total }: { d30: number; total: number }) {
@@ -251,7 +257,7 @@ export function TablaDeProductos({
   const fila = "grid items-center gap-x-3 px-3";
 
   return (
-    <div className="overflow-x-auto rounded-xl border bg-card shadow-xs">
+    <div className="overflow-x-auto rounded-xl border bg-card">
       <div className={dos ? "min-w-[62rem]" : "min-w-[52rem]"}>
         <div className={`${fila} h-10 border-b bg-muted/40 text-xs font-medium text-muted-foreground`} style={grilla}>
           <Tilde estado={estadoDeTilde(unicas, elegidos)} onChange={() => onAlternar(unicas)} etiqueta="Elegir todo lo que se ve" />
@@ -298,7 +304,7 @@ export function TablaDeProductos({
                         return s;
                       })
                     }
-                    className="inline-flex items-center gap-1.5 font-semibold hover:text-primary"
+                    className="inline-flex items-center gap-1.5 font-medium transition-colors hover:text-primary"
                   >
                     <ChevronRight className={`h-4 w-4 transition-transform duration-200 ${cerrado ? "" : "rotate-90"}`} />
                     {g.nombre}
@@ -332,14 +338,14 @@ export function TablaDeProductos({
                         tabIndex={0}
                         onClick={() => onAbrir(p.id)}
                         onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && onAbrir(p.id)}
-                        className={`${fila} group cursor-pointer py-2.5 transition-colors duration-150 focus:outline-none focus-visible:bg-muted/60 ${estado !== "ninguna" ? "bg-primary/[0.06] shadow-[inset_3px_0_0_var(--primary)] hover:bg-primary/10" : "hover:bg-muted/50"}`}
+                        className={`${fila} group cursor-pointer py-2.5 transition-colors duration-150 focus:outline-none focus-visible:bg-muted/60 ${estado !== "ninguna" ? "bg-primary/[0.06] shadow-[inset_2px_0_0_var(--primary)] hover:bg-primary/10" : "hover:bg-muted/50"}`}
                         style={grilla}
                       >
                         <span onClick={(e) => e.stopPropagation()}>
                           <Tilde estado={estado} onChange={() => onAlternar(claves)} etiqueta={`Elegir ${p.nombre}`} />
                         </span>
                         <div className="flex min-w-0 items-center gap-3">
-                          <Foto url={p.imagenUrl} nombre={p.nombre} clase="h-11 w-11 shrink-0 rounded-lg ring-1 ring-border transition-transform duration-200 group-hover:scale-105" />
+                          <Foto url={p.imagenUrl} nombre={p.nombre} clase="h-11 w-11 shrink-0 rounded-lg ring-1 ring-border" />
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="font-medium leading-tight">{p.nombre}</span>
@@ -352,7 +358,7 @@ export function TablaDeProductos({
                             </div>
                             <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                               {p.serie && <span>{p.serie}</span>}
-                              {p.sku && <code className="font-mono text-[10px]">{p.sku}</code>}
+                              {p.sku && <code className="font-mono text-[11px]">{p.sku}</code>}
                               <Categorias p={p} />
                             </div>
                             {p.consolidadoEn && <div className="text-xs text-amber-600 dark:text-amber-400">↪ Consolidado en {p.consolidadoEn.nombre}</div>}
@@ -398,7 +404,7 @@ export function TablaDeProductos({
                                 <div
                                   key={u.clave}
                                   onClick={() => onAlternar([u.clave])}
-                                  className={`${fila} cursor-pointer border-t border-border/60 py-1.5 text-[13px] transition-colors duration-150 ${tildada ? "bg-primary/[0.06] shadow-[inset_3px_0_0_var(--primary)] hover:bg-primary/10" : "hover:bg-muted/50"}`}
+                                  className={`${fila} cursor-pointer border-t border-border/60 py-1.5 text-[13px] transition-colors duration-150 ${tildada ? "bg-primary/[0.06] shadow-[inset_2px_0_0_var(--primary)] hover:bg-primary/10" : "hover:bg-muted/50"}`}
                                   style={grilla}
                                 >
                                   <span onClick={(e) => e.stopPropagation()}>
@@ -463,7 +469,7 @@ export function TarjetasDeProductos({
           <section key={g.clave || "todo"} className="space-y-3">
             {agrupado && (
               <div className="flex flex-wrap items-center gap-3 border-b pb-1.5">
-                <h2 className="font-semibold">{g.nombre}</h2>
+                <h2 className="font-medium">{g.nombre}</h2>
                 <span className="text-xs text-muted-foreground">
                   {g.filas.length} {g.filas.length === 1 ? "producto" : "productos"}
                 </span>
@@ -478,15 +484,13 @@ export function TarjetasDeProductos({
                 const claves = f.unidades.map((u) => u.clave);
                 const estado = estadoDeTilde(claves, elegidos);
                 return (
-                  <motion.article
+                  <article
                     key={p.id}
-                    whileHover={{ y: -3 }}
-                    transition={SUAVE}
                     onClick={() => onAbrir(p.id)}
-                    className={`group cursor-pointer overflow-hidden rounded-xl border bg-card shadow-xs transition-shadow hover:shadow-lg ${estado !== "ninguna" ? "ring-2 ring-primary/60" : ""}`}
+                    className={`group cursor-pointer overflow-hidden rounded-xl border bg-card transition-colors duration-150 hover:border-foreground/20 ${estado !== "ninguna" ? "ring-2 ring-primary/60" : ""}`}
                   >
                     <div className="relative aspect-square w-full overflow-hidden bg-muted">
-                      <Foto url={p.imagenUrl} nombre={p.nombre} clase="h-full w-full transition-transform duration-300 group-hover:scale-105" />
+                      <Foto url={p.imagenUrl} nombre={p.nombre} clase="h-full w-full" />
                       <span className="absolute top-2 left-2 rounded-md bg-background/90 p-1 leading-none shadow-sm" onClick={(e) => e.stopPropagation()}>
                         <Tilde estado={estado} onChange={() => onAlternar(claves)} etiqueta={`Elegir ${p.nombre}`} />
                       </span>
@@ -498,7 +502,7 @@ export function TarjetasDeProductos({
                     </div>
                     <div className="space-y-2 p-4">
                       <div>
-                        <h3 className="font-semibold truncate" title={p.nombre}>
+                        <h3 className="font-medium truncate" title={p.nombre}>
                           {p.nombre}
                         </h3>
                         <p className="text-xs text-muted-foreground truncate">
@@ -512,7 +516,7 @@ export function TarjetasDeProductos({
                         </div>
                       ))}
                     </div>
-                  </motion.article>
+                  </article>
                 );
               })}
             </div>

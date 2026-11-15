@@ -28,8 +28,8 @@ const ORDENES: Array<[Orden, string]> = [
 ];
 
 const claseDePildora = (puesto: boolean) =>
-  `inline-flex items-center gap-1 rounded-full border h-8 text-xs transition-all duration-150 active:scale-[0.97] ${
-    puesto ? "border-primary/60 bg-primary/10 text-foreground" : "border-input bg-background text-muted-foreground hover:bg-muted/60"
+  `inline-flex items-center gap-1 rounded-lg border h-8 text-xs transition-[background-color,border-color,color,transform] duration-150 active:scale-[0.98] ${
+    puesto ? "border-foreground/20 bg-muted text-foreground" : "border-input bg-background text-muted-foreground hover:bg-muted/60"
   }`;
 
 /** Un filtro de una sola opción: la etiqueta y, al lado, lo elegido. */
@@ -41,7 +41,7 @@ function Pildora<T extends string>({ etiqueta, valor, opciones, neutro, onChange
         value={valor}
         onChange={(e) => onChange(e.target.value as T)}
         aria-label={etiqueta}
-        className="h-7 rounded-full bg-transparent pl-0.5 pr-1 font-medium text-foreground cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="h-7 rounded-md bg-transparent pl-0.5 pr-1 font-medium text-foreground cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {opciones.map(([v, t]) => (
           <option key={v} value={v} className="bg-popover text-popover-foreground">
@@ -165,24 +165,24 @@ export function FiltrosDeProductos({
             </button>
           )}
         </div>
-        <div className="inline-flex rounded-md border text-sm overflow-hidden">
-          {(["activos", "inactivos", "todos", "insumos"] as const).map((e, i) => (
+        <div className="inline-flex rounded-[10px] border bg-muted/60 p-0.5 text-sm">
+          {(["activos", "inactivos", "todos", "insumos"] as const).map((e) => (
             <button
               key={e}
               type="button"
               onClick={() => onFiltros({ estado: e })}
               aria-pressed={f.estado === e}
-              className={`px-3 h-9 capitalize transition-colors ${f.estado === e ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"} ${i > 0 ? "border-l" : ""}`}
+              className={`px-3 h-8 rounded-md capitalize transition-colors duration-150 ${f.estado === e ? "bg-background text-foreground font-medium shadow-[0_1px_2px_rgba(0,0,0,0.06)] ring-1 ring-border" : "text-muted-foreground hover:text-foreground"}`}
             >
               {e}
             </button>
           ))}
         </div>
-        <div className="inline-flex rounded-md border ml-auto">
-          <Button variant={vista === "tabla" ? "default" : "ghost"} size="icon" className="rounded-r-none h-9 w-9" onClick={() => onVista("tabla")} title="Vista de tabla" aria-label="Vista de tabla">
+        <div className="inline-flex rounded-[10px] border bg-muted/60 p-0.5 ml-auto">
+          <Button variant="ghost" size="icon" className={`h-8 w-8 rounded-md ${vista === "tabla" ? "bg-background ring-1 ring-border" : "text-muted-foreground"}`} onClick={() => onVista("tabla")} title="Vista de tabla" aria-label="Vista de tabla">
             <TableIcon className="h-4 w-4" />
           </Button>
-          <Button variant={vista === "tarjetas" ? "default" : "ghost"} size="icon" className="rounded-l-none h-9 w-9" onClick={() => onVista("tarjetas")} title="Vista de tarjetas" aria-label="Vista de tarjetas">
+          <Button variant="ghost" size="icon" className={`h-8 w-8 rounded-md ${vista === "tarjetas" ? "bg-background ring-1 ring-border" : "text-muted-foreground"}`} onClick={() => onVista("tarjetas")} title="Vista de tarjetas" aria-label="Vista de tarjetas">
             <LayoutGrid className="h-4 w-4" />
           </Button>
         </div>

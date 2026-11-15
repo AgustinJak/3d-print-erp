@@ -161,7 +161,7 @@ export default function CasaPage() {
     <div className="space-y-4">
       {/* Header + mes */}
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
+        <h1 className="text-[28px] leading-[1.15] font-medium flex items-center gap-2">
           <Home className="h-6 w-6" /> Casa
         </h1>
         <div className="flex items-center gap-2">

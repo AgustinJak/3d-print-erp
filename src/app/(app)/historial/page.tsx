@@ -18,7 +18,7 @@ import { TableSkeleton } from "@/components/data-loading";
 import { EmptyState } from "@/components/empty-state";
 import { CANALES_VENTA } from "@/lib/constants";
 import { nombreDeItem } from "@/lib/items";
-import { PuntoDeCuenta, SelectorDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
+import { PuntoDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
 
 interface VarianteInfo {
   nombre: string;
@@ -150,8 +150,7 @@ export default function HistorialPage() {
     <motion.div className="space-y-4" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: "easeOut" }}>
       <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-3">
         <div className="space-y-2">
-          <h1 className="text-2xl font-bold tracking-tight">Historial de Pedidos</h1>
-          <SelectorDeCuenta />
+          <h1 className="text-[28px] leading-[1.15] font-medium">Historial de Pedidos</h1>
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="outline" className="py-1 px-3">

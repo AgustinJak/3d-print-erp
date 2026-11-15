@@ -12,7 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EtiquetaDeCuenta, SelectorDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
+import { EtiquetaDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
 import { EmptyState } from "@/components/empty-state";
 import { PiezasNuevas } from "@/components/producto/piezas-nuevas";
 import { CrearMlMasivo } from "@/components/producto/crear-ml-masivo";
@@ -20,6 +20,7 @@ import { ConfirmarFlex } from "@/components/precios/confirmar-flex";
 import { CopiarAOtraCuenta } from "@/components/productos/copiar-ml";
 import { FiltrosDeProductos, filtrosPuestos, type Vista } from "@/components/productos/filtros";
 import { TablaDeProductos, TarjetasDeProductos } from "@/components/productos/tabla";
+import { PanelDeProducto } from "@/components/productos/panel-de-producto";
 import {
   agrupar as agruparFilas,
   alternar,
@@ -28,6 +29,7 @@ import {
   filtraVariantes,
   FILTROS_INICIALES,
   ordenar,
+  unidadesDe,
   resumir,
   type Agrupar,
   type CanalesDeModelo,
@@ -103,6 +105,8 @@ export default function ModelosPage() {
   const [tanda, setTanda] = useState<Pick<ResumenDeSeleccion, "mlas" | "aCrear" | "mlasPrincipal" | "porCuenta">>({ mlas: [], aCrear: [], mlasPrincipal: [], porCuenta: { principal: 0, otra: 0 } });
   // La cuenta de ML que se mira (docs/sdd/011) y la otra cuenta conectada, si hay.
   const { alcance, cuentas, nombre: nombreDeLaCuenta } = useCuentaActiva();
+  // La ficha rápida que se abre al costado (docs/sdd/011): el id del producto.
+  const [ficha, setFicha] = useState<string | null>(null);
 
   /* ─── Preferencias de la vista: quedan en el navegador ─── */
 
@@ -172,6 +176,14 @@ export default function ModelosPage() {
     const base = modelos.filter((m) => m.activo && !m.consolidadoEnId && !m.esInsumo);
     return { total: base.length, con: base.filter((m) => m.sku).length };
   }, [modelos]);
+
+  // La ficha muestra el producto con todas sus variantes, aunque los filtros dejen ver sólo algunas.
+  const filaDeFicha = (() => {
+    const p = ficha ? modelos.find((m) => m.id === ficha) : null;
+    if (!p) return null;
+    const todas = unidadesDe(p, canales[p.id]);
+    return { p, c: canales[p.id], todas, unidades: todas, parcial: false };
+  })();
 
   if (initialLoading) return <Cargando />;
 
@@ -262,10 +274,9 @@ export default function ModelosPage() {
       <div className="flex items-end justify-between gap-x-4 gap-y-3 flex-wrap">
         <div className="space-y-2">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Productos</h1>
+            <h1 className="text-[28px] leading-[1.15] font-medium">Productos</h1>
             <p className="text-sm text-muted-foreground">Dónde está publicado cada uno, su stock y lo que vende.</p>
           </div>
-          <SelectorDeCuenta />
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={traerDeBodega} disabled={trayendo} title="Trae ya las piezas nuevas que Bodega haya subido">
@@ -350,7 +361,7 @@ export default function ModelosPage() {
           <EmptyState icon={Search} title="Sin resultados" description="Ningún producto pasa esos filtros." actionLabel="Sacar filtros" onAction={() => setFiltros({ ...FILTROS_INICIALES, estado: filtros.estado })} />
         )
       ) : vista === "tarjetas" ? (
-        <TarjetasDeProductos grupos={grupos} agrupado={agrupar !== "nada"} elegidos={elegidos} onAlternar={onAlternar} onAbrir={(id) => router.push(`/modelos/${id}`)} alcance={alcance} />
+        <TarjetasDeProductos grupos={grupos} agrupado={agrupar !== "nada"} elegidos={elegidos} onAlternar={onAlternar} onAbrir={setFicha} alcance={alcance} />
       ) : (
         <>
           <div className="hidden md:block">
@@ -365,13 +376,13 @@ export default function ModelosPage() {
                 guardar({ orden: o });
               }}
               verVariantes={verVariantes}
-              onAbrir={(id) => router.push(`/modelos/${id}`)}
+              onAbrir={setFicha}
               alcance={alcance}
             />
           </div>
           {/* En el teléfono la tabla no entra: tarjetas. */}
           <div className="md:hidden">
-            <TarjetasDeProductos grupos={grupos} agrupado={agrupar !== "nada"} elegidos={elegidos} onAlternar={onAlternar} onAbrir={(id) => router.push(`/modelos/${id}`)} alcance={alcance} />
+            <TarjetasDeProductos grupos={grupos} agrupado={agrupar !== "nada"} elegidos={elegidos} onAlternar={onAlternar} onAbrir={setFicha} alcance={alcance} />
           </div>
         </>
       )}
@@ -381,11 +392,11 @@ export default function ModelosPage() {
         {resumen.unidades > 0 && (
           <motion.div
             key="acciones"
-            initial={{ opacity: 0, y: 24 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 24 }}
-            transition={{ type: "spring", stiffness: 420, damping: 34 }}
-            className="sticky bottom-4 z-20 mx-auto flex w-fit max-w-full flex-wrap items-center gap-2 rounded-2xl border border-primary/30 bg-background/90 p-2.5 pl-4 shadow-xl shadow-primary/10 backdrop-blur-md"
+            exit={{ opacity: 0, y: 12 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            className="sticky bottom-4 z-20 mx-auto flex w-fit max-w-full flex-wrap items-center gap-2 rounded-xl border bg-card p-2 pl-4 shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
           >
             <div className="mr-1">
               <p className="text-sm font-medium leading-tight">
@@ -439,6 +450,8 @@ export default function ModelosPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <PanelDeProducto fila={filaDeFicha} onCerrar={() => setFicha(null)} />
 
       {/* ─── En cantidad ────────────────────────────── */}
       <Dialog open={masivo === "crear"} onOpenChange={(o) => !o && setMasivo(null)}>

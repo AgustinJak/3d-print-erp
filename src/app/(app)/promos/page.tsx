@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/empty-state";
 import { Segmentado } from "@/components/segmentado";
-import { PuntoDeCuenta, SelectorDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
+import { PuntoDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
 import { json, pedir, pesos } from "@/components/producto/seccion";
 import { ConfirmarPromos } from "@/components/promos/confirmar-promos";
 import type { CambioDePromoRegistrado, CandidataCalculada, FilaPromo, ResumenPromos } from "@/lib/promos-ml";
@@ -608,14 +608,13 @@ export default function PaginaPromos() {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="space-y-2">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <h1 className="text-[28px] leading-[1.15] font-medium flex items-center gap-2">
               <Percent className="h-6 w-6 text-primary" /> Promos
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">
               Las promos de Mercado Libre de cada publicación, a cuáles se puede sumar y cuánto deja. Nada se prende solo.
             </p>
           </div>
-          <SelectorDeCuenta />
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={leerDeMl} disabled={!!leyendo} title={d?.leidoEn ? `Última lectura completa ${haceCuanto(d.leidoEn)}` : undefined}>

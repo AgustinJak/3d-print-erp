@@ -4,18 +4,19 @@ import { useEffect, useRef } from "react";
 import { animate, useReducedMotion } from "motion/react";
 
 /**
- * Un número que cuenta hasta su valor al aparecer o al cambiar (docs/sdd/011). Con "reducir
+ * Un número que cuenta hasta su valor nuevo cuando cambia (docs/sdd/011). Con "reducir
  * movimiento" en el sistema, aparece directo. El texto final es siempre el formateado.
  */
 export function NumeroAnimado({ valor, formato = (n) => Math.round(n).toLocaleString("es-AR"), className }: { valor: number; formato?: (n: number) => string; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const desde = useRef(0);
+  // Al aparecer muestra el valor directo; sólo cuenta cuando cambia (unslop: "a changed number tweens").
+  const desde = useRef<number | null>(null);
   const quieto = useReducedMotion();
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (quieto) {
+    if (quieto || desde.current === null || desde.current === valor) {
       el.textContent = formato(valor);
       desde.current = valor;
       return;

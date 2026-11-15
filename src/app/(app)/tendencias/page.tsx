@@ -178,7 +178,7 @@ function ViralFires({ nivel }: { nivel: string }) {
   const meta = getNivelMeta(nivel);
   const isExplosivo = nivel === "explosivo";
   return (
-    <span className={`inline-flex items-center gap-0.5 ${meta.color} ${isExplosivo ? "animate-pulse" : ""}`}>
+    <span className={`inline-flex items-center gap-0.5 ${meta.color} ${isExplosivo ? "font-medium" : ""}`}>
       {Array.from({ length: meta.fires }).map((_, i) => (
         <span key={i}>🔥</span>
       ))}
@@ -860,7 +860,7 @@ export default function TendenciasPage() {
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+          <h1 className="text-[28px] leading-[1.15] font-medium flex items-center gap-2">
             <Zap className="h-6 w-6 text-yellow-500" />
             Radar de Tendencias
           </h1>

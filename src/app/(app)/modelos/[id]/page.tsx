@@ -125,7 +125,7 @@ export default function ProductoPage() {
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-bold truncate">{p.nombre}</h1>
+              <h1 className="text-[28px] leading-[1.15] font-medium truncate">{p.nombre}</h1>
               {p.esInsumo && <Badge variant="secondary">Insumo</Badge>}
               {!p.activo && !p.esInsumo && <Badge variant="secondary">Inactivo</Badge>}
             </div>

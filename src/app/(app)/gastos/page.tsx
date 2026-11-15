@@ -275,7 +275,7 @@ export default function GastosPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-2xl font-bold">Gastos</h1>
+          <h1 className="text-[28px] leading-[1.15] font-medium">Gastos</h1>
           {filtered.length > 0 && (
             <>
               <Badge variant="outline" className="text-sm py-1 px-3">

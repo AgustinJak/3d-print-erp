@@ -1,7 +1,6 @@
 "use client";
 
 import { motion } from "motion/react";
-import { SelectorDeCuenta } from "@/components/cuenta-activa";
 import { Segmentado } from "@/components/segmentado";
 import { FinanzasPorCuenta, type PorCuentaData } from "./por-cuenta";
 import { useEffect, useState, useCallback } from "react";
@@ -483,10 +482,9 @@ export default function FinanzasPage() {
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div className="space-y-2">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Finanzas</h1>
+            <h1 className="text-[28px] leading-[1.15] font-medium">Finanzas</h1>
             <p className="text-sm text-muted-foreground">El resultado del mes y las billeteras son del negocio entero; abajo, lo que dejó cada cuenta.</p>
           </div>
-          <SelectorDeCuenta />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Button variant="outline" size="icon" onClick={prevMonth} title="Mes anterior">
