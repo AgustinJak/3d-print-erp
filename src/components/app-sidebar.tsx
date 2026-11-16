@@ -23,6 +23,7 @@ import {
   Percent,
   ListChecks,
   FolderOpen,
+  Calculator,
 } from "lucide-react";
 import {
   Sidebar,
@@ -66,6 +67,8 @@ const navCatalogo = [
   { title: "Productos", href: "/modelos", icon: Box },
   { title: "Categorías", href: "/categorias", icon: Tag },
   { title: "Tendencias", href: "/tendencias", icon: Radar },
+  // Cotizar una pieza sin crear el producto (docs/sdd/013).
+  { title: "Cotizador", href: "/cotizador", icon: Calculator },
 ];
 
 // Lo que se publica en Mercado Libre y la web. Oculto en la cuenta demo: sus endpoints no la atienden.

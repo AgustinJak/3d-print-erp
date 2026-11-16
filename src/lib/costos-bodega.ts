@@ -19,24 +19,9 @@ import { prisma } from "@/lib/prisma";
  * 65 y una de 95 son dos piezas distintas con dos recetas distintas.
  */
 
-export interface ParametrosCosto {
-  precioKg: number;
-  precioKwh: number;
-  consumoW: number;
-  desgasteHoras: number;
-  precioRepuestos: number;
-  margenError: number;
-}
-
-/** Los mismos defaults que la calculadora de Bodega, por si la fila no existe. */
-export const PARAMETROS_POR_DEFECTO: ParametrosCosto = {
-  precioKg: 16000,
-  precioKwh: 140,
-  consumoW: 120,
-  desgasteHoras: 4320,
-  precioRepuestos: 150000,
-  margenError: 20,
-};
+// La fórmula y los parámetros viven en costos-formula (sin base), para que los use también la pantalla.
+import { fabricacionDeReceta, PARAMETROS_POR_DEFECTO, type ParametrosCosto } from "@/lib/costos-formula";
+export { fabricacionDeReceta, PARAMETROS_POR_DEFECTO, type ParametrosCosto } from "@/lib/costos-formula";
 
 export interface Receta {
   bodegaModelId: string;
@@ -61,21 +46,6 @@ export interface CostoDeFila {
   receta: Receta;
   /** Bodega tiene los gramos pero nadie le puso insumos: puede estar corto. */
   insumosSinDeclarar: boolean;
-}
-
-/**
- * La fórmula de la calculadora de Bodega, igual a `src/renderer/src/lib/calc.ts`.
- *
- * Está duplicada a propósito: son dos aplicaciones distintas que no comparten
- * código, y preferimos una copia con nombre y comentario antes que un paquete
- * compartido para seis líneas. Si cambia allá, cambia acá.
- */
-export function fabricacionDeReceta(p: ParametrosCosto, gramos: number, segundos: number): number {
-  const horas = segundos / 3600;
-  const material = (p.precioKg / 1000) * gramos;
-  const luz = (p.consumoW / 1000) * p.precioKwh * horas;
-  const desgaste = (p.precioRepuestos / p.desgasteHoras) * horas;
-  return (material + luz + desgaste) * (1 + p.margenError / 100);
 }
 
 export async function leerParametros(): Promise<ParametrosCosto> {

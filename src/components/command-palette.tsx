@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Command } from "cmdk";
 import {
   LayoutDashboard, Tag, Box, ShoppingCart, Factory, Users, Palette,
-  DollarSign, Receipt, History, Radar, Search, Plug, BadgeDollarSign, Megaphone, Percent, ListChecks, FolderOpen,
+  DollarSign, Receipt, History, Radar, Search, Plug, BadgeDollarSign, Megaphone, Percent, ListChecks, FolderOpen, Calculator,
 } from "lucide-react";
 import { useIsDemoTenant } from "@/components/current-user-provider";
 
@@ -21,6 +21,7 @@ const pages: PageEntry[] = [
   { name: "Panel", href: "/", icon: LayoutDashboard, keywords: "dashboard inicio home panel" },
   { name: "Pedidos", href: "/pedidos", icon: ShoppingCart, keywords: "pedidos ordenes ventas" },
   { name: "Tareas", href: "/tareas", icon: ListChecks, keywords: "tareas pendientes trello tablero hacer dia" },
+  { name: "Cotizador", href: "/cotizador", icon: Calculator, keywords: "cotizar cotizador calculadora precio costo presupuesto gramos" },
   { name: "Archivos 3D", href: "/archivos", icon: FolderOpen, keywords: "archivos 3d stl 3mf obj modelos biblioteca descargar" },
   { name: "Produccion", href: "/produccion", icon: Factory, keywords: "produccion cola impresion fabricar" },
   { name: "Categorias", href: "/categorias", icon: Tag, keywords: "categorias productos tipos" },
