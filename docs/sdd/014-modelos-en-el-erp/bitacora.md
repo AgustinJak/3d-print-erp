@@ -48,3 +48,27 @@ una columna única en `archivos_3d` a la tabla `piezas_archivo` (pieza → archi
 **Para el que sigue**
 - Recorrer los 3MF con `for f in $(find …)` se rompe con los nombres con espacios (contó 44 en vez
   de 103): usar `find -print0` con `while read -d ''`.
+
+## 2026-11-16 · Claude (etapa 1)
+
+**Tareas:** TASK-001, 002 y 005 (completed); TASK-003 (blocked por 2 archivos); TASK-004 (in-review).
+
+**Qué se hizo**
+- `piezas_archivo` y columnas `hash`, `placas`, `actualizado_en` en `archivos_3d`
+  (`prisma/sql/archivos-de-piezas.sql`, aplicado).
+- `lib/leer-3mf.ts` con el fflate de three: placas, miniaturas, gramos y tiempo por placa. 18 pruebas.
+- `scripts/sdd-014-migrar-archivos.ts`: 89 de 91 piezas subidas y enganchadas; del bucket público,
+  44 copiados (14 eran repetidos de otros), verificados por sha256 y tamaño. Con el OK de Agustín se
+  borraron los 44 originales y `modelos-3d` pasó a privado.
+- En la página del producto, cada pieza muestra su archivo (`components/producto/archivo-de-pieza.tsx`);
+  "Fotos y archivo" ya no sube al bucket público. `subirArchivo` calcula el sha256 y no sube dos
+  veces lo mismo, y de un 3MF guarda las placas.
+- Carpetas de la biblioteca: "Modelos" y "Sin usar" (a Agustín no le gustaron los nombres técnicos).
+
+**Problemas y cómo se resolvieron**
+- Los 2 archivos de más de 50 MB fallan con "The object exceeded the maximum allowed size": manda el
+  límite global del proyecto, no el del bucket (500 MB). Queda bloqueado hasta que Agustín lo suba.
+- Agustín pausó la subida a mitad: se mataron los procesos de node a mano (`TaskStop` no alcanzaba
+  al hijo de tsx). La segunda corrida retomó sin repetir nada.
+- Aplicar a la receta los gramos y el tiempo leídos **no** se hizo: la receta la escribe la Bodega
+  (`bodega.models`), y si el ERP la cambia, la Bodega la pisa en su próxima edición. Va con la etapa 3.

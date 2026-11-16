@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Download, FileBox, ImageIcon, Star, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { FileBox, ImageIcon, Star, X } from "lucide-react";
 import { FileUpload } from "@/components/file-upload";
 import { json, pedir, Seccion } from "@/components/producto/seccion";
 import type { Ficha } from "@/app/api/modelos/[id]/ficha/route";
@@ -80,25 +79,11 @@ export function SeccionFotos({ producto, onCambio }: { producto: Ficha["producto
         </div>
         <p className="text-xs text-muted-foreground">Hasta {MAXIMO}. La primera es la que se muestra en las listas.</p>
 
-        <div className="space-y-1.5">
-          <p className="text-sm font-medium flex items-center gap-1.5">
-            <FileBox className="h-4 w-4 text-violet-500" /> Archivo .3mf
-          </p>
-          {producto.archivo3mfUrl ? (
-            <div className="flex gap-2">
-              <a href={producto.archivo3mfUrl} download target="_blank" rel="noopener noreferrer" className="flex-1">
-                <Button variant="outline" size="sm" className="w-full gap-2">
-                  <Download className="h-3.5 w-3.5" /> Descargar
-                </Button>
-              </a>
-              <Button variant="ghost" size="sm" disabled={ocupado} onClick={() => guardar({ archivo3mfUrl: null }, "Archivo quitado")}>
-                Quitar
-              </Button>
-            </div>
-          ) : (
-            <FileUpload bucket="modelos-3d" accept=".3mf" currentUrl={null} onUploaded={(url) => guardar({ archivo3mfUrl: url }, "Archivo subido")} label="Subir .3mf" compact />
-          )}
-        </div>
+        {/* El archivo 3D ya no va acá ni en el bucket público: cada pieza tiene el suyo, privado
+            (docs/sdd/014, spec 001). */}
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <FileBox className="h-3.5 w-3.5" strokeWidth={1.5} /> El archivo 3D de cada pieza está en Variantes y piezas.
+        </p>
       </div>
     </Seccion>
   );

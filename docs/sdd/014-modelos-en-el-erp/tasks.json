@@ -20,7 +20,7 @@
       "title": "Tabla piezas_archivo y columnas de la biblioteca",
       "description": "prisma/sql/archivos-de-piezas.sql: tabla piezas_archivo (pieza → archivo + placa) y hash, placas, actualizado_en en archivos_3d; modelos Prisma. Aplicado con apply_migration.",
       "component": "database",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [],
       "specs": [
@@ -32,15 +32,15 @@
         "prisma/schema.prisma"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-11-16",
+      "notes": "prisma/sql/archivos-de-piezas.sql aplicado."
     },
     {
       "id": "TASK-002",
       "title": "Leer placas, miniaturas, gramos y tiempo de un 3MF en el navegador",
       "description": "src/lib/leer-3mf.ts con fflate de three: placas de model_settings.config, miniaturas plate_<n>.png y, si está laminado, gramos y tiempo por placa de slice_info.config. Pruebas con 3MF reales, uno de varias placas (Jabonera.3mf tiene 17).",
       "component": "frontend",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [],
       "specs": [
@@ -54,15 +54,15 @@
         "scripts/sdd-014-probar-3mf.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-11-16",
+      "notes": "18 de 18 pruebas; con Jabonera.3mf (17 placas) y Piezas de ajedrez.3mf (6 placas con nombre)."
     },
     {
       "id": "TASK-003",
       "title": "Script de migración de los archivos de la Bodega",
       "description": "scripts/sdd-014-migrar-archivos.ts: lee la carpeta de la Bodega, sube archivo y miniaturas a piezas/<id archivo>/ del bucket privado, crea la fila de archivos_3d y el enganche en piezas_archivo. Las 13 carpetas sin pieza quedan afuera. Modo --prueba, retomable, saltea lo ya subido por hash. Probar primero el archivo de 229 MB.",
       "component": "script",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-001"
@@ -80,15 +80,15 @@
         "scripts/sdd-014-migrar-archivos.ts"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": "Correrlo sólo con el OK de Agustín y con la Bodega cerrada."
+      "completedAt": "2026-11-16",
+      "notes": "89 de 91 piezas subidas y enganchadas; 13 carpetas afuera (copias viejas o repetidas). Piezas de ajedrez (229 MB) y Jabonera (100 MB) quedan sin subir por decisión de Agustín (2026-11-16): pasan el límite de 50 MB del proyecto. Para subirlos: subir el límite en Storage → Settings y correr el script de nuevo."
     },
     {
       "id": "TASK-004",
       "title": "El archivo de cada pieza en la página del producto",
       "description": "Endpoints /api/piezas/[id]/archivo (GET, PUT), /api/archivos/[id]/reemplazar, y los cambios a POST /api/archivos y PATCH /api/archivos/[id]; componentes archivo-de-pieza.tsx y elegir-placas.tsx en la página del producto.",
       "component": "api",
-      "status": "pending",
+      "status": "in-review",
       "origin": "plan",
       "dependencies": [
         "TASK-001",
@@ -107,14 +107,14 @@
       ],
       "blockedReason": null,
       "completedAt": null,
-      "notes": null
+      "notes": "Código listo y compilando; falta publicarlo y verlo en pantalla."
     },
     {
       "id": "TASK-005",
       "title": "Pasar el bucket público modelos-3d al privado",
       "description": "Copiar los 44 archivos a la biblioteca privada (enganchados a la pieza si el producto tiene una sola), cambiar fotos.tsx para usar archivo-de-pieza y dejar de escribir archivo_3mf_url. Validado por Agustín el 2026-11-16.",
       "component": "database",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-004"
@@ -129,8 +129,8 @@
         "src/components/producto/fotos.tsx"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-11-16",
+      "notes": "44 copiados y verificados (sha256 y tamaño), originales borrados y bucket modelos-3d privado, con el OK de Agustín. modelos.archivo_3mf_url queda con links que ya no responden; la pantalla no lo usa más."
     },
     {
       "id": "TASK-006",

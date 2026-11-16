@@ -258,7 +258,7 @@ export async function archivos(tenantId: string): Promise<ArchivoVista[]> {
 }
 
 /** Un nombre de archivo seguro para la ruta del bucket. */
-const seguro = (s: string) =>
+export const seguro = (s: string) =>
   s
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -267,10 +267,12 @@ const seguro = (s: string) =>
     .slice(-120);
 
 /** Prepara una subida: la fila (sin confirmar) y el link firmado para que el navegador suba directo. */
-export async function prepararSubida(tenantId: string, usuario: string, a: { nombre: string; tamano: number; carpeta?: string | null }) {
+export async function prepararSubida(tenantId: string, usuario: string, a: { nombre: string; tamano: number; carpeta?: string | null; hash?: string | null }) {
   const nombre = a.nombre.trim().slice(0, 200);
+  // El sha256 que calculó el navegador (docs/sdd/014): evita subir dos veces lo mismo.
+  const hash = typeof a.hash === "string" && /^[0-9a-f]{64}$/.test(a.hash) ? a.hash : null;
   const fila = await prisma.archivo3d.create({
-    data: { tenantId, nombre, ruta: "", tamano: BigInt(Math.max(0, Math.round(a.tamano))), extension: extensionDe(nombre) || null, carpeta: a.carpeta?.trim() || null, subidoPor: usuario },
+    data: { tenantId, nombre, ruta: "", tamano: BigInt(Math.max(0, Math.round(a.tamano))), extension: extensionDe(nombre) || null, carpeta: a.carpeta?.trim() || null, subidoPor: usuario, hash },
   });
   const ruta = `${tenantId}/${fila.id}/${seguro(nombre)}`;
   const { data, error } = await storage().createSignedUploadUrl(ruta);

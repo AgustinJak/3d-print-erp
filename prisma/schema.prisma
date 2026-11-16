@@ -975,10 +975,31 @@ model Archivo3d {
   subido        Boolean  @default(false)
   subidoPor     String?  @map("subido_por")
   creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+  /// sha256 del archivo: no se sube dos veces lo mismo y la Bodega sabe si cambió (docs/sdd/014).
+  hash          String?
+  actualizadoEn DateTime @default(now()) @map("actualizado_en") @db.Timestamptz(6)
+  /// Placas leídas del 3MF: [{ n, nombre, miniatura, gramos, segundos }]. null en un STL.
+  placas        Json?
   tareas        TareaArchivo[]
+  piezas        PiezaArchivo[]
 
   @@index([tenantId, creadoEn(sort: Desc)])
   @@map("archivos_3d")
+}
+
+/// Qué archivo (y qué placa) es cada pieza de Bodega (docs/sdd/014). Un archivo puede ser de varias
+/// piezas: los colores comparten modelo y un 3MF puede tener una placa por diseño.
+model PiezaArchivo {
+  bodegaModelId String    @id @map("bodega_model_id")
+  tenantId      String    @default("sendero3d") @map("tenant_id")
+  archivoId     String    @map("archivo_id")
+  /// null = el archivo entero
+  placa         Int?
+  actualizadoEn DateTime  @default(now()) @map("actualizado_en") @db.Timestamptz(6)
+  archivo       Archivo3d @relation(fields: [archivoId], references: [id], onDelete: Cascade)
+
+  @@index([archivoId])
+  @@map("piezas_archivo")
 }
 
 model TareaArchivo {
