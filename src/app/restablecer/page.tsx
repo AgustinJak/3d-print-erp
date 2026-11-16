@@ -64,8 +64,11 @@ export default function RestablecerPage() {
     setError("");
     const { error } = await createClient().auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/restablecer` });
     setOcupado(false);
-    if (error) setError("No se pudo mandar el mail. Probá de nuevo en un rato.");
-    else setPaso("enviado");
+    if (error) {
+      // Supabase manda pocos mails por hora con su servicio incluido (429 over_email_send_rate_limit).
+      const limite = error.status === 429 || /rate limit/i.test(error.message);
+      setError(limite ? "Se pidieron muchos mails en la última hora y Supabase no deja mandar más por ahora. Probá en una hora, una sola vez." : "No se pudo mandar el mail. Probá de nuevo en un rato.");
+    } else setPaso("enviado");
   };
 
   const guardar = async (e: React.FormEvent) => {

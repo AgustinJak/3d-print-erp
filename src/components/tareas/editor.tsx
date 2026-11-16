@@ -13,8 +13,32 @@ import type { ArchivoVista, TareaVista } from "@/lib/tareas";
 
 /**
  * El detalle de una tarea (docs/sdd/012): título, nota, responsable, prioridad, fecha límite, los
- * pasos con tildes y los archivos 3D adjuntos. Se guarda al apretar Guardar.
+ * pasos con tildes y los archivos 3D adjuntos. Se guarda al apretar Guardar. Una tarea sin id es
+ * una nueva (ver `tareaNueva`): Guardar la crea.
  */
+
+/** Una tarea en blanco para el botón "Nueva tarea". */
+export function tareaNueva(estado: TareaVista["estado"] = "por_hacer", responsableId: string | null = null): TareaVista {
+  return {
+    id: "",
+    titulo: "",
+    nota: null,
+    estado,
+    orden: 0,
+    prioridad: "normal",
+    responsableId,
+    fechaLimite: null,
+    motivoTrabada: null,
+    pasos: [],
+    terminadaEn: null,
+    recurrenteId: null,
+    creadaEn: new Date().toISOString(),
+    archivos: [],
+  };
+}
+
+const NOMBRE_ESTADO: Record<TareaVista["estado"], string> = { por_hacer: "Por hacer", haciendo: "Haciendo", trabada: "Trabada", terminada: "Terminada" };
+
 export function EditorDeTarea({
   tarea,
   personas,
@@ -47,24 +71,25 @@ export function EditorDeTarea({
 
   if (!f) return <Dialog open={false} />;
   const set = (c: Partial<TareaVista>) => setF((x) => (x ? { ...x, ...c } : x));
+  const nueva = !f.id;
 
   const guardar = async () => {
     if (!f.titulo.trim()) return toast.error("Falta el título");
     setGuardando(true);
+    const datos = {
+      titulo: f.titulo,
+      nota: f.nota,
+      responsableId: f.responsableId,
+      prioridad: f.prioridad,
+      fechaLimite: f.fechaLimite,
+      motivoTrabada: f.estado === "trabada" ? f.motivoTrabada : undefined,
+      pasos: f.pasos,
+      archivos: f.archivos.map((a) => a.id),
+    };
     try {
-      const t = await pedirJson<TareaVista>(
-        `/api/tareas/${f.id}`,
-        conJson("PATCH", {
-          titulo: f.titulo,
-          nota: f.nota,
-          responsableId: f.responsableId,
-          prioridad: f.prioridad,
-          fechaLimite: f.fechaLimite,
-          motivoTrabada: f.estado === "trabada" ? f.motivoTrabada : undefined,
-          pasos: f.pasos,
-          archivos: f.archivos.map((a) => a.id),
-        })
-      );
+      const t = nueva
+        ? await pedirJson<TareaVista>("/api/tareas", conJson("POST", { ...datos, estado: f.estado }))
+        : await pedirJson<TareaVista>(`/api/tareas/${f.id}`, conJson("PATCH", datos));
       onGuardada(t);
       onCerrar();
     } catch (e) {
@@ -88,18 +113,45 @@ export function EditorDeTarea({
 
   return (
     <Dialog open={!!tarea} onOpenChange={(o) => !o && onCerrar()}>
-      <DialogContent className="max-h-[90vh] gap-0 overflow-y-auto p-0 sm:max-w-xl">
-        <DialogHeader className="border-b p-5 pr-12">
-          <DialogTitle className="sr-only">Editar la tarea</DialogTitle>
-          <Input value={f.titulo} onChange={(e) => set({ titulo: e.target.value })} className="h-auto border-0 px-0 text-lg font-medium shadow-none focus-visible:ring-0" />
+      <DialogContent className="max-h-[90vh] gap-0 overflow-x-hidden overflow-y-auto p-0 sm:max-w-xl">
+        <DialogHeader className="min-w-0 border-b p-5 pr-12">
+          <DialogTitle className="sr-only">{nueva ? "Nueva tarea" : "Editar la tarea"}</DialogTitle>
+          <Input
+            value={f.titulo}
+            onChange={(e) => set({ titulo: e.target.value })}
+            autoFocus={nueva}
+            placeholder="Qué hay que hacer"
+            className="h-auto min-w-0 border-0 bg-transparent px-0 text-lg font-medium shadow-none focus-visible:ring-0 dark:bg-transparent"
+          />
           <DialogDescription className="text-xs">
-            Creada el {new Date(f.creadaEn).toLocaleDateString("es-AR", { day: "numeric", month: "short" })}
-            {f.terminadaEn && ` · terminada el ${new Date(f.terminadaEn).toLocaleString("es-AR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`}
-            {f.recurrenteId && " · se repite"}
+            {nueva ? (
+              "Nueva tarea"
+            ) : (
+              <>
+                Creada el {new Date(f.creadaEn).toLocaleDateString("es-AR", { day: "numeric", month: "short" })}
+                {f.terminadaEn && ` · terminada el ${new Date(f.terminadaEn).toLocaleString("es-AR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`}
+                {f.recurrenteId && " · se repite"}
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-5 p-5">
+        <div className="min-w-0 space-y-5 p-5">
+          {nueva && (
+            <div className="flex flex-wrap gap-1.5">
+              {(["por_hacer", "haciendo", "trabada"] as const).map((e) => (
+                <button
+                  key={e}
+                  type="button"
+                  onClick={() => set({ estado: e })}
+                  aria-pressed={f.estado === e}
+                  className={`h-8 rounded-lg px-3 text-sm transition-colors duration-150 ${f.estado === e ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:text-foreground"}`}
+                >
+                  {NOMBRE_ESTADO[e]}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <label className="space-y-1.5 text-sm">
               <span className="text-xs text-muted-foreground">Responsable</span>
@@ -220,15 +272,19 @@ export function EditorDeTarea({
         </div>
 
         <DialogFooter className="border-t p-4 sm:justify-between">
-          <Button variant="ghost" className="text-muted-foreground hover:text-red-600" onClick={borrar}>
-            <Trash2 className="h-4 w-4" strokeWidth={1.5} /> Borrar
-          </Button>
+          {nueva ? (
+            <span />
+          ) : (
+            <Button variant="ghost" className="text-muted-foreground hover:text-red-600" onClick={borrar}>
+              <Trash2 className="h-4 w-4" strokeWidth={1.5} /> Borrar
+            </Button>
+          )}
           <div className="flex gap-2">
             <Button variant="outline" onClick={onCerrar}>
               Cancelar
             </Button>
             <Button onClick={guardar} disabled={guardando}>
-              {guardando ? "Guardando…" : "Guardar"}
+              {guardando ? "Guardando…" : nueva ? "Crear tarea" : "Guardar"}
             </Button>
           </div>
         </DialogFooter>

@@ -7,7 +7,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Segmentado } from "@/components/segmentado";
 import { pedirJson, type Persona } from "@/components/tareas/comun";
 import { TableroDeTareas } from "@/components/tareas/tablero";
-import { EditorDeTarea } from "@/components/tareas/editor";
+import { EditorDeTarea, tareaNueva } from "@/components/tareas/editor";
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { HistorialDeTareas } from "@/components/tareas/historial";
 import { TareasQueSeRepiten } from "@/components/tareas/recurrentes";
 import type { TareaVista } from "@/lib/tareas";
@@ -49,6 +51,9 @@ export default function TareasPage() {
     return () => document.removeEventListener("visibilitychange", alVolver);
   }, [cargar, vista]);
 
+  // Una tarea nueva arranca asignada a la persona del filtro, si hay una elegida.
+  const nueva = (estado: TareaVista["estado"]) => setAbierta(tareaNueva(estado, filtro !== "todas" && filtro !== "sin" ? filtro : null));
+
   const terminadasHoy = tareas.filter((t) => t.estado === "terminada").length;
   const abiertas = tareas.length - terminadasHoy;
 
@@ -61,6 +66,9 @@ export default function TareasPage() {
             {cargando ? "El tablero del día" : `${abiertas} ${abiertas === 1 ? "abierta" : "abiertas"} · ${terminadasHoy} ${terminadasHoy === 1 ? "terminada" : "terminadas"} hoy`}
           </p>
         </div>
+        <Button onClick={() => nueva("por_hacer")}>
+          <Plus className="h-4 w-4" strokeWidth={1.5} /> Nueva tarea
+        </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -93,7 +101,7 @@ export default function TareasPage() {
             ))}
           </div>
         ) : (
-          <TableroDeTareas tareas={tareas} setTareas={setTareas} personas={personas} filtro={filtro} onAbrir={setAbierta} />
+          <TableroDeTareas tareas={tareas} setTareas={setTareas} personas={personas} filtro={filtro} onAbrir={setAbierta} onNueva={nueva} />
         ))}
       {vista === "historial" && (
         <HistorialDeTareas
@@ -110,7 +118,7 @@ export default function TareasPage() {
         tarea={abierta}
         personas={personas}
         onCerrar={() => setAbierta(null)}
-        onGuardada={(t) => setTareas((ts) => (ts.some((x) => x.id === t.id) ? ts.map((x) => (x.id === t.id ? t : x)) : ts))}
+        onGuardada={(t) => setTareas((ts) => (ts.some((x) => x.id === t.id) ? ts.map((x) => (x.id === t.id ? t : x)) : [...ts, t]))}
         onBorrada={(id) => setTareas((ts) => ts.filter((x) => x.id !== id))}
       />
     </motion.div>

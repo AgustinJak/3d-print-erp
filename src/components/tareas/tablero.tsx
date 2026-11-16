@@ -13,8 +13,8 @@ import type { TareaVista } from "@/lib/tareas";
 
 /**
  * El tablero del día (docs/sdd/012): Por hacer, Haciendo, Trabadas y Terminadas hoy. Arrastrar
- * mueve y ordena en el acto y guarda atrás; pasar a Trabadas pide el motivo. Arriba de cada
- * columna (salvo Terminadas) se escribe una tarea nueva y Enter.
+ * mueve y ordena en el acto y guarda atrás; pasar a Trabadas pide el motivo. Las tareas nuevas se
+ * crean con el botón "Nueva tarea" o el + de cada columna, que abren el editor (Agustín, 2026-11-16).
  */
 
 function Tarjeta({ t, personas, hoy, arrastrando, onAbrir }: { t: TareaVista; personas: Persona[]; hoy: string; arrastrando: boolean; onAbrir: () => void }) {
@@ -69,6 +69,7 @@ export function TableroDeTareas({
   personas,
   filtro,
   onAbrir,
+  onNueva,
 }: {
   tareas: TareaVista[];
   setTareas: React.Dispatch<React.SetStateAction<TareaVista[]>>;
@@ -76,9 +77,10 @@ export function TableroDeTareas({
   /** "todas", "sin" o el id de una persona. */
   filtro: string;
   onAbrir: (t: TareaVista) => void;
+  /** Abre el editor para crear una tarea en esa columna. */
+  onNueva: (estado: TareaVista["estado"]) => void;
 }) {
   const hoy = diaDe(new Date());
-  const [nuevas, setNuevas] = useState<Record<string, string>>({});
   const [trabando, setTrabando] = useState<{ id: string; motivo: string } | null>(null);
   const guardando = useRef(0);
 
@@ -115,18 +117,6 @@ export function TableroDeTareas({
     if (estado === "trabada" && t.estado !== "trabada") setTrabando({ id: t.id, motivo: "" });
   };
 
-  const crear = async (estado: TareaVista["estado"]) => {
-    const titulo = nuevas[estado]?.trim();
-    if (!titulo) return;
-    setNuevas((n) => ({ ...n, [estado]: "" }));
-    try {
-      const t = await pedirJson<TareaVista>("/api/tareas", conJson("POST", { titulo, estado, responsableId: filtro !== "todas" && filtro !== "sin" ? filtro : null }));
-      setTareas((ts) => [...ts, t]);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "No se pudo crear");
-    }
-  };
-
   return (
     <>
       <DragDropContext onDragEnd={alSoltar}>
@@ -136,28 +126,22 @@ export function TableroDeTareas({
               const lista = deColumna(col.estado);
               return (
                 <section key={col.estado} className="flex flex-col rounded-xl bg-muted/50 p-2">
-                  <header className="flex items-baseline justify-between px-2 pt-1 pb-2">
+                  <header className="flex h-9 items-center justify-between pr-1 pl-2">
                     <h2 className="text-sm font-medium">
                       {col.titulo} <span className="ml-1 font-mono text-xs text-muted-foreground">{lista.length}</span>
                     </h2>
+                    {col.estado !== "terminada" && (
+                      <button
+                        type="button"
+                        onClick={() => onNueva(col.estado)}
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-background hover:text-foreground"
+                        title={`Nueva tarea en ${col.titulo}`}
+                        aria-label={`Nueva tarea en ${col.titulo}`}
+                      >
+                        <Plus className="h-4 w-4" strokeWidth={1.5} />
+                      </button>
+                    )}
                   </header>
-                  {col.estado !== "terminada" && (
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        crear(col.estado);
-                      }}
-                      className="mb-2 flex items-center gap-2 rounded-lg bg-background px-2.5 ring-1 ring-border focus-within:ring-ring"
-                    >
-                      <Plus className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
-                      <input
-                        value={nuevas[col.estado] ?? ""}
-                        onChange={(e) => setNuevas((n) => ({ ...n, [col.estado]: e.target.value }))}
-                        placeholder="Nueva tarea"
-                        className="h-9 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                      />
-                    </form>
-                  )}
                   <Droppable droppableId={col.estado}>
                     {(drop, estado) => (
                       <div ref={drop.innerRef} {...drop.droppableProps} className={`flex min-h-32 flex-1 flex-col gap-2 rounded-lg transition-colors duration-150 ${estado.isDraggingOver ? "bg-primary/[0.06]" : ""}`}>
