@@ -5,6 +5,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 interface CurrentUser {
   userId: string;
   email?: string;
+  /** El nombre del perfil ("Taiel Cleiman"), para mostrar quién tiene la sesión. */
+  nombre?: string | null;
   tenantId: string;
 }
 
