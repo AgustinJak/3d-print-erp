@@ -33,20 +33,30 @@ export default function RestablecerPage() {
     const supabase = createClient();
     const hash = new URLSearchParams(window.location.hash.slice(1));
     const code = new URLSearchParams(window.location.search).get("code");
+    const query = new URLSearchParams(window.location.search);
+    const limpiarUrl = () => window.history.replaceState(null, "", window.location.pathname);
     (async () => {
       try {
-        if (hash.get("access_token") && hash.get("refresh_token")) {
-          const { error } = await supabase.auth.setSession({ access_token: hash.get("access_token")!, refresh_token: hash.get("refresh_token")! });
-          if (error) throw error;
-          window.history.replaceState(null, "", window.location.pathname);
+        // El cliente de Supabase canjea el link solo al iniciarse (detectSessionInUrl), y
+        // getSession() espera ese canje. Canjearlo otra vez a mano falla porque el código es de un
+        // solo uso: el 2026-11-16 eso mostraba "el link venció" con la sesión ya abierta.
+        const { data } = await supabase.auth.getSession();
+        if (code || hash.get("access_token")) {
+          if (!data.session) {
+            const { error } = code
+              ? await supabase.auth.exchangeCodeForSession(code)
+              : await supabase.auth.setSession({ access_token: hash.get("access_token")!, refresh_token: hash.get("refresh_token") ?? "" });
+            if (error) throw error;
+          }
+          limpiarUrl();
           setPaso("nueva");
-        } else if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) throw error;
-          window.history.replaceState(null, "", window.location.pathname);
+        } else if (data.session) {
+          // Con la sesión abierta (por ejemplo, el link ya se abrió en otra pestaña) se cambia igual.
+          limpiarUrl();
           setPaso("nueva");
-        } else if (hash.get("error_description")) {
-          setError(hash.get("error_description")!.replace(/\+/g, " "));
+        } else if (hash.get("error_code") || query.get("error_code")) {
+          limpiarUrl();
+          setError("El link venció o ya se usó. Pedí uno nuevo.");
           setPaso("error");
         } else {
           setPaso("pedir");
