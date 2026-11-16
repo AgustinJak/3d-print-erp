@@ -1,6 +1,6 @@
 ---
 feature: 014-modelos-en-el-erp
-estado: draft
+estado: validated
 actualizado: 2026-11-16
 ---
 
@@ -31,19 +31,32 @@ actualizado: 2026-11-16
 
 ```sql
 -- prisma/sql/archivos-de-piezas.sql (aditivo)
-ALTER TABLE public.archivos_3d ADD COLUMN IF NOT EXISTS bodega_model_id text;
--- Una pieza, un archivo vigente (RN-2 de la spec 001).
-CREATE UNIQUE INDEX IF NOT EXISTS archivos_3d_pieza
-  ON public.archivos_3d (bodega_model_id) WHERE bodega_model_id IS NOT NULL;
--- Para que la Bodega sepa si cambió sin bajarlo (RN-2 de la spec 003).
+-- Para que la Bodega sepa si cambió sin bajarlo (RN-2 de la spec 003) y no subir dos veces lo mismo.
 ALTER TABLE public.archivos_3d ADD COLUMN IF NOT EXISTS actualizado_en timestamptz NOT NULL DEFAULT now();
 ALTER TABLE public.archivos_3d ADD COLUMN IF NOT EXISTS hash text;  -- sha256 del archivo
+-- Las placas leídas del 3MF: [{ "n": 1, "nombre": "", "miniatura": "piezas/<id>/placa-1.png",
+--   "gramos": null, "segundos": null }]. null en un STL.
+ALTER TABLE public.archivos_3d ADD COLUMN IF NOT EXISTS placas jsonb;
+
+-- Qué archivo (y qué placa) es cada pieza. Un archivo puede ser de varias piezas (colores, placas);
+-- una pieza, de a lo sumo un archivo (RN-2 de la spec 001).
+CREATE TABLE IF NOT EXISTS public.piezas_archivo (
+  bodega_model_id text PRIMARY KEY,
+  tenant_id       text NOT NULL DEFAULT 'sendero3d',
+  archivo_id      text NOT NULL REFERENCES public.archivos_3d(id) ON DELETE CASCADE,
+  placa           integer,          -- null = el archivo entero
+  actualizado_en  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS piezas_archivo_archivo ON public.piezas_archivo (archivo_id);
+ALTER TABLE public.piezas_archivo ENABLE ROW LEVEL SECURITY;  -- sin políticas: sólo el servidor
 ```
 
 - Sin FK a `bodega.models`, igual que `stock.bodega_model_id`: la pieza puede llegar después.
+- Borrar un archivo de la biblioteca suelta sus piezas (`ON DELETE CASCADE` sobre el enganche, no
+  sobre la pieza); la página avisa cuántas piezas quedan sin archivo antes de borrar.
 - **Lectura desde la Bodega** (etapa 3): una función `public.bodega_archivos_de_piezas()`
-  `SECURITY DEFINER`, sólo `authenticated`, que devuelve `bodega_model_id, nombre, tamano, hash,
-  actualizado_en, ruta, miniatura_ruta` del tenant `sendero3d`. Y una política de `storage.objects`
+  `SECURITY DEFINER`, sólo `authenticated`, que devuelve `bodega_model_id, archivo_id, placa,
+  nombre, tamano, hash, actualizado_en, ruta, miniatura_ruta` del tenant `sendero3d`. Y una política de `storage.objects`
   para `SELECT` de `authenticated` en `bucket_id = 'archivos-3d' AND name LIKE 'piezas/%'`, para que
   la Bodega pida su link firmado con su propia sesión. La biblioteca suelta (`archivos/...`) sigue
   sólo para el servidor.
@@ -55,21 +68,25 @@ ALTER TABLE public.archivos_3d ADD COLUMN IF NOT EXISTS hash text;  -- sha256 de
 
 | Método | Ruta | Permiso | Qué hace |
 |---|---|---|---|
-| GET | `/api/piezas/[id]/archivo` | sesión, sin demo | El archivo de la pieza y un link firmado para verlo o bajarlo |
-| POST | `/api/piezas/[id]/archivo` | sesión, sin demo | Prepara la subida (ruta + token firmado); reemplaza si había otro |
-| PUT | `/api/piezas/[id]/archivo` | sesión, sin demo | Confirma la subida, guarda tamaño, hash y miniatura, borra el anterior |
-| POST | `/api/productos/alta` | sesión, sin demo | Crea producto + pieza + fila de stock enganchada en una transacción; devuelve el id de la pieza para subir el archivo |
+| GET | `/api/piezas/[id]/archivo` | sesión, sin demo | El archivo de la pieza, su placa y un link firmado para verlo o bajarlo |
+| PUT | `/api/piezas/[id]/archivo` | sesión, sin demo | Engancha la pieza a un archivo de la biblioteca y una placa, o la suelta |
+| POST | `/api/archivos` (existe) | sesión, sin demo | Prepara la subida; se le suma `carpeta: "piezas"` para la ruta `piezas/<id>/` |
+| PATCH | `/api/archivos/[id]` (existe) | sesión, sin demo | Confirma la subida; se le suman `hash` y `placas` (con sus miniaturas ya subidas) |
+| POST | `/api/archivos/[id]/reemplazar` | sesión, sin demo | Prepara el reemplazo: dice cuántas piezas lo usan y da el token para la versión nueva |
+| POST | `/api/productos/alta` | sesión, sin demo | Crea producto, grupos, piezas, filas de stock, combinaciones, recetas de insumo e insumos nuevos en una transacción; devuelve los ids de pieza para enganchar los archivos |
 
-Los gramos y el tiempo leídos del 3MF no tienen endpoint propio: el navegador los manda con el
-`PUT` o con el alta, y se aplican a la receta sólo si el usuario confirma (RN-4 de la spec 001).
+El alta no recibe archivos: el navegador los sube primero a la biblioteca (o después, si falla) y
+el alta manda sólo `archivoId` y `placa` por pieza. Los gramos y el tiempo leídos del 3MF viajan
+como datos de la receta y se aplican sólo si el usuario confirma (RN-5 de la spec 001).
 
 ## 4. Páginas y componentes
 
 | Ruta / componente | Tipo | Notas |
 |---|---|---|
-| `src/lib/leer-3mf.ts` | pura | Port de `storage.ts:17` con `unzipSync` de `three/examples/jsm/libs/fflate.module.js` y `filter` para descomprimir sólo `slice_info.config` y las miniaturas. Con pruebas sobre 3MF reales chicos. |
-| `src/components/producto/archivo-de-pieza.tsx` | client | Miniatura, visor 3D (el de `components/archivos/visor-3d.tsx`), bajar, subir o reemplazar con progreso. Va en la página del producto, por pieza. |
-| `src/components/producto/alta.tsx` | client | Reemplaza el diálogo de `modelos/page.tsx:531`: zona para soltar el archivo, nombre, serie, material, y el resultado de `cotizar()`. |
+| `src/lib/leer-3mf.ts` | pura | Port de `storage.ts:17` con `unzipSync` de `three/examples/jsm/libs/fflate.module.js` y `filter` para descomprimir sólo `Metadata/*.config` y las miniaturas. Devuelve las placas (`model_settings.config`: `plater_id`, `plater_name`; `plate_<n>.png`) y, si está laminado, gramos y tiempo por placa (`slice_info.config`, un `<plate>` con `index`, `prediction`, `weight`). Con pruebas sobre 3MF reales chicos, uno de varias placas. |
+| `src/components/producto/archivo-de-pieza.tsx` | client | Miniatura (la de su placa), visor 3D (el de `components/archivos/visor-3d.tsx`), bajar, subir, reemplazar o elegir de la biblioteca, y elegir la placa. Va en la página del producto, por pieza. |
+| `src/components/producto/elegir-placas.tsx` | client | Grilla de miniaturas de las placas de un 3MF: se tildan las que son opciones y se les pone nombre. |
+| `src/components/producto/alta.tsx` | client | Reemplaza el diálogo de `modelos/page.tsx:531`: archivo, nombre, serie, material, gramos y tiempo, grupo "otra pieza" con sus opciones y sus modelos, grupo "insumo" con el selector de insumos (y "crear insumo"), y el resultado de `cotizar()`. |
 | `src/app/(app)/cotizador/page.tsx` | client | Botón "Crear producto con esto", que abre el alta con los datos. |
 | `src/app/(app)/modelos/page.tsx` | client | Saca "Traer de Bodega" en la etapa 3. |
 
@@ -112,7 +129,9 @@ archivos de Bodega (Bodega es de un solo negocio, `altas-bodega.ts:41`).
 | El alta automática duplica una pieza creada en el ERP | El alta crea pieza y fila de stock enganchada en la misma transacción (RN-2 de la spec 002). |
 | Una subida grande se corta | La fila queda `subido = false`; el script y la pantalla la retoman. |
 | La caché de la Bodega descarga 800 MB de golpe | Descarga a pedido; en la PC del taller los archivos ya están en la carpeta (RN-3 de la spec 003). |
-| Las 13 carpetas sin pieza son pruebas viejas | Se suben sueltas a "Sin pieza" o se dejan afuera, según decida Agustín. |
+| Las 13 carpetas sin pieza son pruebas viejas | Quedan afuera (Agustín, 2026-11-16); siguen en la PC. |
+| Se toman placas como variantes en un producto partido en placas (katanas) | Las placas nunca se vuelven opciones solas: el usuario las tilda (RN-8 de la spec 002). |
+| Reemplazar un archivo compartido cambia varias piezas sin querer | El reemplazo dice antes cuántas piezas lo usan y pide confirmar. |
 
 ## 10. Documentación a actualizar
 

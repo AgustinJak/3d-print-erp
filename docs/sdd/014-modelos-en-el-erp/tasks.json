@@ -3,44 +3,56 @@
   "featureId": "014-modelos-en-el-erp",
   "epic": "ninguna",
   "version": "1.0.0",
-  "status": "draft",
+  "status": "in-progress",
   "branch": "feat/003-precios-desde-bodega",
   "baseBranch": "master",
   "pullRequest": null,
   "validation": {
-    "approved": false,
-    "approvedBy": null,
-    "approvedAt": null,
-    "notes": "Faltan las preguntas abiertas: las 13 carpetas sin pieza, el bucket público modelos-3d y la Bodega de Taiel."
+    "approved": true,
+    "approvedBy": "Agustín",
+    "approvedAt": "2026-11-16",
+    "notes": "\"dale subilo y arrancá la etapa 1\", con las decisiones de las preguntas abiertas y el diseño de variantes e insumos."
   },
   "updatedAt": "2026-11-16",
   "tasks": [
     {
       "id": "TASK-001",
-      "title": "Enganchar archivos de la biblioteca a piezas",
-      "description": "prisma/sql/archivos-de-piezas.sql: bodega_model_id con único parcial, actualizado_en y hash en archivos_3d; modelo Prisma. Aplicado con apply_migration.",
+      "title": "Tabla piezas_archivo y columnas de la biblioteca",
+      "description": "prisma/sql/archivos-de-piezas.sql: tabla piezas_archivo (pieza → archivo + placa) y hash, placas, actualizado_en en archivos_3d; modelos Prisma. Aplicado con apply_migration.",
       "component": "database",
       "status": "pending",
       "origin": "plan",
       "dependencies": [],
-      "specs": ["001-archivos-en-la-nube"],
+      "specs": [
+        "001-archivos-en-la-nube"
+      ],
       "acceptanceCriteria": [],
-      "files": ["prisma/sql/archivos-de-piezas.sql", "prisma/schema.prisma"],
+      "files": [
+        "prisma/sql/archivos-de-piezas.sql",
+        "prisma/schema.prisma"
+      ],
       "blockedReason": null,
       "completedAt": null,
       "notes": null
     },
     {
       "id": "TASK-002",
-      "title": "Leer gramos, tiempo y miniatura de un 3MF en el navegador",
-      "description": "src/lib/leer-3mf.ts con fflate de three, descomprimiendo sólo slice_info.config y las miniaturas; misma suma por placas que Bodega storage.ts:17. Pruebas con 3MF reales.",
+      "title": "Leer placas, miniaturas, gramos y tiempo de un 3MF en el navegador",
+      "description": "src/lib/leer-3mf.ts con fflate de three: placas de model_settings.config, miniaturas plate_<n>.png y, si está laminado, gramos y tiempo por placa de slice_info.config. Pruebas con 3MF reales, uno de varias placas (Jabonera.3mf tiene 17).",
       "component": "frontend",
       "status": "pending",
       "origin": "plan",
       "dependencies": [],
-      "specs": ["001-archivos-en-la-nube"],
-      "acceptanceCriteria": ["CA-5 de la spec 001-archivos-en-la-nube"],
-      "files": ["src/lib/leer-3mf.ts", "scripts/sdd-014-probar-3mf.ts"],
+      "specs": [
+        "001-archivos-en-la-nube"
+      ],
+      "acceptanceCriteria": [
+        "CA-5 de la spec 001-archivos-en-la-nube"
+      ],
+      "files": [
+        "src/lib/leer-3mf.ts",
+        "scripts/sdd-014-probar-3mf.ts"
+      ],
       "blockedReason": null,
       "completedAt": null,
       "notes": null
@@ -48,14 +60,25 @@
     {
       "id": "TASK-003",
       "title": "Script de migración de los archivos de la Bodega",
-      "description": "scripts/sdd-014-migrar-archivos.ts: lee la carpeta de la Bodega, sube archivo y miniatura a piezas/<id>/ del bucket privado y crea la fila de archivos_3d. Modo --prueba, retomable, saltea lo ya subido por hash. Probar primero el archivo de 229 MB.",
+      "description": "scripts/sdd-014-migrar-archivos.ts: lee la carpeta de la Bodega, sube archivo y miniaturas a piezas/<id archivo>/ del bucket privado, crea la fila de archivos_3d y el enganche en piezas_archivo. Las 13 carpetas sin pieza quedan afuera. Modo --prueba, retomable, saltea lo ya subido por hash. Probar primero el archivo de 229 MB.",
       "component": "script",
       "status": "pending",
       "origin": "plan",
-      "dependencies": ["TASK-001"],
-      "specs": ["001-archivos-en-la-nube"],
-      "acceptanceCriteria": ["CA-1", "CA-2", "CA-3", "CA-6 de la spec 001-archivos-en-la-nube"],
-      "files": ["scripts/sdd-014-migrar-archivos.ts"],
+      "dependencies": [
+        "TASK-001"
+      ],
+      "specs": [
+        "001-archivos-en-la-nube"
+      ],
+      "acceptanceCriteria": [
+        "CA-1",
+        "CA-2",
+        "CA-3",
+        "CA-6 de la spec 001-archivos-en-la-nube"
+      ],
+      "files": [
+        "scripts/sdd-014-migrar-archivos.ts"
+      ],
       "blockedReason": null,
       "completedAt": null,
       "notes": "Correrlo sólo con el OK de Agustín y con la Bodega cerrada."
@@ -63,14 +86,25 @@
     {
       "id": "TASK-004",
       "title": "El archivo de cada pieza en la página del producto",
-      "description": "Endpoints /api/piezas/[id]/archivo (GET, POST, PUT) y componente archivo-de-pieza.tsx: miniatura, visor, bajar, subir o reemplazar, y aplicar gramos y tiempo a la receta con confirmación.",
+      "description": "Endpoints /api/piezas/[id]/archivo (GET, PUT), /api/archivos/[id]/reemplazar, y los cambios a POST /api/archivos y PATCH /api/archivos/[id]; componentes archivo-de-pieza.tsx y elegir-placas.tsx en la página del producto.",
       "component": "api",
       "status": "pending",
       "origin": "plan",
-      "dependencies": ["TASK-001", "TASK-002"],
-      "specs": ["001-archivos-en-la-nube"],
-      "acceptanceCriteria": ["CA-4", "CA-5 de la spec 001-archivos-en-la-nube"],
-      "files": ["src/app/api/piezas/[id]/archivo/route.ts", "src/components/producto/archivo-de-pieza.tsx"],
+      "dependencies": [
+        "TASK-001",
+        "TASK-002"
+      ],
+      "specs": [
+        "001-archivos-en-la-nube"
+      ],
+      "acceptanceCriteria": [
+        "CA-4",
+        "CA-5 de la spec 001-archivos-en-la-nube"
+      ],
+      "files": [
+        "src/app/api/piezas/[id]/archivo/route.ts",
+        "src/components/producto/archivo-de-pieza.tsx"
+      ],
       "blockedReason": null,
       "completedAt": null,
       "notes": null
@@ -78,44 +112,71 @@
     {
       "id": "TASK-005",
       "title": "Pasar el bucket público modelos-3d al privado",
-      "description": "Si Agustín lo valida: copiar los 44 archivos a piezas/ o a la biblioteca, cambiar fotos.tsx para usar el componente nuevo y dejar de escribir archivo_3mf_url.",
+      "description": "Copiar los 44 archivos a la biblioteca privada (enganchados a la pieza si el producto tiene una sola), cambiar fotos.tsx para usar archivo-de-pieza y dejar de escribir archivo_3mf_url. Validado por Agustín el 2026-11-16.",
       "component": "database",
       "status": "pending",
       "origin": "plan",
-      "dependencies": ["TASK-004"],
-      "specs": ["001-archivos-en-la-nube"],
-      "acceptanceCriteria": [],
-      "files": ["src/components/producto/fotos.tsx"],
+      "dependencies": [
+        "TASK-004"
+      ],
+      "specs": [
+        "001-archivos-en-la-nube"
+      ],
+      "acceptanceCriteria": [
+        "CA-7 de la spec 001-archivos-en-la-nube"
+      ],
+      "files": [
+        "src/components/producto/fotos.tsx"
+      ],
       "blockedReason": null,
       "completedAt": null,
-      "notes": "Depende de la pregunta abierta."
+      "notes": null
     },
     {
       "id": "TASK-006",
-      "title": "Alta de producto con archivo",
-      "description": "POST /api/productos/alta (producto + pieza en bodega.models con origen 'erp' + fila de stock enganchada, en una transacción) y alta.tsx en lugar del diálogo de modelos/page.tsx:531, con cotizar() y la subida del archivo.",
+      "title": "Alta de producto con archivo, variantes e insumos",
+      "description": "POST /api/productos/alta: producto, grupo otra pieza con sus piezas (origen erp) y filas de stock enganchadas, combinaciones, grupo insumo con su receta, insumo nuevo si hace falta, enganches pieza → archivo + placa; todo en una transacción reutilizando catalogo.ts, combinaciones.ts y stock-filas.ts. alta.tsx en lugar del diálogo de modelos/page.tsx:531.",
       "component": "api",
       "status": "pending",
       "origin": "plan",
-      "dependencies": ["TASK-004"],
-      "specs": ["002-crear-desde-el-erp"],
-      "acceptanceCriteria": ["CA-1", "CA-2", "CA-3 de la spec 002-crear-desde-el-erp"],
-      "files": ["src/app/api/productos/alta/route.ts", "src/components/producto/alta.tsx", "src/app/(app)/modelos/page.tsx"],
+      "dependencies": [
+        "TASK-004"
+      ],
+      "specs": [
+        "002-crear-desde-el-erp"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 a CA-7 de la spec 002-crear-desde-el-erp"
+      ],
+      "files": [
+        "src/app/api/productos/alta/route.ts",
+        "src/components/producto/alta.tsx",
+        "src/app/(app)/modelos/page.tsx"
+      ],
       "blockedReason": null,
       "completedAt": null,
       "notes": null
     },
     {
       "id": "TASK-007",
-      "title": "Opción con archivo y crear desde el cotizador",
-      "description": "Agregar una opción con su pieza y archivo desde la página del producto; botón \"Crear producto con esto\" en el cotizador.",
+      "title": "Modelos en productos existentes, insumos con archivo y crear desde el cotizador",
+      "description": "En la página del producto: agregar opción con su modelo y elegir la placa de cada opción. En la lista de insumos: crear insumo con archivo. En el cotizador: Crear producto con esto.",
       "component": "frontend",
       "status": "pending",
       "origin": "plan",
-      "dependencies": ["TASK-006"],
-      "specs": ["002-crear-desde-el-erp"],
-      "acceptanceCriteria": ["CA-4", "CA-5 de la spec 002-crear-desde-el-erp"],
-      "files": ["src/app/(app)/cotizador/page.tsx"],
+      "dependencies": [
+        "TASK-006"
+      ],
+      "specs": [
+        "002-crear-desde-el-erp"
+      ],
+      "acceptanceCriteria": [
+        "CA-8 de la spec 002-crear-desde-el-erp"
+      ],
+      "files": [
+        "src/app/(app)/cotizador/page.tsx",
+        "src/app/api/insumos/route.ts"
+      ],
       "blockedReason": null,
       "completedAt": null,
       "notes": null
@@ -127,10 +188,16 @@
       "component": "database",
       "status": "pending",
       "origin": "plan",
-      "dependencies": ["TASK-003"],
-      "specs": ["003-cambios-en-bodega"],
+      "dependencies": [
+        "TASK-003"
+      ],
+      "specs": [
+        "003-cambios-en-bodega"
+      ],
       "acceptanceCriteria": [],
-      "files": ["prisma/sql/archivos-de-piezas.sql"],
+      "files": [
+        "prisma/sql/archivos-de-piezas.sql"
+      ],
       "blockedReason": null,
       "completedAt": null,
       "notes": null
@@ -138,14 +205,25 @@
     {
       "id": "TASK-009",
       "title": "La Bodega como cliente (versión nueva de la Bodega)",
-      "description": "En Bodega3D-App: crear localmente las piezas que bajan, descargar con caché y progreso, abrir en Bambu Studio, dejar de subir la receta, sacar Nuevo modelo, tamaño de la caché en configuración. Canales IPC nuevos documentados en BOD - Flujos.",
+      "description": "En Bodega3D-App: crear localmente las piezas que bajan, descargar con caché y progreso (un archivo compartido se baja una vez), mostrar la placa, abrir en Bambu Studio, dejar de subir la receta, sacar Nuevo modelo, tamaño de la caché en configuración. Canales IPC nuevos documentados en BOD - Flujos.",
       "component": "bodega",
       "status": "pending",
       "origin": "plan",
-      "dependencies": ["TASK-006", "TASK-008"],
-      "specs": ["003-cambios-en-bodega"],
-      "acceptanceCriteria": ["CA-1 a CA-6 de la spec 003-cambios-en-bodega"],
-      "files": ["Bodega/Bodega3D-App/src/main/sync.ts", "Bodega/Bodega3D-App/src/main/storage.ts", "Bodega/Bodega3D-App/src/main/ipc.ts"],
+      "dependencies": [
+        "TASK-006",
+        "TASK-008"
+      ],
+      "specs": [
+        "003-cambios-en-bodega"
+      ],
+      "acceptanceCriteria": [
+        "CA-1 a CA-6 de la spec 003-cambios-en-bodega"
+      ],
+      "files": [
+        "Bodega/Bodega3D-App/src/main/sync.ts",
+        "Bodega/Bodega3D-App/src/main/storage.ts",
+        "Bodega/Bodega3D-App/src/main/ipc.ts"
+      ],
       "blockedReason": null,
       "completedAt": null,
       "notes": "Release de la Bodega sólo a pedido."
@@ -157,10 +235,17 @@
       "component": "docs",
       "status": "pending",
       "origin": "plan",
-      "dependencies": ["TASK-009"],
-      "specs": ["002-crear-desde-el-erp", "003-cambios-en-bodega"],
+      "dependencies": [
+        "TASK-009"
+      ],
+      "specs": [
+        "002-crear-desde-el-erp",
+        "003-cambios-en-bodega"
+      ],
       "acceptanceCriteria": [],
-      "files": ["src/app/(app)/modelos/page.tsx"],
+      "files": [
+        "src/app/(app)/modelos/page.tsx"
+      ],
       "blockedReason": null,
       "completedAt": null,
       "notes": null

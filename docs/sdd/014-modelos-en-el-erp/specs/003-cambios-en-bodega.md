@@ -2,7 +2,7 @@
 id: 003-cambios-en-bodega
 feature: 014-modelos-en-el-erp
 titulo: La Bodega baja las piezas y sus archivos del ERP y deja de crearlas
-estado: draft
+estado: validated
 actualizado: 2026-11-16
 ---
 
@@ -23,6 +23,9 @@ eso se da vuelta.
 - **REQ-3** — Un archivo ya bajado se usa sin internet.
 - **REQ-4** — Si el archivo de la nube cambió, la Bodega baja el nuevo antes de usarlo.
 - **REQ-5** — "Abrir en Bambu Studio" abre el archivo bajado con el programa del sistema.
+- **REQ-5b** — Si la pieza es una placa de un archivo compartido, la ficha y la cola dicen cuál
+  ("Placa 7 · Duna"), porque Bambu Studio abre el proyecto entero.
+- **REQ-5c** — Las piezas que comparten archivo lo bajan una sola vez.
 - **REQ-6** — "Nuevo modelo" en la Bodega deja de existir y avisa que las piezas se crean en el ERP,
   con un botón para abrirlo.
 - **REQ-7** — La Bodega deja de subir los datos de la receta (nombre, gramos, tiempo, material,
@@ -59,8 +62,10 @@ eso se da vuelta.
 - Mandar a imprimir sin abrir Bambu Studio (ver RN-6 del SDD funcional).
 - La web de la Bodega en el celular: no maneja archivos.
 
+## Decisiones
+- Taiel tiene la Bodega instalada y su propio usuario del ERP (Agustín, 2026-11-16).
+
 ## Preguntas abiertas
-- [ ] ¿Taiel tiene la app instalada y su propio usuario?
 - [ ] ¿Se baja todo al iniciar (unos 800 MB) o sólo a pedido? (propuesta: a pedido).
 
 ## Referencias
