@@ -909,3 +909,84 @@ model FlexMl {
   @@index([tenantId, dia])
   @@map("flex_ml")
 }
+
+// ==================== TAREAS Y ARCHIVOS 3D (docs/sdd/012) ====================
+
+/// Una tarea del tablero del día. Terminadas muestra las terminadas hoy (hora de Argentina); el
+/// historial las agrupa por el día de `terminadaEn`.
+model Tarea {
+  id             String    @id @default(cuid())
+  tenantId       String    @default("sendero3d") @map("tenant_id")
+  titulo         String
+  nota           String?
+  /// por_hacer | haciendo | trabada | terminada
+  estado         String    @default("por_hacer")
+  orden          Float     @default(0)
+  /// baja | normal | alta
+  prioridad      String    @default("normal")
+  /// perfiles.id
+  responsableId  String?   @map("responsable_id")
+  fechaLimite    DateTime? @map("fecha_limite") @db.Date
+  motivoTrabada  String?   @map("motivo_trabada")
+  /// [{ texto, hecho }]
+  pasos          Json      @default("[]")
+  terminadaEn    DateTime? @map("terminada_en") @db.Timestamptz(6)
+  recurrenteId   String?   @map("recurrente_id")
+  diaRecurrencia DateTime? @map("dia_recurrencia") @db.Date
+  creadaPor      String?   @map("creada_por")
+  creadaEn       DateTime  @default(now()) @map("creada_en") @db.Timestamptz(6)
+  actualizadaEn  DateTime  @default(now()) @updatedAt @map("actualizada_en") @db.Timestamptz(6)
+  archivos       TareaArchivo[]
+
+  @@index([tenantId, estado])
+  @@index([tenantId, terminadaEn])
+  @@map("tareas")
+}
+
+/// Una tarea que se repite: crea su tarea el día que corresponde, al abrir el tablero.
+model TareaRecurrente {
+  id            String   @id @default(cuid())
+  tenantId      String   @default("sendero3d") @map("tenant_id")
+  titulo        String
+  nota          String?
+  /// diaria | semanal | mensual
+  frecuencia    String
+  /// semanal: días de la semana (0 = domingo); mensual: días del mes
+  dias          Int[]    @default([])
+  responsableId String?  @map("responsable_id")
+  prioridad     String   @default("normal")
+  activa        Boolean  @default(true)
+  creadaEn      DateTime @default(now()) @map("creada_en") @db.Timestamptz(6)
+
+  @@map("tareas_recurrentes")
+}
+
+/// Un archivo de la biblioteca 3D, en el bucket privado `archivos-3d`.
+model Archivo3d {
+  id            String   @id @default(cuid())
+  tenantId      String   @default("sendero3d") @map("tenant_id")
+  nombre        String
+  ruta          String
+  tamano        BigInt   @default(0)
+  extension     String?
+  carpeta       String?
+  etiquetas     String[] @default([])
+  miniaturaRuta String?  @map("miniatura_ruta")
+  subido        Boolean  @default(false)
+  subidoPor     String?  @map("subido_por")
+  creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(6)
+  tareas        TareaArchivo[]
+
+  @@index([tenantId, creadoEn(sort: Desc)])
+  @@map("archivos_3d")
+}
+
+model TareaArchivo {
+  tareaId   String    @map("tarea_id")
+  archivoId String    @map("archivo_id")
+  tarea     Tarea     @relation(fields: [tareaId], references: [id], onDelete: Cascade)
+  archivo   Archivo3d @relation(fields: [archivoId], references: [id], onDelete: Cascade)
+
+  @@id([tareaId, archivoId])
+  @@map("tarea_archivos")
+}

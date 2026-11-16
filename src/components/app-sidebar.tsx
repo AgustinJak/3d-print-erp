@@ -21,6 +21,8 @@ import {
   BadgeDollarSign,
   Megaphone,
   Percent,
+  ListChecks,
+  FolderOpen,
 } from "lucide-react";
 import {
   Sidebar,
@@ -41,7 +43,11 @@ import { useIsDemoTenant } from "@/components/current-user-provider";
 
 // Agrupado por tarea del día (Agustín, 2026-10-30): vender, producir, armar el catálogo, ponerle
 // precio y vender en los canales, la plata.
-const navInicio = [{ title: "Panel", href: "/", icon: LayoutDashboard }];
+const navInicio = [
+  { title: "Panel", href: "/", icon: LayoutDashboard },
+  // Las tareas del día (docs/sdd/012).
+  { title: "Tareas", href: "/tareas", icon: ListChecks },
+];
 
 const navVentas = [
   { title: "Pedidos", href: "/pedidos", icon: ShoppingCart },
@@ -53,6 +59,7 @@ const navTaller = [
   { title: "Producción", href: "/produccion", icon: Factory },
   { title: "Stock", href: "/stock", icon: Boxes },
   { title: "Filamentos", href: "/filamentos", icon: Palette },
+  { title: "Archivos 3D", href: "/archivos", icon: FolderOpen },
 ];
 
 const navCatalogo = [
