@@ -117,9 +117,11 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Si no hay usuario y no está en /login, redirigir a login
+  // /restablecer también es pública: ahí se pide y se usa el link para cambiar la contraseña.
   if (
     !user &&
-    !request.nextUrl.pathname.startsWith("/login")
+    !request.nextUrl.pathname.startsWith("/login") &&
+    !request.nextUrl.pathname.startsWith("/restablecer")
   ) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";

@@ -80,6 +80,12 @@ export default function LoginPage() {
             {loading ? "Ingresando..." : "Ingresar"}
           </Button>
         </form>
+
+        <p className="text-center text-sm">
+          <a href="/restablecer" className="text-muted-foreground transition-colors hover:text-foreground">
+            ¿Olvidaste tu contraseña?
+          </a>
+        </p>
       </div>
     </div>
   );
