@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getMlAccount, mlFetch, type CuentaMl } from "@/lib/mercadolibre";
+import { leerItemsMl } from "@/lib/items-ml";
 import { actualizarTarifas } from "@/lib/tarifas-ml";
 
 /**
@@ -149,14 +150,14 @@ export async function leerPreciosMl(tenantId: string): Promise<{ leidas: number;
     const cuenta = c || null;
     auto.set(c, await automatizadas(tenantId, cuenta));
     cuentas.set(c, await getMlAccount(tenantId, cuenta));
-    for (let i = 0; i < delGrupo.length; i += 20) {
-      const r = await mlFetch<Array<{ code: number; body: ItemMl }>>(
-        tenantId,
-        `/items?ids=${delGrupo.slice(i, i + 20).join(",")}&attributes=id,status,sub_status,price,catalog_listing,variations,listing_type_id,category_id,shipping,sale_terms`,
-        { cuenta }
-      );
-      for (const x of r) if (x.code === 200) items.set(x.body.id, x.body);
-    }
+    // De a 20 con el multiget; si ML lo rechaza (baja gradual desde el 2026-11-17), de a una.
+    const leidos = await leerItemsMl<ItemMl>(
+      tenantId,
+      delGrupo,
+      "id,status,sub_status,price,catalog_listing,variations,listing_type_id,category_id,shipping,sale_terms",
+      { cuenta }
+    );
+    for (const [id, item] of leidos) items.set(id, item);
   }
 
   const errores: Array<{ mla: string; error: string }> = [];

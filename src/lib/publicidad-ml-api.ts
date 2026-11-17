@@ -1,4 +1,5 @@
 import { mlFetch } from "@/lib/mercadolibre";
+import { leerItemsMl } from "@/lib/items-ml";
 
 /**
  * Product Ads de Mercado Libre: todo el acceso a la API en un solo archivo (docs/sdd/005).
@@ -223,42 +224,27 @@ export async function anuncio(tenantId: string, a: Anunciante, anuncioId: number
   };
 }
 
-/** Corre `fn` sobre los elementos de a `n` por vez. */
-async function enTandas<T, R>(xs: T[], n: number, fn: (x: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = [];
-  for (let i = 0; i < xs.length; i += n) out.push(...(await Promise.all(xs.slice(i, i + n).map(fn))));
-  return out;
-}
-
 /**
  * Las publicaciones pedidas, con su familia y su producto de catálogo: es lo que permite saber
- * de qué publicación es cada anuncio. De a 20, el máximo de `/items?ids=`.
+ * de qué publicación es cada anuncio. De a 20 con el multiget; si ML lo rechaza (baja gradual
+ * desde el 2026-11-17), de a una (`leerItemsMl`).
  */
 export async function publicaciones(tenantId: string, mlas: string[]): Promise<PublicacionDeMl[]> {
-  const ids = [...new Set(mlas)];
-  const lotes: string[][] = [];
-  for (let i = 0; i < ids.length; i += 20) lotes.push(ids.slice(i, i + 20));
   const atributos = "id,title,price,status,permalink,family_id,catalog_product_id";
-  const respuestas = await enTandas(lotes, 4, (lote) =>
-    mlFetch<Array<{ code: number; body: Partial<PublicacionDeMl> & { family_id?: string | number | null } }>>(
-      tenantId,
-      `/items?ids=${lote.join(",")}&attributes=${atributos}`,
-      undefined,
-      (t) => t.replace(/"family_id"\s*:\s*(\d+)/g, '"family_id":"$1"')
-    )
-  );
-  return respuestas
-    .flat()
-    .filter((x) => x.code === 200 && x.body?.id)
-    .map((x) => ({
-      id: String(x.body.id),
-      title: x.body.title ?? "",
-      price: Number(x.body.price) || 0,
-      status: x.body.status ?? "",
-      permalink: x.body.permalink ?? null,
-      family_id: x.body.family_id != null ? String(x.body.family_id) : null,
-      catalog_product_id: x.body.catalog_product_id ?? null,
-    }));
+  const leidos = await leerItemsMl<Partial<PublicacionDeMl> & { family_id?: string | number | null }>(tenantId, mlas, atributos, {
+    // family_id es un número de 19 cifras: como número JSON pierde precisión, se lee como texto.
+    antesDeLeer: (t) => t.replace(/"family_id"\s*:\s*(\d+)/g, '"family_id":"$1"'),
+    tandas: 4,
+  });
+  return [...leidos.values()].map((b) => ({
+    id: String(b.id),
+    title: b.title ?? "",
+    price: Number(b.price) || 0,
+    status: b.status ?? "",
+    permalink: b.permalink ?? null,
+    family_id: b.family_id != null ? String(b.family_id) : null,
+    catalog_product_id: b.catalog_product_id ?? null,
+  }));
 }
 
 export interface CambioCampanaMl {
