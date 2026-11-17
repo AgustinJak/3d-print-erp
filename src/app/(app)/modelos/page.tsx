@@ -9,8 +9,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EtiquetaDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
 import { EmptyState } from "@/components/empty-state";
@@ -90,9 +88,6 @@ export default function ModelosPage() {
   const [vista, setVista] = useState<Vista>("tabla");
   const [verVariantes, setVerVariantes] = useState(false);
   const [mostrarConsolidados, setMostrarConsolidados] = useState(false);
-  // "Nuevo producto": sólo el nombre; el resto se completa en su página (docs/sdd/004, spec 001).
-  const [nuevo, setNuevo] = useState<{ nombre: string; serie: string } | null>(null);
-  const [creando, setCreando] = useState(false);
   const [trayendo, setTrayendo] = useState(false);
   const [versionPiezas, setVersionPiezas] = useState(0);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -157,10 +152,10 @@ export default function ModelosPage() {
       router.replace(`/modelos/${editId}`);
       return;
     }
+    // Los links viejos a "?nuevo=1" van al alta nueva (docs/sdd/014, spec 002).
     if (searchParams.get("nuevo") === "1") {
       const nombre = searchParams.get("nombre") || "";
-      router.replace("/modelos");
-      setTimeout(() => setNuevo({ nombre, serie: "" }), 0);
+      router.replace(nombre ? `/modelos/nuevo?nombre=${encodeURIComponent(nombre)}` : "/modelos/nuevo");
     }
   }, [searchParams, router]);
 
@@ -215,25 +210,6 @@ export default function ModelosPage() {
 
   /* ─── Alta ───────────────────────────────────────── */
 
-  const crearProducto = async () => {
-    if (!nuevo?.nombre.trim()) return;
-    setCreando(true);
-    try {
-      const res = await fetch("/api/modelos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nombre: nuevo.nombre.trim(), serie: nuevo.serie.trim() || null }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "No se pudo crear");
-      toast.success("Producto creado");
-      router.push(`/modelos/${data.id}`);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "No se pudo crear");
-      setCreando(false);
-    }
-  };
-
   /** Trae ya lo nuevo de Bodega. Si no hay nada, dice de cuándo es lo último que subió. */
   const traerDeBodega = async () => {
     setTrayendo(true);
@@ -283,7 +259,8 @@ export default function ModelosPage() {
             {trayendo ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
             Traer de Bodega
           </Button>
-          <Button onClick={() => setNuevo({ nombre: "", serie: "" })}>
+          {/* El alta con el modelo, las variantes y la funda (docs/sdd/014, spec 002). */}
+          <Button onClick={() => router.push("/modelos/nuevo")}>
             <Plus className="mr-2 h-4 w-4" />
             Nuevo producto
           </Button>
@@ -356,7 +333,7 @@ export default function ModelosPage() {
       {/* La lista */}
       {filas.length === 0 ? (
         modelos.length === 0 ? (
-          <EmptyState icon={Box} title="Sin productos registrados" description="Creá la pieza en Bodega y aparece acá sola, o creá el producto a mano." actionLabel="Nuevo producto" onAction={() => setNuevo({ nombre: "", serie: "" })} />
+          <EmptyState icon={Box} title="Sin productos registrados" description="Creá el producto con su modelo, o la pieza en Bodega y aparece acá sola." actionLabel="Nuevo producto" onAction={() => router.push("/modelos/nuevo")} />
         ) : (
           <EmptyState icon={Search} title="Sin resultados" description="Ningún producto pasa esos filtros." actionLabel="Sacar filtros" onAction={() => setFiltros({ ...FILTROS_INICIALES, estado: filtros.estado })} />
         )
@@ -527,41 +504,6 @@ export default function ModelosPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ─── Nuevo producto ─────────────────────────── */}
-      <Dialog open={!!nuevo} onOpenChange={(o) => !o && setNuevo(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Nuevo producto</DialogTitle>
-          </DialogHeader>
-          <form
-            className="space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              crearProducto();
-            }}
-          >
-            <div className="space-y-1.5">
-              <Label htmlFor="np-nombre">Nombre</Label>
-              <Input id="np-nombre" autoFocus value={nuevo?.nombre ?? ""} onChange={(e) => setNuevo((n) => (n ? { ...n, nombre: e.target.value } : n))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="np-serie">
-                Serie <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
-              </Label>
-              <Input id="np-serie" value={nuevo?.serie ?? ""} placeholder="Demon Slayer, One Piece…" onChange={(e) => setNuevo((n) => (n ? { ...n, serie: e.target.value } : n))} />
-            </div>
-            <p className="text-xs text-muted-foreground">Lo demás (precio, fotos, variantes, pieza de Bodega) se completa en su página. Si la pieza ya está en Bodega, no hace falta: el producto aparece solo.</p>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="ghost" onClick={() => setNuevo(null)}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={creando || !nuevo?.nombre.trim()}>
-                {creando ? "Creando…" : "Crear y abrir"}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
     </motion.div>
   );
 }

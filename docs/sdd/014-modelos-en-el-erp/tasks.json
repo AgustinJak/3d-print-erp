@@ -88,7 +88,7 @@
       "title": "El archivo de cada pieza en la página del producto",
       "description": "Endpoints /api/piezas/[id]/archivo (GET, PUT), /api/archivos/[id]/reemplazar, y los cambios a POST /api/archivos y PATCH /api/archivos/[id]; componentes archivo-de-pieza.tsx y elegir-placas.tsx en la página del producto.",
       "component": "api",
-      "status": "in-review",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-001",
@@ -106,8 +106,8 @@
         "src/components/producto/archivo-de-pieza.tsx"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": "Código listo y compilando; falta publicarlo y verlo en pantalla."
+      "completedAt": "2026-11-16",
+      "notes": "Publicado el 2026-11-16 (e3e189c). Sin verlo en pantalla: la sesión del navegador de la sesión no se mantiene."
     },
     {
       "id": "TASK-005",
@@ -137,7 +137,7 @@
       "title": "Alta de producto con archivo, variantes e insumos",
       "description": "POST /api/productos/alta: producto, grupo otra pieza con sus piezas (origen erp) y filas de stock enganchadas, combinaciones, grupo insumo con su receta, insumo nuevo si hace falta, enganches pieza → archivo + placa; todo en una transacción reutilizando catalogo.ts, combinaciones.ts y stock-filas.ts. alta.tsx en lugar del diálogo de modelos/page.tsx:531.",
       "component": "api",
-      "status": "pending",
+      "status": "in-review",
       "origin": "plan",
       "dependencies": [
         "TASK-004"
@@ -149,20 +149,23 @@
         "CA-1 a CA-7 de la spec 002-crear-desde-el-erp"
       ],
       "files": [
+        "src/lib/alta-producto.ts",
+        "src/lib/alta-producto-reglas.ts",
         "src/app/api/productos/alta/route.ts",
-        "src/components/producto/alta.tsx",
-        "src/app/(app)/modelos/page.tsx"
+        "src/app/(app)/modelos/nuevo/page.tsx",
+        "src/app/(app)/modelos/page.tsx",
+        "scripts/sdd-014-probar-alta.ts"
       ],
       "blockedReason": null,
       "completedAt": null,
-      "notes": null
+      "notes": "Hecho: lib/alta-producto.ts, lib/alta-producto-reglas.ts, POST /api/productos/alta y /modelos/nuevo (hecha con la skill unslop). 23 de 23 pruebas en scripts/sdd-014-probar-alta.ts, con un alta real de prueba borrada al final. Sin publicar: ver la bitácora."
     },
     {
       "id": "TASK-007",
       "title": "Modelos en productos existentes, insumos con archivo y crear desde el cotizador",
       "description": "En la página del producto: agregar opción con su modelo y elegir la placa de cada opción. En la lista de insumos: crear insumo con archivo. En el cotizador: Crear producto con esto.",
       "component": "frontend",
-      "status": "pending",
+      "status": "in-progress",
       "origin": "plan",
       "dependencies": [
         "TASK-006"
@@ -179,14 +182,14 @@
       ],
       "blockedReason": null,
       "completedAt": null,
-      "notes": null
+      "notes": "Hecho: Crear producto con esto en el cotizador. En la página de un producto existente, una opción nueva toma su modelo desde el bloque de archivo de la pieza (etapa 1). Falta: crear un insumo con archivo desde la lista de insumos (hoy se crea desde el alta)."
     },
     {
       "id": "TASK-008",
       "title": "Lectura de piezas y archivos para la Bodega",
       "description": "Función bodega_archivos_de_piezas() SECURITY DEFINER y política de storage.objects para SELECT de authenticated en piezas/%.",
       "component": "database",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-003"
@@ -196,18 +199,18 @@
       ],
       "acceptanceCriteria": [],
       "files": [
-        "prisma/sql/archivos-de-piezas.sql"
+        "prisma/sql/archivos-de-piezas-bodega.sql"
       ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-11-16",
+      "notes": "bodega_es_del_taller(), bodega_archivos_de_piezas(), bodega_puede_bajar() y la política de storage.objects. Probado como Agustín (92 piezas, baja el archivo de una pieza y no uno suelto) y como demo (0 piezas, no baja nada)."
     },
     {
       "id": "TASK-009",
       "title": "La Bodega como cliente (versión nueva de la Bodega)",
       "description": "En Bodega3D-App: crear localmente las piezas que bajan, descargar con caché y progreso (un archivo compartido se baja una vez), mostrar la placa, abrir en Bambu Studio, dejar de subir la receta, sacar Nuevo modelo, tamaño de la caché en configuración. Canales IPC nuevos documentados en BOD - Flujos.",
       "component": "bodega",
-      "status": "pending",
+      "status": "in-review",
       "origin": "plan",
       "dependencies": [
         "TASK-006",
@@ -226,7 +229,7 @@
       ],
       "blockedReason": null,
       "completedAt": null,
-      "notes": "Release de la Bodega sólo a pedido."
+      "notes": "Bodega 2.37.0: piezas-erp.ts, tabla archivos_erp, ficha y cola con Abrir en BambuStudio que baja si hace falta, placa a la vista, Nueva pieza en el ERP, caché en Configuración. REQ-7 (dejar de subir la receta) se dejó para cuando el ERP tenga dónde editarla. Falta probarlo en la PC del taller y en la de Taiel."
     },
     {
       "id": "TASK-010",
@@ -248,7 +251,7 @@
       ],
       "blockedReason": null,
       "completedAt": null,
-      "notes": null
+      "notes": "Traer de Bodega se saca cuando las dos Bodegas tengan la 2.37 y se verifique que nada nace en la Bodega."
     }
   ]
 }

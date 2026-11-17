@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
-import { Copy, RotateCcw } from "lucide-react";
+import { Copy, PackagePlus, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ function Campo({ label, children, ayuda }: { label: string; children: React.Reac
 }
 
 export default function CotizadorPage() {
+  const router = useRouter();
   const [datos, setDatos] = useState<Datos | null>(null);
   const [nombre, setNombre] = useState("");
   const [gramos, setGramos] = useState("");
@@ -232,9 +234,25 @@ export default function CotizadorPage() {
                     );
                   })}
                 </div>
-                <div className="flex justify-end">
+                <div className="flex flex-wrap justify-end gap-2">
                   <Button variant="outline" onClick={copiar}>
                     <Copy className="h-4 w-4" strokeWidth={1.5} /> Copiar los precios
+                  </Button>
+                  {/* El alta con lo cargado (docs/sdd/014, spec 002, REQ-13). */}
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const q = new URLSearchParams();
+                      if (nombre.trim()) q.set("nombre", nombre.trim());
+                      if (gramos.trim()) q.set("gramos", String(num(gramos)));
+                      const min = num(horas) * 60 + num(minutos);
+                      if (min) q.set("minutos", String(min));
+                      if (material) q.set("material", material);
+                      if (insumos.trim()) q.set("insumos", String(num(insumos)));
+                      router.push(`/modelos/nuevo?${q}`);
+                    }}
+                  >
+                    <PackagePlus className="h-4 w-4" strokeWidth={1.5} /> Crear producto con esto
                   </Button>
                 </div>
                 <p className="text-xs leading-5 text-muted-foreground">

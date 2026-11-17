@@ -72,3 +72,51 @@ una columna única en `archivos_3d` a la tabla `piezas_archivo` (pieza → archi
   al hijo de tsx). La segunda corrida retomó sin repetir nada.
 - Aplicar a la receta los gramos y el tiempo leídos **no** se hizo: la receta la escribe la Bodega
   (`bodega.models`), y si el ERP la cambia, la Bodega la pisa en su próxima edición. Va con la etapa 3.
+
+## 2026-11-16 · Claude (etapa 2)
+
+**Tareas:** TASK-006 (in-review), TASK-007 (in-progress).
+
+**Qué se hizo**
+- `/modelos/nuevo` con la skill unslop, siguiendo la dirección del SDD 011: neutros, el naranja sólo
+  en "Crear producto", y la miniatura del modelo con sus placas como el único momento con detalle.
+  Reemplaza al diálogo de sólo nombre; los links `?nuevo=1` van ahí.
+- `POST /api/productos/alta` crea producto, piezas en `bodega.models` (cada una enganchada a su
+  fila en la misma transacción), combinaciones, funda (existente o nueva, con pieza) y archivos.
+  Reutiliza `crearGrupo` y `asegurarFilasDeStock`; como no hay una transacción que abarque todo,
+  si algo falla se borra lo creado.
+- Cotizador: "Crear producto con esto".
+- 23 pruebas (`scripts/sdd-014-probar-alta.ts`): 11 de validación y un alta real de prueba con 3
+  diseños por placa y una funda nueva, que se borra al final.
+
+**Problemas y cómo se resolvieron**
+- La prueba esperaba combinaciones cruzadas (diseño con funda): no se siembran, se crean cuando
+  hacen falta (SDD 004, spec 003, RN-3). Se corrigió la prueba, no el código.
+
+**Para el que sigue**
+- **No se publicó.** Una pieza que nace en el ERP no llega a la Bodega hasta la etapa 3 (la Bodega
+  en modo ERP no baja modelos, `sync.ts:373`): si se publica antes, un producto creado acá no se
+  puede encolar en el taller. Se le preguntó a Agustín.
+- La columna `origen` de `bodega.models` que proponía el SDD técnico no hizo falta: en la etapa 3
+  todas las piezas pasan a ser de sólo lectura en la Bodega.
+
+## 2026-11-16 · Claude (etapa 3)
+
+**Tareas:** TASK-008 (completed), TASK-009 (in-review).
+
+**Qué se hizo**
+- Base: `prisma/sql/archivos-de-piezas-bodega.sql` (aplicado). La Bodega lee qué archivo tiene cada
+  pieza y firma links con su propia sesión; sólo usuarios de Sendero 3D y sólo archivos enganchados
+  a una pieza. Probado haciéndose pasar por Agustín y por la cuenta demo.
+- Bodega 2.37.0 (`src/main/piezas-erp.ts`): al final de cada vuelta crea las piezas que el ERP usa
+  y faltan (salvo las borradas en esa PC), espeja los archivos en `archivos_erp` y baja miniaturas.
+  "Abrir en BambuStudio" deja el archivo en la PC (el propio si coincide el sha256, si no lo baja a
+  `storage/archivos/<id>/`). "Nueva pieza" abre el alta del ERP.
+- Biblioteca: se borraron los 26 archivos de "Sin usar" (versiones viejas del bucket público, sin
+  pieza ni tarea), con el OK de Agustín.
+
+**Decisiones**
+- REQ-7 (la Bodega deja de subir la receta) queda para después: el ERP todavía no tiene dónde
+  editar gramos, tiempo ni material de una pieza, y sin eso nadie podría cambiarlos. Las piezas que
+  llegan del ERP se crean con el `updatedAt` de la nube, así que no se resuben si no se tocan.
+- No se probó la descarga de punta a punta: hace falta la Bodega con la sesión de Agustín.
