@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Box, ChevronDown, Download, Loader2, Plus, Search, Zap, Clock } from "lucide-react";
+import { Box, ChevronDown, Plus, Search, Zap, Clock } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "motion/react";
@@ -88,8 +88,6 @@ export default function ModelosPage() {
   const [vista, setVista] = useState<Vista>("tabla");
   const [verVariantes, setVerVariantes] = useState(false);
   const [mostrarConsolidados, setMostrarConsolidados] = useState(false);
-  const [trayendo, setTrayendo] = useState(false);
-  const [versionPiezas, setVersionPiezas] = useState(0);
   const [initialLoading, setInitialLoading] = useState(true);
   // Claves de variante (o `m:<id>` para un producto sin variantes activas).
   const [elegidos, setElegidos] = useState<Set<string>>(new Set());
@@ -210,39 +208,6 @@ export default function ModelosPage() {
 
   /* ─── Alta ───────────────────────────────────────── */
 
-  /** Trae ya lo nuevo de Bodega. Si no hay nada, dice de cuándo es lo último que subió. */
-  const traerDeBodega = async () => {
-    setTrayendo(true);
-    try {
-      const res = await fetch("/api/bodega/altas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accion: "traer" }),
-      });
-      const r = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(r?.error || "No se pudo traer");
-      const traidas: string[] = [...(r.creados ?? []), ...(r.mapeados ?? [])].map((x: { nombre: string }) => x.nombre);
-      const omitidas: Array<{ nombre: string; motivo: string }> = r.omitidos ?? [];
-      if (traidas.length > 0) toast.success(`${traidas.length === 1 ? "Traída" : `${traidas.length} traídas`}: ${traidas.join(", ")}`);
-      for (const o of omitidas) toast.error(`${o.nombre}: ${o.motivo}`);
-      const costos: number = r.costosActualizados ?? 0;
-      if (costos > 0) toast.success(`Costos actualizados desde Bodega: ${costos} ${costos === 1 ? "producto" : "productos"}`);
-      if (traidas.length === 0 && omitidas.length === 0 && costos === 0) {
-        const fecha = r.ultimaSubida ? new Date(r.ultimaSubida).toLocaleDateString("es-AR", { day: "numeric", month: "numeric" }) : "nunca";
-        toast.info(
-          `No hay piezas nuevas. Lo último que subió Bodega es del ${fecha}. Si creaste una después, abrí Bodega › Configuración y fijate que la sincronización tenga la sesión iniciada.`,
-          { duration: 12000 }
-        );
-      }
-      setVersionPiezas((v) => v + 1);
-      await fetchModelos();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "No se pudo traer");
-    } finally {
-      setTrayendo(false);
-    }
-  };
-
   /* ─── Render ──────────────────────────────────────── */
 
   return (
@@ -255,10 +220,6 @@ export default function ModelosPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={traerDeBodega} disabled={trayendo} title="Trae ya las piezas nuevas que Bodega haya subido">
-            {trayendo ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-            Traer de Bodega
-          </Button>
           {/* El alta con el modelo, las variantes y la funda (docs/sdd/014, spec 002). */}
           <Button onClick={() => router.push("/modelos/nuevo")}>
             <Plus className="mr-2 h-4 w-4" />
@@ -294,7 +255,7 @@ export default function ModelosPage() {
       />
 
       {/* Piezas de Bodega que no entraron solas (docs/sdd/004, spec 005) */}
-      <PiezasNuevas key={versionPiezas} onCambio={fetchModelos} />
+      <PiezasNuevas onCambio={fetchModelos} />
 
       {/* Qué se ve, y elegirlo todo de una */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -333,7 +294,7 @@ export default function ModelosPage() {
       {/* La lista */}
       {filas.length === 0 ? (
         modelos.length === 0 ? (
-          <EmptyState icon={Box} title="Sin productos registrados" description="Creá el producto con su modelo, o la pieza en Bodega y aparece acá sola." actionLabel="Nuevo producto" onAction={() => router.push("/modelos/nuevo")} />
+          <EmptyState icon={Box} title="Sin productos registrados" description="Creá el primero con su modelo, sus variantes y su funda." actionLabel="Nuevo producto" onAction={() => router.push("/modelos/nuevo")} />
         ) : (
           <EmptyState icon={Search} title="Sin resultados" description="Ningún producto pasa esos filtros." actionLabel="Sacar filtros" onAction={() => setFiltros({ ...FILTROS_INICIALES, estado: filtros.estado })} />
         )

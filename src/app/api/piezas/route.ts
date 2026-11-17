@@ -4,10 +4,11 @@ import { NextRequest } from "next/server";
 import { getAuthenticatedTenantNonDemo } from "@/lib/tenant";
 import { responder } from "@/lib/api-envoltura";
 import { archivosDePiezas } from "@/lib/archivos-de-piezas";
+import { materialesDeBodega, recetasDePiezas } from "@/lib/recetas-de-piezas";
 
 /**
- * GET /api/piezas/archivos?ids=a,b,c → el archivo de cada pieza de Bodega pedida, con su placa y
- * miniaturas firmadas. Las piezas sin archivo no vienen. (docs/sdd/014, spec 001)
+ * GET /api/piezas?ids=a,b,c → de cada pieza de Bodega pedida, su archivo (con la placa y las
+ * miniaturas firmadas) y su receta, más los materiales para elegir (docs/sdd/014).
  */
 export async function GET(request: NextRequest) {
   return responder(async () => {
@@ -17,6 +18,7 @@ export async function GET(request: NextRequest) {
       .map((s) => s.trim())
       .filter(Boolean)
       .slice(0, 300);
-    return { archivos: await archivosDePiezas(tenantId, ids) };
+    const [archivos, recetas, materiales] = await Promise.all([archivosDePiezas(tenantId, ids), recetasDePiezas(tenantId, ids), materialesDeBodega()]);
+    return { archivos, recetas, materiales };
   });
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Box, Download, Eye, Library, Loader2, Upload, X } from "lucide-react";
+import { Box, Download, Eye, Library, Loader2, Pencil, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -11,6 +11,15 @@ import { descargar, linkDe, subirModelo } from "@/components/archivos/subir";
 import { json, pedir } from "@/components/producto/seccion";
 import { tamanoLegible } from "@/lib/tareas-reglas";
 import type { ArchivoDePieza } from "@/lib/archivos-de-piezas";
+import type { MaterialDeBodega, RecetaDePieza } from "@/lib/recetas-de-piezas";
+import { parsePrice } from "@/lib/utils";
+
+/** Lo que trae GET /api/piezas para todas las piezas de un producto. */
+export interface InfoDePiezas {
+  archivos: Record<string, ArchivoDePieza>;
+  recetas: Record<string, RecetaDePieza>;
+  materiales: MaterialDeBodega[];
+}
 import type { ArchivoVista } from "@/lib/tareas";
 
 /**
@@ -31,7 +40,9 @@ const duracion = (s: number) => {
   return h ? `${h} h ${m} min` : `${m} min`;
 };
 
-export function ArchivoDePiezaBloque({ piezaId, archivo, onCambio }: { piezaId: string; archivo: ArchivoDePieza | undefined; onCambio: () => void }) {
+export function ArchivoDePiezaBloque({ piezaId, info, onCambio }: { piezaId: string; info: InfoDePiezas; onCambio: () => void }) {
+  const archivo: ArchivoDePieza | undefined = info.archivos[piezaId];
+  const receta: RecetaDePieza | undefined = info.recetas[piezaId];
   const [ocupado, setOcupado] = useState<null | "subiendo" | "guardando">(null);
   const [viendo, setViendo] = useState<{ url: string } | null>(null);
   const [eligiendo, setEligiendo] = useState(false);
@@ -173,6 +184,16 @@ export function ArchivoDePiezaBloque({ piezaId, archivo, onCambio }: { piezaId: 
         </div>
       )}
 
+      {receta && (
+        <RecetaFila
+          piezaId={piezaId}
+          receta={receta}
+          materiales={info.materiales}
+          laminado={laminado?.gramos != null ? { gramos: laminado.gramos, segundos: laminado.segundos } : null}
+          onCambio={onCambio}
+        />
+      )}
+
       <Dialog open={!!viendo} onOpenChange={(o) => !o && setViendo(null)}>
         <DialogContent className="sm:max-w-3xl">
           {viendo && archivo && (
@@ -208,6 +229,141 @@ export function ArchivoDePiezaBloque({ piezaId, archivo, onCambio }: { piezaId: 
           enganchar(id, null, "Archivo enganchado");
         }}
       />
+    </div>
+  );
+}
+
+/**
+ * La receta de la pieza (docs/sdd/014, spec 003, REQ-7): gramos, tiempo, material e insumos. Se
+ * edita acá desde el 2026-11-16; la Bodega la baja. Guardarla recalcula los costos.
+ */
+function RecetaFila({
+  piezaId,
+  receta,
+  materiales,
+  laminado,
+  onCambio,
+}: {
+  piezaId: string;
+  receta: RecetaDePieza;
+  materiales: MaterialDeBodega[];
+  laminado: { gramos: number; segundos: number | null } | null;
+  onCambio: () => void;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [v, setV] = useState({ gramos: "", horas: "", minutos: "", materialId: "", insumos: "" });
+
+  const porDefecto = materiales.find((m) => m.porDefecto);
+  const material = materiales.find((m) => m.id === receta.materialId);
+  const pesos = (n: number) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n);
+  const falta = receta.gramos == null || receta.segundos == null;
+  const distintoDeLoLaminado =
+    laminado && (receta.gramos !== laminado.gramos || (laminado.segundos != null && receta.segundos !== laminado.segundos));
+
+  function abrir() {
+    setV({
+      gramos: receta.gramos?.toString() ?? "",
+      horas: receta.segundos != null ? String(Math.floor(receta.segundos / 3600)) : "",
+      minutos: receta.segundos != null ? String(Math.round((receta.segundos % 3600) / 60)) : "",
+      materialId: receta.materialId ?? "",
+      insumos: receta.insumos?.toString() ?? "",
+    });
+    setEditando(true);
+  }
+
+  async function guardar(cambio: Record<string, unknown>, aviso: string) {
+    setGuardando(true);
+    try {
+      await pedir(`/api/piezas/${piezaId}`, json("PATCH", cambio));
+      toast.success(aviso);
+      setEditando(false);
+      onCambio();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo guardar");
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  const num = (s: string) => (s.trim() ? parsePrice(s) : null);
+
+  if (editando) {
+    const horas = num(v.horas) ?? 0;
+    const minutos = num(v.minutos) ?? 0;
+    const sinTiempo = !v.horas.trim() && !v.minutos.trim();
+    return (
+      <form
+        className="mt-2 space-y-2 border-t pt-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          guardar(
+            { gramos: num(v.gramos), segundos: sinTiempo ? null : Math.round((horas * 60 + minutos) * 60), materialId: v.materialId || null, insumos: num(v.insumos) },
+            "Receta guardada"
+          );
+        }}
+      >
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-[72px_64px_64px_minmax(0,1fr)_88px]">
+          <Input value={v.gramos} onChange={(e) => setV({ ...v, gramos: e.target.value })} inputMode="decimal" placeholder="g" aria-label="Gramos" className="h-8" autoFocus />
+          <Input value={v.horas} onChange={(e) => setV({ ...v, horas: e.target.value })} inputMode="decimal" placeholder="h" aria-label="Horas" className="h-8" />
+          <Input value={v.minutos} onChange={(e) => setV({ ...v, minutos: e.target.value })} inputMode="decimal" placeholder="min" aria-label="Minutos" className="h-8" />
+          <select value={v.materialId} onChange={(e) => setV({ ...v, materialId: e.target.value })} className={`${selectClase} col-span-2 sm:col-span-1`} aria-label="Material">
+            <option value="">{porDefecto ? `Por defecto (${porDefecto.nombre})` : "Por defecto"}</option>
+            {materiales.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.nombre} · {pesos(m.precioKg)} el kilo
+              </option>
+            ))}
+          </select>
+          <Input value={v.insumos} onChange={(e) => setV({ ...v, insumos: e.target.value })} inputMode="decimal" placeholder="$ insumos" aria-label="Insumos por unidad" className="h-8" />
+        </div>
+        <div className="flex justify-end gap-1">
+          <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditando(false)}>
+            Cancelar
+          </Button>
+          <Button type="submit" size="sm" className="h-7 text-xs" disabled={guardando}>
+            {guardando && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Guardar receta
+          </Button>
+        </div>
+      </form>
+    );
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t pt-2">
+      <p className={`text-xs ${falta ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}>
+        {falta ? (
+          "Falta la receta: sin gramos y tiempo no se calcula el costo"
+        ) : (
+          <>
+            <span className="font-mono tabular-nums">{receta.gramos} g</span> · <span className="font-mono tabular-nums">{duracion(receta.segundos!)}</span> ·{" "}
+            {material?.nombre ?? (porDefecto ? `${porDefecto.nombre} (por defecto)` : "material por defecto")}
+            {receta.insumos ? (
+              <>
+                {" "}
+                · insumos <span className="font-mono tabular-nums">{pesos(receta.insumos)}</span>
+              </>
+            ) : null}
+          </>
+        )}
+      </p>
+      <div className="flex items-center gap-1">
+        {distintoDeLoLaminado && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            disabled={guardando}
+            onClick={() => guardar({ gramos: laminado!.gramos, ...(laminado!.segundos != null ? { segundos: laminado!.segundos } : {}) }, "Receta tomada del archivo")}
+            title="Los gramos y el tiempo que dejó Bambu Studio al laminar"
+          >
+            Usar lo laminado: {laminado!.gramos} g{laminado!.segundos != null ? `, ${duracion(laminado!.segundos)}` : ""}
+          </Button>
+        )}
+        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={abrir} title="Editar la receta" aria-label="Editar la receta">
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+      </div>
     </div>
   );
 }

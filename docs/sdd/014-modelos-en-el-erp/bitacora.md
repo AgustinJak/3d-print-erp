@@ -120,3 +120,20 @@ una columna única en `archivos_3d` a la tabla `piezas_archivo` (pieza → archi
   editar gramos, tiempo ni material de una pieza, y sin eso nadie podría cambiarlos. Las piezas que
   llegan del ERP se crean con el `updatedAt` de la nube, así que no se resuben si no se tocan.
 - No se probó la descarga de punta a punta: hace falta la Bodega con la sesión de Agustín.
+
+## 2026-11-16 · Claude (la receta al ERP)
+
+**Pedido de Agustín:** que gramos, tiempo y material se editen en el ERP, y sacar "Traer de Bodega".
+
+- ERP: la receta de cada pieza se ve y se edita debajo de su archivo (`PATCH /api/piezas/:id`,
+  `lib/recetas-de-piezas.ts`), con "Usar lo laminado" si el 3MF lo trae. Guardar recalcula costos.
+  `GET /api/piezas` reemplaza a `/api/piezas/archivos`. 7 de 7 pruebas
+  (`scripts/sdd-014-probar-receta.ts`) contra una pieza real, que quedó como estaba.
+- Se sacó "Traer de Bodega" de `/modelos`. El alta automática sigue corriendo sola.
+- Bodega 2.38.0: en modo ERP no sube piezas; `bajarRecetas()` trae lo que cambió desde la última
+  vuelta (`settings.piezas_recetas_desde`); el formulario, el material de la ficha y la
+  calculadora quedan de sólo lectura y llevan al ERP.
+
+**Para el que sigue**
+- ERP y Bodega 2.38 tienen que salir juntos: con la 2.37, lo que se edite en el ERP no baja a la
+  Bodega, y una edición en la Bodega lo pisaría.

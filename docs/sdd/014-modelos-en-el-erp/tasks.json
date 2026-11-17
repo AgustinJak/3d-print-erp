@@ -229,14 +229,14 @@
       ],
       "blockedReason": null,
       "completedAt": null,
-      "notes": "Bodega 2.37.0: piezas-erp.ts, tabla archivos_erp, ficha y cola con Abrir en BambuStudio que baja si hace falta, placa a la vista, Nueva pieza en el ERP, caché en Configuración. REQ-7 (dejar de subir la receta) se dejó para cuando el ERP tenga dónde editarla. Falta probarlo en la PC del taller y en la de Taiel."
+      "notes": "Bodega 2.37.0 publicada el 2026-11-16. 2.38.0 suma REQ-7: no sube piezas en modo ERP, baja la receta (bajarRecetas) y la muestra de sólo lectura. Falta probarlo en las dos PCs."
     },
     {
       "id": "TASK-010",
       "title": "Sacar Traer de Bodega y documentar",
       "description": "Con la etapa 3 en uso: sacar el botón, actualizar INV - Flujos, BOD - Flujos y Flujos del ecosistema con mermaid validado, y los changelogs.",
       "component": "docs",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-009"
@@ -250,8 +250,35 @@
         "src/app/(app)/modelos/page.tsx"
       ],
       "blockedReason": null,
+      "completedAt": "2026-11-16",
+      "notes": "Agustín pidió sacar Traer de Bodega el 2026-11-16. El alta automática sigue corriendo sola para lo que suba una Bodega vieja."
+    },
+    {
+      "id": "TASK-011",
+      "title": "La receta de cada pieza se edita en el ERP",
+      "description": "GET /api/piezas (archivo + receta + materiales) reemplaza a /api/piezas/archivos; PATCH /api/piezas/[id] guarda gramos, tiempo, material e insumos en bodega.models y recalcula costos. En la página del producto, la receta debajo de cada pieza, con Usar lo laminado.",
+      "component": "api",
+      "status": "in-review",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-004"
+      ],
+      "specs": [
+        "003-cambios-en-bodega"
+      ],
+      "acceptanceCriteria": [
+        "REQ-7 de la spec 003-cambios-en-bodega"
+      ],
+      "files": [
+        "src/lib/recetas-de-piezas.ts",
+        "src/app/api/piezas/route.ts",
+        "src/app/api/piezas/[id]/route.ts",
+        "src/components/producto/archivo-de-pieza.tsx",
+        "scripts/sdd-014-probar-receta.ts"
+      ],
+      "blockedReason": null,
       "completedAt": null,
-      "notes": "Traer de Bodega se saca cuando las dos Bodegas tengan la 2.37 y se verifique que nada nace en la Bodega."
+      "notes": "Pedido de Agustín el 2026-11-16. 7 de 7 pruebas contra una pieza real, restaurada."
     }
   ]
 }

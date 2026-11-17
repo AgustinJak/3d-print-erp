@@ -13,8 +13,7 @@ import { json, pedir, pesos, Seccion } from "@/components/producto/seccion";
 import type { FilaDeFicha, Ficha, OpcionDeFicha } from "@/app/api/modelos/[id]/ficha/route";
 import type { PiezaDeBodega } from "@/app/api/bodega/piezas/route";
 import type { Insumo } from "@/lib/recetas";
-import type { ArchivoDePieza } from "@/lib/archivos-de-piezas";
-import { ArchivoDePiezaBloque } from "@/components/producto/archivo-de-pieza";
+import { ArchivoDePiezaBloque, type InfoDePiezas } from "@/components/producto/archivo-de-pieza";
 
 type Tipo = "pieza" | "insumo" | "decoracion";
 type Grupo = Ficha["grupos"][number];
@@ -96,7 +95,7 @@ function FilaOpcion({
   opcion,
   piezas,
   insumos,
-  archivos,
+  info,
   onCambio,
 }: {
   ficha: Ficha;
@@ -104,7 +103,7 @@ function FilaOpcion({
   opcion: OpcionDeFicha;
   piezas: PiezaDeBodega[] | null;
   insumos: Insumo[];
-  archivos: Record<string, ArchivoDePieza>;
+  info: InfoDePiezas;
   onCambio: () => void;
 }) {
   const [editando, setEditando] = useState(false);
@@ -204,7 +203,7 @@ function FilaOpcion({
         (opcion.fila ? (
           <>
             <SelectorPieza fila={opcion.fila} piezas={piezas} onCambio={onCambio} />
-            {opcion.fila.pieza && <ArchivoDePiezaBloque piezaId={opcion.fila.pieza.id} archivo={archivos[opcion.fila.pieza.id]} onCambio={onCambio} />}
+            {opcion.fila.pieza && <ArchivoDePiezaBloque piezaId={opcion.fila.pieza.id} info={info} onCambio={onCambio} />}
           </>
         ) : (
           <p className="text-xs text-amber-600">Sin fila de stock: guardá la opción de nuevo para crearla.</p>
@@ -234,7 +233,7 @@ function FilaOpcion({
 
 /* ─────────────────────────────── un grupo ─────────────────────────────── */
 
-function BloqueGrupo(props: { ficha: Ficha; grupo: Grupo; piezas: PiezaDeBodega[] | null; insumos: Insumo[]; archivos: Record<string, ArchivoDePieza>; onCambio: () => void }) {
+function BloqueGrupo(props: { ficha: Ficha; grupo: Grupo; piezas: PiezaDeBodega[] | null; insumos: Insumo[]; info: InfoDePiezas; onCambio: () => void }) {
   const { ficha, grupo, onCambio } = props;
   const [renombrando, setRenombrando] = useState<string | null>(null);
   const [agregando, setAgregando] = useState<string | null>(null);
@@ -463,8 +462,8 @@ export function SeccionVariantes({ ficha, onCambio }: { ficha: Ficha; onCambio: 
   const [piezas, setPiezas] = useState<PiezaDeBodega[] | null>(null);
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [nuevo, setNuevo] = useState(false);
-  // El archivo 3D de cada pieza (docs/sdd/014): una sola consulta para todas las del producto.
-  const [archivos, setArchivos] = useState<Record<string, ArchivoDePieza>>({});
+  // El archivo 3D y la receta de cada pieza (docs/sdd/014): una sola consulta para todas.
+  const [info, setInfo] = useState<InfoDePiezas>({ archivos: {}, recetas: {}, materiales: [] });
   const idsDePiezas = [ficha.fila, ...ficha.grupos.flatMap((g) => g.opciones.map((o) => o.fila))]
     .map((f) => f?.pieza?.id)
     .filter((x): x is string => !!x)
@@ -473,9 +472,9 @@ export function SeccionVariantes({ ficha, onCambio }: { ficha: Ficha; onCambio: 
   const cargarArchivos = useCallback(() => {
     // Sin piezas no hay nada que pedir; lo que haya quedado no se muestra (se busca por id).
     if (!idsDePiezas) return;
-    pedir<{ archivos: Record<string, ArchivoDePieza> }>(`/api/piezas/archivos?ids=${encodeURIComponent(idsDePiezas)}`)
-      .then((r) => setArchivos(r.archivos))
-      .catch(() => setArchivos({}));
+    pedir<InfoDePiezas>(`/api/piezas?ids=${encodeURIComponent(idsDePiezas)}`)
+      .then(setInfo)
+      .catch(() => setInfo({ archivos: {}, recetas: {}, materiales: [] }));
   }, [idsDePiezas]);
   useEffect(() => {
     cargarArchivos();
@@ -516,12 +515,12 @@ export function SeccionVariantes({ ficha, onCambio }: { ficha: Ficha; onCambio: 
               Pieza de Bodega <span className="text-xs text-muted-foreground font-normal">· stock {ficha.fila.cantidad}</span>
             </p>
             <SelectorPieza fila={ficha.fila} piezas={piezas} onCambio={cambio} />
-            {ficha.fila.pieza && <ArchivoDePiezaBloque piezaId={ficha.fila.pieza.id} archivo={archivos[ficha.fila.pieza.id]} onCambio={cambio} />}
+            {ficha.fila.pieza && <ArchivoDePiezaBloque piezaId={ficha.fila.pieza.id} info={info} onCambio={cambio} />}
           </div>
         )}
 
         {ficha.grupos.map((g) => (
-          <BloqueGrupo key={g.nombre} ficha={ficha} grupo={g} piezas={piezas} insumos={insumos} archivos={archivos} onCambio={cambio} />
+          <BloqueGrupo key={g.nombre} ficha={ficha} grupo={g} piezas={piezas} insumos={insumos} info={info} onCambio={cambio} />
         ))}
 
         {ficha.grupos.length === 0 && !nuevo && (
