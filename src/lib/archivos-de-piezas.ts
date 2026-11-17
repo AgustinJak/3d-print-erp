@@ -82,6 +82,36 @@ export async function archivosDePiezas(tenantId: string, ids: string[]): Promise
   return salida;
 }
 
+export interface ArchivoConPlacas {
+  id: string;
+  nombre: string;
+  extension: string | null;
+  tamano: number;
+  miniatura: string | null;
+  placas: PlacaVista[];
+}
+
+/** Un archivo de la biblioteca con sus placas y miniaturas firmadas (para elegirlo en el alta). */
+export async function archivoConPlacas(tenantId: string, id: string): Promise<ArchivoConPlacas | null> {
+  const a = await prisma.archivo3d.findFirst({
+    where: { id, tenantId, subido: true },
+    select: { id: true, nombre: true, extension: true, tamano: true, miniaturaRuta: true, placas: true },
+  });
+  if (!a) return null;
+  const placas = placasDe(a.placas);
+  const rutas = [a.miniaturaRuta, ...placas.map((p) => p.miniatura)].filter((r): r is string => !!r);
+  const firmadas = rutas.length ? ((await storage().createSignedUrls(rutas, MINIATURA_SEGUNDOS)).data ?? []) : [];
+  const firmada = new Map(rutas.map((r, i) => [r, firmadas[i]?.signedUrl ?? null]));
+  return {
+    id: a.id,
+    nombre: a.nombre,
+    extension: a.extension,
+    tamano: Number(a.tamano),
+    miniatura: a.miniaturaRuta ? (firmada.get(a.miniaturaRuta) ?? null) : null,
+    placas: placas.map((p) => ({ ...p, miniatura: p.miniatura ? (firmada.get(p.miniatura) ?? null) : null })),
+  };
+}
+
 /**
  * Engancha una pieza a un archivo de la biblioteca (y una placa), o la suelta con `archivoId` null.
  * Soltar no borra el archivo: queda en la biblioteca.

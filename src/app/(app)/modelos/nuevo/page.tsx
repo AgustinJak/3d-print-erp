@@ -5,12 +5,13 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
 import { toast } from "sonner";
-import { ArrowLeft, Box, Check, Layers, Loader2, Plus, Upload, X } from "lucide-react";
+import { ArrowLeft, Box, Check, Layers, Library, Loader2, Plus, Upload, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { subirModelo } from "@/components/archivos/subir";
+import { ElegirDeLaBiblioteca } from "@/components/producto/archivo-de-pieza";
 import { leer3mf } from "@/lib/leer-3mf";
 import { cotizar } from "@/lib/cotizador";
 import { validarAlta, type EntradaAlta, type ModeloDeAlta } from "@/lib/alta-producto-reglas";
@@ -183,6 +184,19 @@ function SoltarArchivo({ onArchivo, compacta, texto }: { onArchivo: (f: File) =>
   );
 }
 
+/** "o elegí uno de la biblioteca": un archivo que ya está subido (docs/sdd/014). */
+function DeLaBiblioteca({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <Library className="h-4 w-4" strokeWidth={1.5} /> Elegir uno que ya está en la biblioteca
+    </button>
+  );
+}
+
 /** El estado de un archivo ya elegido: nombre, peso y si terminó de subir. */
 function ArchivoElegido({ a, onQuitar }: { a: ArchivoLocal; onQuitar: () => void }) {
   return (
@@ -258,6 +272,8 @@ function AltaProducto() {
   const [fundaMinutos, setFundaMinutos] = useState("");
 
   const [creando, setCreando] = useState(false);
+  // Para qué se está eligiendo un archivo de la biblioteca: "producto", "funda" o la clave de una opción.
+  const [eligiendoPara, setEligiendoPara] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/cotizador")
@@ -297,6 +313,33 @@ function AltaProducto() {
     } catch (e) {
       setArchivos((a) => (a[clave]?.nombre === file.name ? { ...a, [clave]: { ...a[clave], estado: "error" } } : a));
       toast.error(e instanceof Error ? e.message : "No se pudo subir");
+    }
+  }
+
+  /** Un archivo que ya está en la biblioteca: no se sube nada, se traen sus placas y lo laminado. */
+  async function usarDeBiblioteca(clave: string, id: string) {
+    setEligiendoPara(null);
+    try {
+      const r = await fetch(`/api/archivos/${id}`);
+      if (!r.ok) throw new Error();
+      const a = (await r.json()) as { id: string; nombre: string; tamano: number; miniatura: string | null; placas: PlacaLocal[] };
+      const laminadas = a.placas.filter((p) => p.gramos != null);
+      const gramosLam = laminadas.length ? Math.round(laminadas.reduce((s, p) => s + (p.gramos ?? 0), 0) * 100) / 100 : null;
+      const conTiempo = a.placas.filter((p) => p.segundos != null);
+      const segundosLam = conTiempo.length ? conTiempo.reduce((s, p) => s + (p.segundos ?? 0), 0) : null;
+      setArchivos((x) => ({
+        ...x,
+        [clave]: { nombre: a.nombre, tamano: a.tamano, estado: "listo", id: a.id, miniatura: a.miniatura ?? a.placas[0]?.miniatura ?? null, placas: a.placas, gramos: gramosLam, segundos: segundosLam },
+      }));
+      if (clave === "producto" && gramosLam != null) {
+        setGramos((g) => g || String(gramosLam));
+        if (segundosLam != null) {
+          setHoras((h) => h || String(Math.floor(segundosLam / 3600)));
+          setMinutos((m) => m || String(Math.round((segundosLam % 3600) / 60)));
+        }
+      }
+    } catch {
+      toast.error("No se pudo leer ese archivo");
     }
   }
 
@@ -449,7 +492,15 @@ function AltaProducto() {
                 </label>
               }
             >
-              {fabrica && (delProducto ? <ArchivoElegido a={delProducto} onQuitar={() => quitarArchivo("producto")} /> : <SoltarArchivo onArchivo={(f) => usarArchivo("producto", f)} />)}
+              {fabrica &&
+                (delProducto ? (
+                  <ArchivoElegido a={delProducto} onQuitar={() => quitarArchivo("producto")} />
+                ) : (
+                  <div className="space-y-3">
+                    <SoltarArchivo onArchivo={(f) => usarArchivo("producto", f)} />
+                    <DeLaBiblioteca onClick={() => setEligiendoPara("producto")} />
+                  </div>
+                ))}
               {!fabrica && <p className="text-sm text-muted-foreground">Se crea sólo el producto, con su fila de stock. El precio y las fotos se cargan en su página.</p>}
             </Bloque>
 
@@ -571,8 +622,9 @@ function AltaProducto() {
                           <X className="h-3.5 w-3.5" />
                         </Button>
                         {fabrica && o.modelo.tipo === "propio" && !archivos[o.clave] && (
-                          <div className="w-full">
+                          <div className="w-full space-y-2">
                             <SoltarArchivo compacta texto={`El archivo de ${o.nombre || "esta opción"}`} onArchivo={(f) => usarArchivo(o.clave, f)} />
+                            <DeLaBiblioteca onClick={() => setEligiendoPara(o.clave)} />
                           </div>
                         )}
                       </div>
@@ -654,7 +706,10 @@ function AltaProducto() {
                         (archivos.funda ? (
                           <ArchivoElegido a={archivos.funda} onQuitar={() => quitarArchivo("funda")} />
                         ) : (
-                          <SoltarArchivo compacta texto="El archivo del insumo (opcional)" onArchivo={(f) => usarArchivo("funda", f)} />
+                          <div className="space-y-2">
+                            <SoltarArchivo compacta texto="El archivo del insumo (opcional)" onArchivo={(f) => usarArchivo("funda", f)} />
+                            <DeLaBiblioteca onClick={() => setEligiendoPara("funda")} />
+                          </div>
                         ))}
                       <p className="text-xs text-muted-foreground">Queda en la lista de insumos para usarlo en otros productos.</p>
                     </div>
@@ -732,6 +787,9 @@ function AltaProducto() {
           </aside>
         </div>
       )}
+
+      {/* ─── Un archivo que ya está en la biblioteca ─── */}
+      <ElegirDeLaBiblioteca abierto={!!eligiendoPara} onCerrar={() => setEligiendoPara(null)} onElegir={(id) => eligiendoPara && usarDeBiblioteca(eligiendoPara, id)} />
 
       {/* ─── Una opción por placa ─── */}
       <ElegirPlacas

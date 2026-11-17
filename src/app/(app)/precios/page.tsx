@@ -273,7 +273,7 @@ function PantallaPrecios() {
               {REDONDEO[datos.gastos.redondeo] ?? datos.gastos.redondeo}.{" "}
               {datos.gastos.origen === "erp"
                 ? "Cada publicación de ML con lo que cobra ML por ella: comisión de su categoría, cargo fijo, cuotas y envío."
-                : "El margen, la promo y el redondeo de cada pieza, si los tiene, van en Bodega."}
+                : "El margen, la promo y el redondeo propios de un producto, si los tiene, van en su página."}
             </p>
           )}
         </div>
@@ -435,7 +435,7 @@ function PantallaPrecios() {
                   <span>
                     <AlertTriangle className="inline h-3.5 w-3.5 mr-1 text-destructive" />
                     {confirmar.filas.filter((f) => f.aparte).length === 1 ? "El marcado en rojo" : `Los ${confirmar.filas.filter((f) => f.aparte).length} marcados en rojo`} cambia
-                    {confirmar.filas.filter((f) => f.aparte).length === 1 ? "" : "n"} mucho o le saca la promoción. Confirmo que lo revisé: un costo mal cargado en Bodega publica un precio malo.
+                    {confirmar.filas.filter((f) => f.aparte).length === 1 ? "" : "n"} mucho o le saca la promoción. Confirmo que lo revisé: una receta mal cargada en una pieza publica un precio malo.
                   </span>
                 </label>
               )}

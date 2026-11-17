@@ -102,7 +102,9 @@ export function SeccionPrecioCosto({ ficha, onCambio }: { ficha: Ficha; onCambio
             {campo("precioPromo", "Promo")}
           </div>
           {deBodega ? (
-            <p className="text-xs text-muted-foreground">El costo sale de Bodega: se cambia costeando la pieza allá.</p>
+            <p className="text-xs text-muted-foreground">
+              El costo sale de la receta de cada pieza (gramos, tiempo, material e insumos): se cambia en Variantes y piezas, con el lápiz de la pieza.
+            </p>
           ) : (
             <div className="grid grid-cols-2 gap-3">
               {campo("costoFab", "Costo de fabricación")}
@@ -123,8 +125,13 @@ export function SeccionPrecioCosto({ ficha, onCambio }: { ficha: Ficha; onCambio
             <Dato etiqueta="Costo">
               <span className="flex items-center justify-end gap-2">
                 {pesos(p.costoFab + p.costoInsumos)}
-                <Badge variant="outline" className="font-normal">
-                  {deBodega ? "de Bodega" : "a mano"}
+                {/* Desde el 2026-11-16 la receta se edita en el ERP (docs/sdd/014): ya no es "de Bodega". */}
+                <Badge
+                  variant="outline"
+                  className="font-normal"
+                  title={deBodega ? "Sale de la receta de cada pieza: se edita en Variantes y piezas, con el lápiz de la pieza" : "Cargado a mano en Editar"}
+                >
+                  {deBodega ? "de las piezas" : "a mano"}
                 </Badge>
               </span>
             </Dato>
@@ -135,7 +142,7 @@ export function SeccionPrecioCosto({ ficha, onCambio }: { ficha: Ficha; onCambio
           {ficha.costo.faltan.length > 0 && (
             <p className="flex items-start gap-1.5 text-xs text-amber-600">
               <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-              <span>Falta costear en Bodega: {ficha.costo.faltan.join(", ")}.</span>
+              <span>Falta la receta de: {ficha.costo.faltan.join(", ")}. Se carga en Variantes y piezas o en Piezas.</span>
             </p>
           )}
         </div>

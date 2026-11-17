@@ -369,7 +369,7 @@ function RecetaFila({
 }
 
 /** La biblioteca, para elegir un archivo que ya está (el mismo modelo para varios colores). */
-function ElegirDeLaBiblioteca({ abierto, onCerrar, onElegir }: { abierto: boolean; onCerrar: () => void; onElegir: (id: string) => void }) {
+export function ElegirDeLaBiblioteca({ abierto, onCerrar, onElegir }: { abierto: boolean; onCerrar: () => void; onElegir: (id: string) => void }) {
   const [lista, setLista] = useState<ArchivoVista[] | null>(null);
   const [buscar, setBuscar] = useState("");
 

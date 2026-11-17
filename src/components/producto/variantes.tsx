@@ -427,7 +427,7 @@ function NuevoGrupo({ ficha, insumos, onCambio, onCerrar }: { ficha: Ficha; insu
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-muted-foreground">¿Una funda propia que no está? Creala en Bodega en la categoría Insumos y aparece acá.</p>
+              <p className="text-xs text-muted-foreground">¿Una funda propia que no está? Se crea con su archivo al dar de alta un producto (Nuevo producto → Funda → Una nueva).</p>
             </div>
           ) : (
             <div className="space-y-1.5">

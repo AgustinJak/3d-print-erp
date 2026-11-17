@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 import { getAuthenticatedTenant } from "@/lib/tenant";
 import { malPedido, noEncontrado, responder } from "@/lib/api-envoltura";
 import { borrarArchivo, cambiarArchivo, confirmarSubida, prepararMiniatura } from "@/lib/tareas";
-import { guardarLectura } from "@/lib/archivos-de-piezas";
+import { archivoConPlacas, guardarLectura } from "@/lib/archivos-de-piezas";
 
 /**
  * POST   /api/archivos/:id { accion: "confirmar" }  → la subida terminó.
@@ -14,6 +14,15 @@ import { guardarLectura } from "@/lib/archivos-de-piezas";
  * PATCH  /api/archivos/:id { nombre?, carpeta?, etiquetas? }
  * DELETE /api/archivos/:id → lo borra del almacenamiento. (docs/sdd/012)
  */
+/** GET /api/archivos/:id → el archivo con sus placas y miniaturas firmadas (docs/sdd/014). */
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  return responder(async () => {
+    const { tenantId } = await getAuthenticatedTenant();
+    const { id } = await params;
+    return (await archivoConPlacas(tenantId, id)) ?? noEncontrado();
+  });
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   return responder(async () => {
     const { tenantId } = await getAuthenticatedTenant();

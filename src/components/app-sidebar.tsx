@@ -24,6 +24,7 @@ import {
   ListChecks,
   FolderOpen,
   Calculator,
+  Puzzle,
 } from "lucide-react";
 import {
   Sidebar,
@@ -65,6 +66,8 @@ const navTaller = [
 
 const navCatalogo = [
   { title: "Productos", href: "/modelos", icon: Box },
+  // El archivo y la receta de cada pieza, para completar lo que falta (docs/sdd/014).
+  { title: "Piezas", href: "/piezas", icon: Puzzle },
   { title: "Categorías", href: "/categorias", icon: Tag },
   { title: "Tendencias", href: "/tendencias", icon: Radar },
   // Cotizar una pieza sin crear el producto (docs/sdd/013).

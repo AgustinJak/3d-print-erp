@@ -137,3 +137,12 @@ una columna única en `archivos_3d` a la tabla `piezas_archivo` (pieza → archi
 **Para el que sigue**
 - ERP y Bodega 2.38 tienen que salir juntos: con la 2.37, lo que se edite en el ERP no baja a la
   Bodega, y una edición en la Bodega lo pisaría.
+
+## 2026-11-16 · Claude (piezas a completar)
+
+- `/piezas` (Catálogo › Piezas): las 142 piezas de productos activos e insumos con lo que les
+  falta, de lo más vendido en 90 días a lo menos (`lib/piezas-a-completar.ts`); cada fila se
+  completa con el bloque de la página del producto. Al 2026-11-16: 86 sin receta, 61 sin archivo.
+- En "Precio y costo" el costo dice "de las piezas" (antes "de Bodega") y los avisos que mandaban
+  a costear en Bodega apuntan a la receta en el ERP.
+- Nuevo producto: "Elegir uno que ya está en la biblioteca" (`GET /api/archivos/:id` con placas).

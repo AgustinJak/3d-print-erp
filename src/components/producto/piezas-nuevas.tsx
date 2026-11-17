@@ -117,7 +117,7 @@ export function PiezasNuevas({ onCambio }: { onCambio: () => void }) {
                           </Badge>
                         )}
                         <span className="text-xs text-muted-foreground tabular-nums">
-                          {c.tieneReceta ? pesos(c.costoFab + c.costoInsumos) : "sin costear en Bodega"}
+                          {c.tieneReceta ? pesos(c.costoFab + c.costoInsumos) : "sin receta"}
                         </span>
                       </span>
                       <span className={`block text-xs ${d.aviso ? "text-amber-600" : "text-sky-600"}`}>→ {d.texto}</span>
