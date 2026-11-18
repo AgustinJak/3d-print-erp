@@ -146,3 +146,24 @@ una columna única en `archivos_3d` a la tabla `piezas_archivo` (pieza → archi
 - En "Precio y costo" el costo dice "de las piezas" (antes "de Bodega") y los avisos que mandaban
   a costear en Bodega apuntan a la receta en el ERP.
 - Nuevo producto: "Elegir uno que ya está en la biblioteca" (`GET /api/archivos/:id` con placas).
+
+## 2026-11-18 · Claude (los costos al ERP)
+
+**Pedido de Agustín:** "dale, pasalo al ERP": el precio de los materiales y los parámetros del
+taller, que todavía se editaban en la Configuración de la Bodega.
+
+- ERP: Precios › Costos (panel lateral, también `/precios?panel=costos`). Materiales con su precio
+  por kilo, por defecto y activo; taller con luz, consumo, repuestos, vida útil y margen de error;
+  un ejemplo que calcula en vivo cuánto cuesta una pieza, hoy y con lo nuevo.
+  `/api/costos/fabricacion` (GET, PUT el taller, POST un material), `lib/costos-de-fabricacion.ts`
+  y `lib/costos-taller.ts`. Guardar recalcula el costo de los productos (`aplicarCostosSiCambio`).
+  17 de 17 en `scripts/probar-costos-de-fabricacion.ts`, sin mover ningún costo.
+- Bodega 2.40: `bajarCostos()` reemplaza a `subirParametrosDeCosto()` y `subirMateriales()`;
+  Configuración muestra costos y materiales de sólo lectura con "Editar en el ERP". Se sacaron los
+  IPC `materials:save`, `materials:setDefault` y `materials:setActivo`. La potencia de las
+  impresoras sigue en la Bodega (sólo estima el Historial).
+- Precios: la lista muestra hoy → nuevo también en ML y en la web, no sólo en la venta directa.
+
+**Para el que sigue**
+- Instalar la 2.40 en las dos PCs: una 2.39 en la que alguien edite costos los vuelve a subir y
+  pisa lo del ERP.

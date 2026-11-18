@@ -13,7 +13,7 @@
     "approvedAt": "2026-11-16",
     "notes": "\"dale subilo y arrancá la etapa 1\", con las decisiones de las preguntas abiertas y el diseño de variantes e insumos."
   },
-  "updatedAt": "2026-11-16",
+  "updatedAt": "2026-11-18",
   "tasks": [
     {
       "id": "TASK-001",
@@ -279,6 +279,30 @@
       "blockedReason": null,
       "completedAt": null,
       "notes": "Pedido de Agustín el 2026-11-16. 7 de 7 pruebas contra una pieza real, restaurada."
+    },
+    {
+      "id": "TASK-012",
+      "title": "Los costos de fabricación se editan en el ERP",
+      "description": "Precios › Costos: materiales y parámetros del taller en el ERP; la Bodega 2.40 los baja y su Configuración queda de sólo lectura.",
+      "component": "integration",
+      "status": "in-review",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-011"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/costos-de-fabricacion.ts",
+        "src/lib/costos-taller.ts",
+        "src/app/api/costos/fabricacion/route.ts",
+        "src/components/precios/costos-de-fabricacion.tsx",
+        "src/app/(app)/precios/page.tsx",
+        "scripts/probar-costos-de-fabricacion.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": "17 de 17 en scripts/probar-costos-de-fabricacion.ts. Falta publicar el ERP y la Bodega 2.40."
     }
   ]
 }

@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { motion } from "motion/react";
-import { AlertTriangle, ChevronRight, FileBox, History, Loader2, RefreshCw, Search, Settings2, SlidersHorizontal, Tag, X } from "lucide-react";
+import { AlertTriangle, ChevronRight, Factory, FileBox, History, Loader2, RefreshCw, Search, Settings2, SlidersHorizontal, Tag, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,6 +15,7 @@ import { Segmentado } from "@/components/segmentado";
 import { EtiquetaDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
 import { json, pedir, pesos } from "@/components/producto/seccion";
 import { ConfiguracionDePrecios } from "@/components/precios/configuracion";
+import { CostosDeFabricacionPanel } from "@/components/precios/costos-de-fabricacion";
 import { MargenMasivo } from "@/components/precios/margen-masivo";
 import { ConfirmarFlex } from "@/components/precios/confirmar-flex";
 import { EditorAjustes } from "@/components/precios/editor-ajustes";
@@ -80,7 +81,11 @@ function PantallaPrecios() {
   const [q, setQ] = useState("");
   const [elegidos, setElegidos] = useState<Set<string>>(new Set());
   const [abierto, setAbierto] = useState<string | null>(modelo);
-  const [panel, setPanel] = useState<null | "historial" | "configuracion">(null);
+  type Panel = "historial" | "configuracion" | "costos";
+  const [panel, setPanel] = useState<null | Panel>(() => {
+    const p = params.get("panel");
+    return p === "historial" || p === "configuracion" || p === "costos" ? p : null;
+  });
   const [masivo, setMasivo] = useState<null | "ajuste" | "margen">(null);
   const [leyendo, setLeyendo] = useState<"mercadolibre" | "shop" | null>(null);
   const [confirmar, setConfirmar] = useState<{ canal: "mercadolibre" | "erp" | "shop"; filas: Aplicable[] } | null>(null);
@@ -254,6 +259,9 @@ function PantallaPrecios() {
           <Button size="sm" variant="ghost" onClick={() => setPanel("historial")}>
             <History className="h-4 w-4" strokeWidth={1.5} /> Historial
           </Button>
+          <Button size="sm" variant="ghost" onClick={() => setPanel("costos")}>
+            <Factory className="h-4 w-4" strokeWidth={1.5} /> Costos
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => setPanel("configuracion")}>
             <Settings2 className="h-4 w-4" strokeWidth={1.5} /> Configuración
           </Button>
@@ -416,13 +424,26 @@ function PantallaPrecios() {
         </DialogContent>
       </Dialog>
 
-      <Sheet open={!!panel} onOpenChange={(o) => !o && setPanel(null)}>
+      <Sheet
+        open={!!panel}
+        onOpenChange={(o) => {
+          if (o) return;
+          setPanel(null);
+          if (params.get("panel")) router.replace("/precios");
+        }}
+      >
         <SheetContent side="right" className="w-full gap-0 overflow-y-auto p-0 data-[side=right]:sm:max-w-[720px]">
           <SheetHeader className="border-b p-6">
-            <SheetTitle className="text-xl font-medium">{panel === "historial" ? "Historial" : "Configuración"}</SheetTitle>
-            <SheetDescription>{panel === "historial" ? "Cada precio que se aplicó desde acá." : "Margen, promo, redondeo y gastos de cada canal para todos los productos."}</SheetDescription>
+            <SheetTitle className="text-xl font-medium">{panel === "historial" ? "Historial" : panel === "costos" ? "Costo de fabricación" : "Configuración"}</SheetTitle>
+            <SheetDescription>
+              {panel === "historial"
+                ? "Cada precio que se aplicó desde acá."
+                : panel === "costos"
+                  ? "El precio de cada material y lo que cuesta una hora de impresión. Al guardar se recalcula el costo de los productos; no se publica ningún precio."
+                  : "Margen, promo, redondeo y gastos de cada canal para todos los productos."}
+            </SheetDescription>
           </SheetHeader>
-          <div className="p-6">{panel === "historial" ? <Historial /> : panel === "configuracion" ? <ConfiguracionDePrecios onGuardado={cargar} /> : null}</div>
+          <div className="p-6">{panel === "historial" ? <Historial /> : panel === "configuracion" ? <ConfiguracionDePrecios onGuardado={cargar} /> : panel === "costos" ? <CostosDeFabricacionPanel onGuardado={cargar} /> : null}</div>
         </SheetContent>
       </Sheet>
 
@@ -545,9 +566,22 @@ function Canal({ nombre, precio, antes, estado }: { nombre: string; precio: numb
   );
 }
 
+/**
+ * El precio de hoy y el nuevo de un canal, para la fila: el de la publicación de la combinación base
+ * (la de una unidad); si esa está al día pero otra no, el de la primera que cambia.
+ */
+function hoyYNuevo(filas: Producto["ml"], base: Producto["base"]): { hoy: number | null; nuevo: number | null } | null {
+  const cambia = (f: Producto["ml"][number]) => f.publicado != null && f.propuesto != null && Math.abs(f.propuesto - f.publicado) > 1;
+  const sueltas = filas.filter((f) => f.unidades === 1 && !f.ignorada);
+  const f = sueltas.find((x) => x.combinacionId === base?.combinacionId && cambia(x)) ?? sueltas.find(cambia);
+  return f ? { hoy: f.publicado, nuevo: f.propuesto } : null;
+}
+
 function FilaProducto({ p, elegido, onElegir, onAbrir }: { p: Producto; elegido: boolean; onElegir: () => void; onAbrir: () => void }) {
   const b = p.base?.precios;
   const erp = p.erp;
+  const ml = p.pendientes.ml.length ? hoyYNuevo(p.ml, p.base) : null;
+  const web = p.pendientes.web.length ? hoyYNuevo(p.web, p.base) : null;
   const estadoErp = !erp
     ? { texto: "—", tono: "quieto" as const }
     : p.pendientes.erp
@@ -598,8 +632,8 @@ function FilaProducto({ p, elegido, onElegir, onAbrir }: { p: Producto; elegido:
       </div>
       <ChevronRight className="h-4 w-4 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 md:order-last" />
       <div className="col-span-3 grid grid-cols-3 gap-3 pl-9 md:contents">
-        <Canal nombre="Mercado Libre" precio={b?.mlPublicado} estado={estadoDeCanal(p.ml, p.pendientes.ml.length)} />
-        <Canal nombre="Web" precio={b?.web} estado={estadoDeCanal(p.web, p.pendientes.web.length ? p.web.filter((f) => f.diferencia != null && Math.abs(f.diferencia) > 1).length || 1 : 0)} />
+        <Canal nombre="Mercado Libre" precio={ml?.nuevo ?? b?.mlPublicado} antes={ml?.hoy} estado={estadoDeCanal(p.ml, p.pendientes.ml.length)} />
+        <Canal nombre="Web" precio={web?.nuevo ?? b?.web} antes={web?.hoy} estado={estadoDeCanal(p.web, p.pendientes.web.length ? p.web.filter((f) => f.diferencia != null && Math.abs(f.diferencia) > 1).length || 1 : 0)} />
         <Canal nombre="Venta directa" precio={erp?.propuesto ?? b?.personalizado} antes={p.pendientes.erp ? erp?.actual : null} estado={estadoErp} />
       </div>
     </li>
