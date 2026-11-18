@@ -25,3 +25,13 @@ Validado ("dale, las dos como proponés"). Hecho:
 - INV - Flujos: sección 10d, navegación, ER e índice de endpoints.
 
 Falta: mirarla en el navegador con sesión y publicar con el OK de Agustín.
+
+## 2026-11-18 · Claude (lectura sola al entrar)
+
+**Pedido de Agustín:** que Precios lea ML y la web sola al entrar, y que Productos tenga el estado
+de ML al día.
+
+- `POST /api/precios/leer?auto=1`: lee sólo si la última lectura terminada tiene más de una hora;
+  nunca dos del mismo canal a la vez (turno en `config_tenant.data`, `lib/lectura-de-canales.ts`);
+  el botón contesta 409 si hay otra en curso. 10 de 10 en `scripts/probar-lectura-de-canales.ts`.
+- Precios la pide para ML y la web al entrar; Productos, para ML. Mientras, se ve la anterior.

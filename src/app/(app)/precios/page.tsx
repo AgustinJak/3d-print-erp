@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { motion } from "motion/react";
@@ -109,6 +109,30 @@ function PantallaPrecios() {
   useEffect(() => {
     cargar();
   }, [cargar]);
+
+  // Al entrar, ML y la web se leen solos si la última lectura tiene más de una hora (el servidor
+  // decide y no deja que corran dos a la vez). Mientras, se ve lo último que había.
+  const autoLeida = useRef(false);
+  useEffect(() => {
+    if (!datos || autoLeida.current) return;
+    autoLeida.current = true;
+    Promise.resolve().then(async () => {
+      for (const canal of ["mercadolibre", "shop"] as const) {
+        setLeyendo(canal);
+        try {
+          const r = await pedir<{ saltada?: string; errores?: unknown[] }>(`/api/precios/leer?canal=${canal}&auto=1`, { method: "POST" });
+          if (!r.saltada) {
+            await cargar();
+            if (r.errores?.length) toast.warning(`${r.errores.length} publicaciones de ${canal === "shop" ? "la web" : "ML"} no se pudieron leer`);
+          }
+        } catch (e) {
+          toast.error(`No se pudo leer ${canal === "shop" ? "la web" : "ML"} sola: ${e instanceof Error ? e.message : e}`);
+        } finally {
+          setLeyendo(null);
+        }
+      }
+    });
+  }, [datos, cargar]);
 
   const productos = useMemo(() => (datos ? agrupar(datos, alcance) : []), [datos, alcance]);
   const sinProducto = useMemo(() => (datos?.canales ?? []).filter((f) => !f.modeloId && (f.canal === "shop" || alcance === "todas" || f.cuentaMl === alcance)), [datos, alcance]);
@@ -253,7 +277,7 @@ function PantallaPrecios() {
             <Button key={canal} size="sm" variant="outline" onClick={() => leer(canal)} disabled={!!leyendo} title={`Leído ${haceCuanto(leido ?? null)}`}>
               {leyendo === canal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />}
               {texto}
-              <span className="text-xs font-normal text-muted-foreground">{haceCuanto(leido ?? null)}</span>
+              <span className="text-xs font-normal text-muted-foreground">{leyendo === canal ? "leyendo…" : haceCuanto(leido ?? null)}</span>
             </Button>
           ))}
           <Button size="sm" variant="ghost" onClick={() => setPanel("historial")}>

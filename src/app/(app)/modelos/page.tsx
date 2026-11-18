@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Box, ChevronDown, Plus, Search, Zap, Clock } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box, ChevronDown, Plus, Search, Zap, Clock, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "motion/react";
@@ -89,6 +89,7 @@ export default function ModelosPage() {
   const [verVariantes, setVerVariantes] = useState(false);
   const [mostrarConsolidados, setMostrarConsolidados] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [leyendoMl, setLeyendoMl] = useState(false);
   // Claves de variante (o `m:<id>` para un producto sin variantes activas).
   const [elegidos, setElegidos] = useState<Set<string>>(new Set());
   const [masivo, setMasivo] = useState<"crear" | "activar" | "desactivar" | "inmediata" | "a_pedido" | "copiar" | null>(null);
@@ -141,6 +142,27 @@ export default function ModelosPage() {
   useEffect(() => {
     Promise.all([fetchModelos(), fetchCategorias()]).then(() => setInitialLoading(false));
   }, [fetchModelos, fetchCategorias]);
+
+  // El estado de ML sale de la última lectura de precios. Al entrar se lee sola si tiene más de una
+  // hora (el servidor decide y no deja que corran dos a la vez); mientras, se ve la anterior.
+  const autoLeida = useRef(false);
+  useEffect(() => {
+    if (initialLoading || autoLeida.current) return;
+    autoLeida.current = true;
+    Promise.resolve().then(async () => {
+      setLeyendoMl(true);
+      try {
+        const r = await fetch("/api/precios/leer?canal=mercadolibre&auto=1", { method: "POST" });
+        const j = (await r.json().catch(() => ({}))) as { saltada?: string; error?: string };
+        if (!r.ok) toast.error(`No se pudo leer Mercado Libre: ${j.error ?? r.status}`);
+        else if (!j.saltada) await fetchModelos();
+      } catch {
+        // Sin red: queda la lectura anterior, con su fecha a la vista.
+      } finally {
+        setLeyendoMl(false);
+      }
+    });
+  }, [initialLoading, fetchModelos]);
 
   // Enlaces viejos al lápiz: ?edit=<id> va a la página del producto; ?nuevo=1&nombre=Y abre el
   // alta corta (docs/sdd/004, spec 001, REQ-5).
@@ -281,7 +303,11 @@ export default function ModelosPage() {
             {verVariantes ? "Cerrar las variantes" : "Abrir todas las variantes"}
           </button>
         )}
-        {leidoEn && (
+        {leyendoMl ? (
+          <span className="ml-auto flex items-center gap-1.5">
+            <Loader2 className="h-3 w-3 animate-spin" /> Leyendo Mercado Libre…
+          </span>
+        ) : leidoEn && (
           <span className="ml-auto">
             Mercado Libre según la lectura del {new Date(leidoEn).toLocaleString("es-AR", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })} ·{" "}
             <Link href="/precios" className="text-primary hover:underline">
