@@ -29,6 +29,8 @@ import {
   tresPreciosErp,
 } from "@/lib/precios-ml-publicacion";
 import { tarifasGuardadas } from "@/lib/tarifas-ml";
+import { resumenesDeAjustes } from "@/lib/ajustes-precio";
+import { conPorcentaje, SIN_AJUSTES, type ResumenAjustes } from "@/lib/ajustes-precio-reglas";
 import { pctMasAlto, type TarifasMl } from "@/lib/tarifas-ml-reglas";
 
 /**
@@ -162,7 +164,15 @@ export interface PrecioDeCombinacion {
   /** Vacía = hay precio. */
   falta: Falta[];
   /** Con qué se calculó: la política de la pieza en Bodega, o la general. */
-  politica: { margen: number; redondeo: Redondeo; promo: number; propia: boolean; margenPropio: boolean };
+  politica: {
+    margen: number;
+    redondeo: Redondeo;
+    promo: number;
+    propia: boolean;
+    margenPropio: boolean;
+    /** Los ajustes vigentes del producto (docs/sdd/015): % por canal y envío propio. */
+    ajustes?: ResumenAjustes;
+  };
   precios: TresPrecios | null;
   /** Lo último que guardó Bodega para la pieza, para comparar. */
   foto: FotoDeBodega | null;
@@ -172,7 +182,7 @@ export interface PrecioDeCombinacion {
 export interface DelErp {
   tarifas: TarifasMl | null;
   /** La política propia de cada producto del ERP, y su precio de ML fijo si tiene. */
-  modelos: Map<string, { politica: Politica; precioMlFijo: number | null; categoriaMl: string | null }>;
+  modelos: Map<string, { politica: Politica; precioMlFijo: number | null; categoriaMl: string | null; ajustes?: ResumenAjustes }>;
   /** La categoría de ML de cada combinación, la de una publicación suya ya leída. */
   categorias: Map<string, string>;
 }
@@ -188,10 +198,11 @@ export interface ContextoDePrecios {
 }
 
 export async function cargarDelErp(tenantId: string): Promise<DelErp> {
-  const [tarifas, modelos, mapeos] = await Promise.all([
+  const [tarifas, modelos, mapeos, ajustes] = await Promise.all([
     tarifasGuardadas(tenantId),
     prisma.modelo.findMany({ where: { tenantId }, select: { id: true, margen: true, promoMl: true, redondeo: true, precioMlFijo: true, categoriaMl: true } }),
     prisma.mapeoCanal.findMany({ where: { tenantId, canal: "mercadolibre", ignorar: false, combinacionId: { not: null } }, select: { combinacionId: true, precioLectura: true } }),
+    resumenesDeAjustes(tenantId),
   ]);
   const categorias = new Map<string, string>();
   for (const m of mapeos) {
@@ -200,7 +211,7 @@ export async function cargarDelErp(tenantId: string): Promise<DelErp> {
   }
   return {
     tarifas,
-    modelos: new Map(modelos.map((m) => [m.id, { politica: politicaDeModelo(m), precioMlFijo: m.precioMlFijo, categoriaMl: m.categoriaMl }])),
+    modelos: new Map(modelos.map((m) => [m.id, { politica: politicaDeModelo(m), precioMlFijo: m.precioMlFijo, categoriaMl: m.categoriaMl, ajustes: ajustes.get(m.id) }])),
     categorias,
   };
 }
@@ -229,7 +240,37 @@ export async function cargarContextoDePrecios(tenantId: string): Promise<Context
 
 /** Los gastos con que se calcula una combinación: los generales con el margen y la promo de su pieza. */
 export function gastosDe(general: GastosVenta, politica: PrecioDeCombinacion["politica"]): GastosVenta {
-  return { ...general, margenMinorista: politica.margen, mlPromoPct: politica.promo };
+  const envio = politica.ajustes?.envio ?? {};
+  return {
+    ...general,
+    margenMinorista: politica.margen,
+    mlPromoPct: politica.promo,
+    // El envío propio del producto (docs/sdd/015). En ML cuenta sólo cuando lo pagás vos: el motor
+    // lo usa únicamente con envío gratis, igual que el general.
+    ...(envio.ml != null ? { mlEnvioCosto: envio.ml } : {}),
+    ...(envio.web != null ? { webEnvioCosto: envio.web } : {}),
+  };
+}
+
+/**
+ * Un precio de canal con el % de su ajuste (docs/sdd/015), vuelto a redondear como siempre. Sin %,
+ * el mismo número.
+ */
+function ajustar(precio: number, pct: number | undefined, redondeo: Redondeo, techo?: number): number {
+  if (!pct || !Number.isFinite(precio)) return precio;
+  return Math.round(redondear(conPorcentaje(precio, pct), redondeo, techo));
+}
+
+/** Lo publicado en ML de una combinación con el % de ML de su producto (sin precio fijo). */
+export function publicadoMlConAjuste(p: PrecioDeCombinacion, publicado: number, cx: ContextoDePrecios): number {
+  const fijo = cx.erp?.modelos.get(p.modeloId)?.precioMlFijo ?? null;
+  return ajustarPublicadoMl(publicado, fijo != null ? undefined : p.politica.ajustes?.pct.ml, p.politica.redondeo);
+}
+
+/** El precio a publicar en ML con el % de ML: sobre lo que paga el cliente, con la promo encima. */
+function ajustarPublicadoMl(publicado: number, pct: number | undefined, redondeo: Redondeo): number {
+  if (!pct || !Number.isFinite(publicado)) return publicado;
+  return Math.round(redondear(conPorcentaje(publicado, pct), redondeo));
 }
 
 export function precioDeCombinacion(
@@ -288,6 +329,7 @@ export function precioDeCombinacion(
     propia: Object.values(propiaPolitica).some((v) => v != null),
     // Sólo el margen: "propia" también es el redondeo o la promo de la pieza en Bodega.
     margenPropio: propiaPolitica.margen != null,
+    ajustes: delErp?.ajustes ?? SIN_AJUSTES,
   };
 
   const base = { combinacionId: c.id, modeloId: c.modeloId, modelo: cx.reservas.modelos.get(c.modeloId) ?? "", nombre: c.nombre, sku: c.sku, variantes: c.variantes, politica, foto: deBodega?.foto ?? null };
@@ -299,13 +341,26 @@ export function precioDeCombinacion(
     pieza,
     receta,
   };
-  const precios = cx.erp
-    ? tresPreciosErp(p.gastos, costo.fabricacion, costo.insumos, p.redondeo, {
+  const gastosConEnvio = gastosDe(cx.general.gastos, politica);
+  const crudos = cx.erp
+    ? tresPreciosErp({ ...p.gastos, mlEnvioCosto: gastosConEnvio.mlEnvioCosto, webEnvioCosto: gastosConEnvio.webEnvioCosto }, costo.fabricacion, costo.insumos, p.redondeo, {
         pct: pctDeCombinacion(cx, c.id, c.modeloId),
         tarifas: cx.erp.tarifas,
         precioFijo: delErp?.precioMlFijo ?? null,
       })
     : tresPrecios(p.gastos, costo.fabricacion, costo.insumos, p.redondeo);
+  // El % de cada canal, después de copiar la ganancia entre canales (docs/sdd/015). Con precio fijo
+  // en ML, el % de ML no se aplica (RN-4).
+  const pctDe = politica.ajustes.pct;
+  const pctMl = delErp?.precioMlFijo != null ? undefined : pctDe.ml;
+  const mlAjustado = ajustar(crudos.ml, pctMl, p.redondeo, techoDeRedondeo(gastosConEnvio, "ml", conPorcentaje(crudos.ml, pctMl)));
+  const precios: TresPrecios = {
+    ...crudos,
+    ml: mlAjustado,
+    mlPublicado: pctMl ? precioConPromo(mlAjustado, gastosConEnvio.mlPromoPct, techoDeRedondeo(gastosConEnvio, "ml", mlAjustado)).publicado : crudos.mlPublicado,
+    web: ajustar(crudos.web, pctDe.web, p.redondeo),
+    personalizado: ajustar(crudos.personalizado, pctDe.personalizado, p.redondeo),
+  };
   // Los gastos más el margen se comen todo el precio: la calculadora tampoco da número.
   if (![precios.ml, precios.web, precios.personalizado].every(Number.isFinite)) {
     return { ...base, costo, falta: [{ motivo: "sin_precio_posible", etiqueta: pieza.etiqueta }], precios: null };
@@ -390,12 +445,15 @@ function precioDeClaveErp(
   const fijo = n === 1 ? (erp.modelos.get(p.modeloId)?.precioMlFijo ?? null) : null;
   const uno = costosDeOpcionUno(g, pct);
   const op1 = fijo != null ? opcionUnoFija(g, fab, ins, fijo, uno, erp.tarifas) : opcionUnoConMargen(g, fab, ins, p.politica.redondeo, uno, erp.tarifas);
-  if (!lectura?.tipo || !mla) return op1.publicado;
+  if (!lectura?.tipo || !mla) return n === 1 ? p.precios!.mlPublicado : ajustarPublicadoMl(op1.publicado, fijo != null ? undefined : p.politica.ajustes?.pct.ml, p.politica.redondeo);
   // La publicación de la opción 1 de un producto con precio fijo va en ese número exacto: es lo
   // que eligió Agustín. Recalcularla desde la ganancia la corría unos pesos por el redondeo.
   if (fijo != null && opcionDe(lectura) === 1 && !lectura.envioGratis) return fijo;
-  const r = precioParaGanancia(g, fab, ins, p.politica.redondeo, op1.ganancia, costosDeLectura(lectura, mla, erp.tarifas, g, pct), erp.tarifas);
-  return Number.isFinite(r.publicado) ? r.publicado : null;
+  // El envío propio (docs/sdd/015) reemplaza también al que ML cotizó para la publicación.
+  const envioPropio = p.politica.ajustes?.envio.ml;
+  const lec = envioPropio != null ? { ...lectura, costoEnvio: envioPropio } : lectura;
+  const r = precioParaGanancia(g, fab, ins, p.politica.redondeo, op1.ganancia, costosDeLectura(lec, mla, erp.tarifas, g, pct), erp.tarifas);
+  return Number.isFinite(r.publicado) ? ajustarPublicadoMl(r.publicado, fijo != null ? undefined : p.politica.ajustes?.pct.ml, p.politica.redondeo) : null;
 }
 
 export interface PrecioDeVentaErp {

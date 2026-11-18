@@ -7,8 +7,10 @@ import {
   type PrecioDeCombinacion,
   gastosDe,
   pctDeCombinacion,
+  publicadoMlConAjuste,
   type ContextoDePrecios,
 } from "@/lib/precios-combinacion";
+import { ajustesPorModelo, type AjusteGuardado } from "@/lib/ajustes-precio";
 import { costosDeLectura, costosDeOpcionDos, costosDeOpcionUno, gastosConCostos, opcionDe, precioParaGanancia } from "@/lib/precios-ml-publicacion";
 import { margenDe } from "@/lib/precios-formula";
 import { promoEsperada } from "@/lib/promos-ml-reglas";
@@ -123,6 +125,8 @@ export interface Propuesta {
   /** La lectura más vieja de cada canal, para el "leído hace…". */
   leidoMl: string | null;
   leidoShop: string | null;
+  /** Cada producto activo: nombre, foto y sus ajustes de precio, vigentes y vencidos (docs/sdd/015). */
+  productos: Record<string, { nombre: string; foto: string | null; ajustes: AjusteGuardado[] }>;
 }
 
 const diferencia = (publicado: number | null, propuesto: number | null) =>
@@ -131,7 +135,7 @@ const diferencia = (publicado: number | null, propuesto: number | null) =>
     : { diferencia: propuesto - publicado, pct: publicado > 0 ? ((propuesto - publicado) / publicado) * 100 : null };
 
 export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
-  const cx = await cargarContextoDePrecios(tenantId);
+  const [cx, ajustes] = await Promise.all([cargarContextoDePrecios(tenantId), ajustesPorModelo(tenantId)]);
   const [combinaciones, mapeos, modelos] = await Promise.all([
     preciosDeCombinaciones(tenantId, {}, cx),
     prisma.mapeoCanal.findMany({
@@ -152,7 +156,7 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
     }),
     prisma.modelo.findMany({
       where: { tenantId, activo: true, consolidadoEnId: null, esInsumo: false },
-      select: { id: true, nombre: true, precioVenta: true, variantes: { select: { id: true, nombre: true, precioAdicional: true } } },
+      select: { id: true, nombre: true, precioVenta: true, imagenUrl: true, imagenesUrls: true, variantes: { select: { id: true, nombre: true, precioAdicional: true } } },
     }),
   ]);
   const porId = new Map(combinaciones.map((c) => [c.combinacionId, c]));
@@ -285,7 +289,7 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
         const g = gastosDe(cx.general.gastos, p.politica);
         const costos = costosDeOpcionDos(cx.erp.tarifas, g, pctDeCombinacion(cx, cid, p.modeloId), envioCotizado.get(cid) ?? null);
         const r = precioParaGanancia(g, p.costo.fabricacion, p.costo.insumos, p.politica.redondeo, p.precios.ganancia, costos, cx.erp.tarifas);
-        o.precioDos = Number.isFinite(r.publicado) ? r.publicado : null;
+        o.precioDos = Number.isFinite(r.publicado) ? publicadoMlConAjuste(p, r.publicado, cx) : null;
       }
     }
   }
@@ -308,6 +312,9 @@ export async function armarPropuesta(tenantId: string): Promise<Propuesta> {
     erp,
     leidoMl: masVieja("mercadolibre"),
     leidoShop: masVieja("shop"),
+    productos: Object.fromEntries(
+      modelos.map((m) => [m.id, { nombre: m.nombre, foto: m.imagenesUrls?.[0] ?? m.imagenUrl ?? null, ajustes: ajustes[m.id] ?? [] }])
+    ),
   };
 }
 

@@ -1,38 +1,51 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, ExternalLink, Loader2, RefreshCw, Search, Tag, X } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { motion } from "motion/react";
+import { AlertTriangle, ChevronRight, FileBox, History, Loader2, RefreshCw, Search, Settings2, SlidersHorizontal, Tag, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { EmptyState } from "@/components/empty-state";
 import { Segmentado } from "@/components/segmentado";
-import { EtiquetaDeCuenta, PuntoDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
+import { EtiquetaDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
 import { json, pedir, pesos } from "@/components/producto/seccion";
 import { ConfiguracionDePrecios } from "@/components/precios/configuracion";
 import { MargenMasivo } from "@/components/precios/margen-masivo";
 import { ConfirmarFlex } from "@/components/precios/confirmar-flex";
-import { CAMBIO_GRANDE_PCT, conDiferencia, esGrande, PREFIJO_FALTA, textoDeFalta } from "@/lib/precios-reglas";
-import type { Deja, FilaDeCanal, FilaErp, OpcionesMl, Propuesta, ResultadoFila } from "@/lib/precios-propuesta";
+import { EditorAjustes } from "@/components/precios/editor-ajustes";
+import { EtiquetaAjuste } from "@/components/precios/etiqueta-ajuste";
+import { FichaPrecio } from "@/components/precios/ficha-precio";
+import {
+  agrupar,
+  aplicableDeCanal,
+  aplicableDeErp,
+  estadoDeCanal,
+  haceCuanto,
+  hayPendientes,
+  pct,
+  type Aplicable,
+  type Producto,
+} from "@/components/precios/por-producto";
+import { textoDeFalta, PREFIJO_FALTA } from "@/lib/precios-reglas";
+import type { Propuesta, ResultadoFila } from "@/lib/precios-propuesta";
 
 /**
- * Precios (docs/sdd/003, spec 004): qué precio cambiaría en cada canal, y aplicarlo.
+ * Precios (docs/sdd/003, 004 y 015): qué precio cambiaría en cada canal, producto por producto, y
+ * aplicarlo.
  *
- * El precio se decide en Bodega; acá sólo se ve la diferencia con lo publicado y se aprueba. Nada
- * sale sin el click de confirmación, y lo que cambia más de 30 % pide confirmarlo aparte.
+ * Cada producto es una fila con sus tres canales; la ficha del costado tiene sus publicaciones, sus
+ * combinaciones y sus ajustes (un % por canal o un envío propio, con fecha de fin). Nada sale sin el
+ * click de confirmación, y lo que cambia más de 30 % pide confirmarlo aparte.
  *
- * Con dos cuentas de ML (docs/sdd/011), el selector de arriba dice cuál se mira en la pestaña de
- * Mercado Libre: lo que se ve y lo que se aplica son las publicaciones de esa cuenta.
+ * Con dos cuentas de ML (docs/sdd/011), el selector de arriba dice qué publicaciones se miran.
  */
 
-type Pestana = "combinaciones" | "mercadolibre" | "shop" | "erp" | "historial" | "configuracion";
-type Filtro = "diferencias" | "aplicables" | "falta-costear" | "falta-mapear" | "todas";
+type Vista = "cambios" | "ajustes" | "todos" | "ml" | "web" | "erp" | "falta";
 
 interface Cambio {
   id: string;
@@ -46,72 +59,15 @@ interface Cambio {
   creadoEn: string;
 }
 
-/** Una fila para aplicar, sea de un canal o del ERP. */
-interface Aplicable {
-  clave: string;
-  nombre: string;
-  antes: number | null;
-  despues: number;
-  pct: number | null;
-  /** Por qué pide la confirmación aparte; null = no la pide. */
-  aparte: string | null;
-}
-
 const REDONDEO: Record<string, string> = {
-  exacto: "exacto",
-  cien: "a $100",
-  quinientos: "a $500",
-  mil: "a $1.000",
+  exacto: "sin redondeo",
+  cien: "redondeo a $100",
+  quinientos: "redondeo a $500",
+  mil: "redondeo a $1.000",
   noventa: "terminado en 90",
 };
 
-const pct = (n: number | null) => (n == null ? "" : `${n > 0 ? "+" : ""}${n.toFixed(1).replace(".", ",")} %`);
-
-function haceCuanto(iso: string | null): string {
-  if (!iso) return "nunca";
-  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-  if (min < 1) return "recién";
-  if (min < 60) return `hace ${min} min`;
-  const h = Math.round(min / 60);
-  return h < 24 ? `hace ${h} h` : `hace ${Math.round(h / 24)} días`;
-}
-
-function filtrar<T extends { motivo: string | null; diferencia: number | null }>(filas: T[], filtro: Filtro): T[] {
-  switch (filtro) {
-    case "diferencias":
-      return filas.filter((f) => conDiferencia(f));
-    case "aplicables":
-      return filas.filter((f) => !f.motivo && conDiferencia(f));
-    case "falta-costear":
-      return filas.filter((f) => f.motivo?.startsWith(PREFIJO_FALTA));
-    case "falta-mapear":
-      return filas.filter((f) => f.motivo === "falta mapear");
-    default:
-      return filas;
-  }
-}
-
-/** Lo que deja una venta a ese precio, debajo del precio (Agustín, 2026-10-30). */
-function LineaDeja({ d }: { d: Deja | null }) {
-  if (!d) return null;
-  return (
-    <div className={`text-xs font-normal ${d.ganancia < 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`} title="Lo que te queda por venta, después de comisiones, envío, impuestos y el costo">
-      deja {pesos(d.ganancia)} ({String(d.margen).replace(".", ",")} %)
-    </div>
-  );
-}
-
-function Diferencia({ diferencia, porcentaje }: { diferencia: number | null; porcentaje: number | null }) {
-  if (diferencia == null) return <span className="text-muted-foreground">—</span>;
-  if (Math.abs(diferencia) <= 1) return <span className="text-muted-foreground">igual</span>;
-  const grande = esGrande(porcentaje);
-  return (
-    <span className={grande ? "text-destructive font-medium" : diferencia > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}>
-      {diferencia > 0 ? "+" : "−"}
-      {pesos(Math.abs(diferencia))} <span className="text-xs">{pct(porcentaje)}</span>
-    </span>
-  );
-}
+const NOMBRE_DESTINO = { mercadolibre: "Mercado Libre", shop: "la web", erp: "el ERP" } as const;
 
 function PantallaPrecios() {
   const router = useRouter();
@@ -120,17 +76,18 @@ function PantallaPrecios() {
 
   const [datos, setDatos] = useState<Propuesta | null>(null);
   const [cargando, setCargando] = useState(true);
-  const [pestana, setPestana] = useState<Pestana>("combinaciones");
-  const [filtro, setFiltro] = useState<Filtro>("diferencias");
+  const [vista, setVista] = useState<Vista>("cambios");
   const [q, setQ] = useState("");
-  const [elegidas, setElegidas] = useState<Set<string>>(new Set());
+  const [elegidos, setElegidos] = useState<Set<string>>(new Set());
+  const [abierto, setAbierto] = useState<string | null>(modelo);
+  const [panel, setPanel] = useState<null | "historial" | "configuracion">(null);
+  const [masivo, setMasivo] = useState<null | "ajuste" | "margen">(null);
   const [leyendo, setLeyendo] = useState<"mercadolibre" | "shop" | null>(null);
   const [confirmar, setConfirmar] = useState<{ canal: "mercadolibre" | "erp" | "shop"; filas: Aplicable[] } | null>(null);
   const [flex, setFlex] = useState<{ prender: boolean; mlas: string[] } | null>(null);
   const [grandesOk, setGrandesOk] = useState(false);
   const [aplicando, setAplicando] = useState(false);
   const [resultados, setResultados] = useState<Map<string, ResultadoFila>>(new Map());
-  const [historial, setHistorial] = useState<Cambio[] | null>(null);
   const { alcance, cuentas } = useCuentaActiva();
 
   const cargar = useCallback(async () => {
@@ -148,36 +105,59 @@ function PantallaPrecios() {
     cargar();
   }, [cargar]);
 
-  useEffect(() => {
-    if (pestana !== "historial") return;
-    pedir<Cambio[]>("/api/precios/historial")
-      .then(setHistorial)
-      .catch((e) => toast.error(`No se pudo leer el historial: ${e instanceof Error ? e.message : e}`));
-  }, [pestana]);
-
-  const busca = (...textos: Array<string | null | undefined>) => {
-    const t = q.trim().toLowerCase();
-    return !t || textos.some((x) => x?.toLowerCase().includes(t));
-  };
-
-  const combinaciones = useMemo(
-    () => (datos?.combinaciones ?? []).filter((c) => (!modelo || c.modeloId === modelo) && busca(c.nombre, c.sku)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [datos, modelo, q]
-  );
-  const canal = (c: "mercadolibre" | "shop") =>
-    (datos?.canales ?? []).filter((f) => f.canal === c && (!modelo || f.modeloId === modelo) && busca(f.combinacion, f.titulo, f.clave));
-  const ml = useMemo(() => canal("mercadolibre").filter((f) => alcance === "todas" || f.cuentaMl === alcance), [datos, modelo, q, alcance]); // eslint-disable-line react-hooks/exhaustive-deps
-  /** De qué cuenta es cada clave de ML: para decir a cuántas de cada una llega un cambio. */
+  const productos = useMemo(() => (datos ? agrupar(datos, alcance) : []), [datos, alcance]);
+  const sinProducto = useMemo(() => (datos?.canales ?? []).filter((f) => !f.modeloId && (f.canal === "shop" || alcance === "todas" || f.cuentaMl === alcance)), [datos, alcance]);
   const cuentaDeClave = useMemo(() => new Map((datos?.canales ?? []).filter((f) => f.canal === "mercadolibre").map((f) => [f.clave, f.cuentaMl])), [datos]);
   const cuentaDeMla = useMemo(() => new Map([...cuentaDeClave].map(([k, v]) => [k.split("|")[0], v])), [cuentaDeClave]);
-  const shop = useMemo(() => canal("shop"), [datos, modelo, q]); // eslint-disable-line react-hooks/exhaustive-deps
-  const erp = useMemo(() => (datos?.erp ?? []).filter((f) => (!modelo || f.modeloId === modelo) && busca(f.modelo)), [datos, modelo, q]); // eslint-disable-line react-hooks/exhaustive-deps
-  const nombreModelo = modelo ? (datos?.combinaciones.find((c) => c.modeloId === modelo)?.modelo ?? "este producto") : null;
 
-  function cambiarPestana(p: Pestana) {
-    setPestana(p);
-    setElegidas(new Set());
+  const totales = useMemo(
+    () => ({
+      ml: productos.reduce((n, p) => n + p.pendientes.ml.length, 0),
+      mlProductos: productos.filter((p) => p.pendientes.ml.length).length,
+      web: productos.filter((p) => p.pendientes.web.length).length,
+      erp: productos.filter((p) => p.pendientes.erp).length,
+      falta: productos.filter((p) => p.faltaCostear).length,
+      cambios: productos.filter(hayPendientes).length,
+      ajustes: productos.filter((p) => p.ajustes.length).length,
+    }),
+    [productos]
+  );
+
+  const visibles = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    const pasa = (p: Producto) => {
+      switch (vista) {
+        case "cambios":
+          return hayPendientes(p);
+        case "ajustes":
+          return p.ajustes.length > 0;
+        case "ml":
+          return p.pendientes.ml.length > 0;
+        case "web":
+          return p.pendientes.web.length > 0;
+        case "erp":
+          return !!p.pendientes.erp;
+        case "falta":
+          return p.faltaCostear;
+        default:
+          return true;
+      }
+    };
+    const busca = (p: Producto) =>
+      !t || p.nombre.toLowerCase().includes(t) || p.combinaciones.some((c) => c.sku?.toLowerCase().includes(t)) || p.ml.some((f) => f.clave.toLowerCase().includes(t));
+    const peso = (p: Producto) => p.pendientes.ml.length + p.pendientes.web.length + (p.pendientes.erp ? 1 : 0);
+    return productos.filter((p) => pasa(p) && busca(p)).sort((a, b) => peso(b) - peso(a) || Number(a.faltaCostear) - Number(b.faltaCostear) || a.nombre.localeCompare(b.nombre, "es"));
+  }, [productos, vista, q]);
+
+  const elegidosP = productos.filter((p) => elegidos.has(p.id));
+  const masivoMl = elegidosP.flatMap((p) => p.pendientes.ml);
+  const masivoWeb = elegidosP.flatMap((p) => p.pendientes.web);
+  const masivoErp = elegidosP.flatMap((p) => (p.pendientes.erp ? [p.pendientes.erp] : []));
+  const fichaDe = abierto ? (productos.find((p) => p.id === abierto) ?? null) : null;
+
+  function cerrarFicha() {
+    setAbierto(null);
+    if (modelo) router.replace("/precios");
   }
 
   async function leer(canal: "mercadolibre" | "shop") {
@@ -194,12 +174,6 @@ function PantallaPrecios() {
     } finally {
       setLeyendo(null);
     }
-  }
-
-  /** En la web se aplica el producto entero: lo elegido se completa con el resto de sus combinaciones. */
-  function productoEntero(filas: FilaDeCanal[]): FilaDeCanal[] {
-    const productos = new Set(filas.map((f) => f.producto));
-    return (datos?.canales ?? []).filter((f) => f.canal === "shop" && !f.ignorada && productos.has(f.producto));
   }
 
   function pedirConfirmacion(c: "mercadolibre" | "erp" | "shop", filas: Aplicable[]) {
@@ -228,7 +202,6 @@ function PantallaPrecios() {
       (n("error") || n("rechazado") ? toast.warning : toast.success)(resumen);
       setResultados((prev) => new Map([...prev, ...r.resultados.map((x) => [x.clave, x] as const)]));
       setConfirmar(null);
-      setElegidas(new Set());
       await cargar();
     } catch (e) {
       toast.error(`No se pudo aplicar: ${e instanceof Error ? e.message : e}`);
@@ -237,150 +210,221 @@ function PantallaPrecios() {
     }
   }
 
-  const alternar = (clave: string) =>
-    setElegidas((prev) => {
+  const alternar = (id: string) =>
+    setElegidos((prev) => {
       const s = new Set(prev);
-      if (s.has(clave)) s.delete(clave);
-      else s.add(clave);
+      if (s.has(id)) s.delete(id);
+      else s.add(id);
       return s;
     });
+  const todosElegidos = visibles.length > 0 && visibles.every((p) => elegidos.has(p.id));
 
-  const aplicableDeCanal = (f: FilaDeCanal): Aplicable => ({ clave: f.clave, nombre: f.combinacion ?? f.clave, antes: f.publicado, despues: f.propuesto!, pct: f.pct, aparte: f.aparte });
-  const aplicableDeErp = (f: FilaErp): Aplicable => ({
-    clave: f.modeloId,
-    nombre: f.modelo,
-    antes: f.actual,
-    despues: f.propuesto!,
-    pct: f.pct,
-    aparte: esGrande(f.pct) ? `cambia más de ${CAMBIO_GRANDE_PCT} %` : null,
-  });
-
-  const cuenta = (filas: Array<{ motivo: string | null; diferencia: number | null }>) => filas.filter((f) => !f.motivo && conDiferencia(f)).length;
+  const tarjetas: Array<{ v: Vista; titulo: string; n: number; detalle: string }> = [
+    { v: "ml", titulo: "Mercado Libre", n: totales.ml, detalle: totales.ml ? `publicaciones en ${totales.mlProductos} productos` : "todo al día" },
+    { v: "web", titulo: "Web", n: totales.web, detalle: totales.web ? "productos para actualizar" : "todo al día" },
+    { v: "erp", titulo: "Venta directa", n: totales.erp, detalle: totales.erp ? "productos con otro precio en el ERP" : "todo al día" },
+    { v: "falta", titulo: "Falta costear", n: totales.falta, detalle: "productos sin precio en alguna combinación" },
+  ];
 
   return (
-    <motion.div className="space-y-4" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: "easeOut" }}>
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="space-y-2 max-w-3xl">
+    <motion.div className="space-y-6 pb-24" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: "easeOut" }}>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl space-y-1.5">
           <h1 className="text-[28px] leading-[1.15] font-medium">Precios</h1>
           {datos && (
             <p className="text-sm text-muted-foreground">
-              {datos.gastos.origen === "erp"
-                ? "Configuración del ERP"
-                : datos.gastos.deBodega
-                  ? "Gastos de Bodega"
-                  : "Gastos medidos (Bodega todavía no subió los suyos)"}{" "}
-              · margen {datos.gastos.margen} % sobre el precio · promo ML {String(datos.gastos.promo).replace(".", ",")} % · redondeo{" "}
-              {REDONDEO[datos.gastos.redondeo] ?? datos.gastos.redondeo}.{" "}
-              {datos.gastos.origen === "erp"
-                ? "Cada publicación de ML con lo que cobra ML por ella: comisión de su categoría, cargo fijo, cuotas y envío."
-                : "El margen, la promo y el redondeo propios de un producto, si los tiene, van en su página."}
+              Margen {datos.gastos.margen} % sobre el precio · promo ML {String(datos.gastos.promo).replace(".", ",")} % · {REDONDEO[datos.gastos.redondeo] ?? datos.gastos.redondeo}.{" "}
+              {datos.gastos.origen === "erp" ? "Cada publicación de ML con lo que cobra ML por ella." : datos.gastos.deBodega ? "Gastos de Bodega." : "Gastos medidos."}
             </p>
           )}
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex flex-wrap items-center gap-2">
           {(
             [
-              ["mercadolibre", "Leer precios de ML", datos?.leidoMl],
-              ["shop", "Leer precios de la web", datos?.leidoShop],
+              ["mercadolibre", "Leer ML", datos?.leidoMl],
+              ["shop", "Leer la web", datos?.leidoShop],
             ] as const
           ).map(([canal, texto, leido]) => (
-            <div key={canal} className="flex items-center gap-1.5">
-              <Button size="sm" variant="outline" onClick={() => leer(canal)} disabled={!!leyendo}>
-                {leyendo === canal ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
-                {texto}
-              </Button>
-              <span className="text-xs text-muted-foreground">{haceCuanto(leido ?? null)}</span>
+            <Button key={canal} size="sm" variant="outline" onClick={() => leer(canal)} disabled={!!leyendo} title={`Leído ${haceCuanto(leido ?? null)}`}>
+              {leyendo === canal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />}
+              {texto}
+              <span className="text-xs font-normal text-muted-foreground">{haceCuanto(leido ?? null)}</span>
+            </Button>
+          ))}
+          <Button size="sm" variant="ghost" onClick={() => setPanel("historial")}>
+            <History className="h-4 w-4" strokeWidth={1.5} /> Historial
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setPanel("configuracion")}>
+            <Settings2 className="h-4 w-4" strokeWidth={1.5} /> Configuración
+          </Button>
+        </div>
+      </header>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {tarjetas.map((t) => {
+          const activa = vista === t.v;
+          return (
+            <button
+              key={t.v}
+              type="button"
+              onClick={() => setVista(activa ? "cambios" : t.v)}
+              aria-pressed={activa}
+              className={`rounded-xl border bg-card p-4 text-left transition-colors hover:border-foreground/20 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${activa ? "border-primary ring-1 ring-primary" : ""}`}
+            >
+              <div className="text-xs text-muted-foreground">{t.titulo}</div>
+              <div className={`mt-2 font-mono text-[28px] leading-none font-medium tabular-nums ${t.n === 0 ? "text-muted-foreground/60" : ""}`}>{cargando && !datos ? "·" : t.n}</div>
+              <div className="mt-1.5 truncate text-xs text-muted-foreground">{t.detalle}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Segmentado
+          chico
+          etiqueta="Qué productos"
+          valor={vista}
+          onChange={setVista}
+          opciones={[
+            ["cambios", <>Con cambios <Cuenta n={totales.cambios} /></>],
+            ["ajustes", <>Con ajustes <Cuenta n={totales.ajustes} /></>],
+            ["todos", <>Todos <Cuenta n={productos.length} /></>],
+          ]}
+        />
+        {!["cambios", "ajustes", "todos"].includes(vista) && (
+          <button type="button" onClick={() => setVista("cambios")} className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs">
+            {tarjetas.find((t) => t.v === vista)?.titulo} <X className="h-3 w-3" />
+          </button>
+        )}
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar producto, SKU o publicación" className="h-8 pl-8" />
+        </div>
+      </div>
+
+      {cargando && !datos ? (
+        <div className="divide-y rounded-xl border">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 p-4">
+              <Skeleton className="h-11 w-11 rounded-lg" />
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="ml-auto h-4 w-64" />
             </div>
           ))}
         </div>
-      </div>
-
-      {modelo && (
-        <Badge variant="secondary" className="gap-1.5 text-sm py-1">
-          <Tag className="h-3.5 w-3.5" /> {nombreModelo}
-          <button type="button" onClick={() => router.replace("/precios")} aria-label="Ver todos los productos">
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </Badge>
-      )}
-
-      <div className="flex items-center gap-2 flex-wrap">
-        <Segmentado
-          etiqueta="Qué mirar"
-          valor={pestana}
-          onChange={cambiarPestana}
-          opciones={[
-            ["combinaciones", <>Combinaciones <Contador n={combinaciones.length} /></>],
-            ["mercadolibre", <>Mercado Libre <Contador n={cuenta(ml)} resaltar /></>],
-            ["shop", <>Web <Contador n={cuenta(shop)} resaltar /></>],
-            ["erp", <>ERP <Contador n={cuenta(erp)} resaltar /></>],
-            ["historial", "Historial"],
-            ["configuracion", "Configuración"],
-          ]}
-        />
-        {(pestana === "mercadolibre" || pestana === "shop" || pestana === "erp") && (
-          <Segmentado
-            chico
-            etiqueta="Filtro"
-            valor={filtro}
-            onChange={setFiltro}
-            opciones={
-              [
-                ["diferencias", "Con diferencias"],
-                ["aplicables", "Se pueden aplicar"],
-                ["falta-costear", "Falta costear"],
-                ...(pestana === "erp" ? [] : ([["falta-mapear", "Falta mapear"]] as const)),
-                ["todas", "Todas"],
-              ] as Array<readonly [Filtro, string]>
-            }
-          />
-        )}
-        {pestana !== "historial" && pestana !== "configuracion" && (
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar producto, SKU o publicación" className="pl-7 h-8 rounded-full" />
-          </div>
-        )}
-      </div>
-
-      <AnimatePresence mode="wait" initial={false}>
-      <motion.div key={pestana} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.15 }}>
-      {pestana === "configuracion" ? (
-        <ConfiguracionDePrecios onGuardado={cargar} />
-      ) : cargando && !datos ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground p-6">
-          <Loader2 className="h-4 w-4 animate-spin" /> Calculando precios…
-        </div>
-      ) : pestana === "combinaciones" ? (
-        <TablaCombinaciones filas={combinaciones} opciones={datos?.opcionesMl ?? {}} onMargenGuardado={cargar} />
-      ) : pestana === "historial" ? (
-        <TablaHistorial cambios={historial} />
-      ) : pestana === "erp" ? (
-        <TablaErp
-          filas={filtrar(erp, filtro)}
-          elegidas={elegidas}
-          resultados={resultados}
-          onAlternar={alternar}
-          onAplicar={(filas) => pedirConfirmacion("erp", filas.map(aplicableDeErp))}
+      ) : !visibles.length ? (
+        <EmptyState
+          icon={Tag}
+          title={vista === "cambios" ? "Todo al día" : "Nada para mostrar"}
+          description={vista === "cambios" ? "Ningún precio publicado difiere de lo que calcula el ERP." : "No hay productos con ese filtro."}
         />
       ) : (
-        <TablaCanal
-          canal={pestana}
-          filas={filtrar(pestana === "mercadolibre" ? ml : shop, filtro)}
-          elegidas={elegidas}
-          resultados={resultados}
-          onAlternar={alternar}
-          onAplicar={(filas) =>
-            pestana === "shop"
-              ? pedirConfirmacion("shop", productoEntero(filas).map(aplicableDeCanal))
-              : pedirConfirmacion("mercadolibre", filas.map(aplicableDeCanal))
-          }
-          onFlex={pestana === "mercadolibre" ? (prender, mlas) => setFlex({ prender, mlas }) : undefined}
-          conCuenta={pestana === "mercadolibre" && alcance === "todas" && !!cuentas.otra}
-        />
+        <div className="overflow-hidden rounded-xl border bg-card">
+          <div className="hidden items-center gap-4 border-b px-4 py-2 text-xs text-muted-foreground md:grid md:grid-cols-[20px_minmax(0,1.5fr)_repeat(3,minmax(0,1fr))_16px]">
+            <input type="checkbox" className="accent-primary" aria-label="Elegir todos" checked={todosElegidos} onChange={() => setElegidos(todosElegidos ? new Set() : new Set(visibles.map((p) => p.id)))} />
+            <span>
+              {visibles.length} {visibles.length === 1 ? "producto" : "productos"}
+            </span>
+            <span className="text-right">Mercado Libre</span>
+            <span className="text-right">Web</span>
+            <span className="text-right">Venta directa</span>
+            <span />
+          </div>
+          <ul className="divide-y">
+            {visibles.map((p) => (
+              <FilaProducto key={p.id} p={p} elegido={elegidos.has(p.id)} onElegir={() => alternar(p.id)} onAbrir={() => setAbierto(p.id)} />
+            ))}
+          </ul>
+        </div>
       )}
-      </motion.div>
-      </AnimatePresence>
+
+      {sinProducto.length > 0 && <SinProducto filas={sinProducto} />}
+
+      {elegidos.size > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="fixed inset-x-0 bottom-4 z-30 mx-auto flex w-fit max-w-[calc(100%-2rem)] flex-wrap items-center gap-1.5 rounded-xl border bg-popover p-2 shadow-lg"
+        >
+          <span className="px-2 text-sm">
+            <span className="font-mono tabular-nums">{elegidos.size}</span> {elegidos.size === 1 ? "producto" : "productos"}
+          </span>
+          <Button size="sm" variant="outline" onClick={() => setMasivo("ajuste")}>
+            <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} /> Ajustar
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setMasivo("margen")}>
+            Margen
+          </Button>
+          {masivoMl.length > 0 && (
+            <Button size="sm" onClick={() => pedirConfirmacion("mercadolibre", masivoMl.map(aplicableDeCanal))}>
+              Aplicar en ML · {masivoMl.length}
+            </Button>
+          )}
+          {masivoWeb.length > 0 && (
+            <Button size="sm" onClick={() => pedirConfirmacion("shop", masivoWeb.map(aplicableDeCanal))}>
+              En la web · {new Set(masivoWeb.map((f) => f.producto)).size}
+            </Button>
+          )}
+          {masivoErp.length > 0 && (
+            <Button size="sm" onClick={() => pedirConfirmacion("erp", masivoErp.map(aplicableDeErp))}>
+              En el ERP · {masivoErp.length}
+            </Button>
+          )}
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setElegidos(new Set())} aria-label="Soltar la selección">
+            <X className="h-4 w-4" />
+          </Button>
+        </motion.div>
+      )}
+
+      <FichaPrecio
+        producto={fichaDe}
+        onCerrar={cerrarFicha}
+        onAplicar={pedirConfirmacion}
+        onFlex={(prender, mlas) => setFlex({ prender, mlas })}
+        onRecargar={cargar}
+        resultados={resultados}
+        opcionesMl={datos?.opcionesMl ?? {}}
+      />
+
+      <Dialog open={!!masivo} onOpenChange={(o) => !o && setMasivo(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {masivo === "ajuste" ? "Ajuste" : "Margen"} de {elegidos.size} {elegidos.size === 1 ? "producto" : "productos"}
+            </DialogTitle>
+            <DialogDescription>Mirá cómo quedan antes de guardar. No se publica nada.</DialogDescription>
+          </DialogHeader>
+          {masivo === "ajuste" && (
+            <EditorAjustes
+              modeloIds={[...elegidos]}
+              onGuardado={() => {
+                setMasivo(null);
+                cargar();
+              }}
+            />
+          )}
+          {masivo === "margen" && (
+            <MargenMasivo
+              modeloIds={[...elegidos]}
+              onCerrar={() => setMasivo(null)}
+              onGuardado={() => {
+                setMasivo(null);
+                cargar();
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Sheet open={!!panel} onOpenChange={(o) => !o && setPanel(null)}>
+        <SheetContent side="right" className="w-full gap-0 overflow-y-auto p-0 data-[side=right]:sm:max-w-[720px]">
+          <SheetHeader className="border-b p-6">
+            <SheetTitle className="text-xl font-medium">{panel === "historial" ? "Historial" : "Configuración"}</SheetTitle>
+            <SheetDescription>{panel === "historial" ? "Cada precio que se aplicó desde acá." : "Margen, promo, redondeo y gastos de cada canal para todos los productos."}</SheetDescription>
+          </SheetHeader>
+          <div className="p-6">{panel === "historial" ? <Historial /> : panel === "configuracion" ? <ConfiguracionDePrecios onGuardado={cargar} /> : null}</div>
+        </SheetContent>
+      </Sheet>
 
       <Dialog open={!!flex} onOpenChange={(o) => !o && setFlex(null)}>
         <DialogContent className="sm:max-w-lg">
@@ -405,7 +449,7 @@ function PantallaPrecios() {
             <>
               <DialogHeader>
                 <DialogTitle>
-                  ¿Cambiar {confirmar.filas.length} {confirmar.filas.length === 1 ? "precio" : "precios"} en {confirmar.canal === "erp" ? "el ERP" : confirmar.canal === "shop" ? "la web" : "Mercado Libre"}?
+                  ¿Cambiar {confirmar.filas.length} {confirmar.filas.length === 1 ? "precio" : "precios"} en {NOMBRE_DESTINO[confirmar.canal]}?
                 </DialogTitle>
                 <DialogDescription>
                   {confirmar.canal === "erp"
@@ -416,14 +460,14 @@ function PantallaPrecios() {
                 </DialogDescription>
                 {confirmar.canal === "mercadolibre" && cuentas.otra && <AQueCuentas cuentas={confirmar.filas.map((f) => cuentaDeClave.get(f.clave) ?? null)} />}
               </DialogHeader>
-              <div className="max-h-64 overflow-y-auto divide-y text-sm">
+              <div className="max-h-64 divide-y overflow-y-auto text-sm">
                 {confirmar.filas.map((f) => (
                   <div key={f.clave} className={`flex justify-between gap-3 py-1.5 ${f.aparte ? "text-destructive" : ""}`}>
                     <span className="truncate">
                       {f.nombre}
                       {f.aparte && <span className="block text-xs">{f.aparte}</span>}
                     </span>
-                    <span className="shrink-0 tabular-nums">
+                    <span className="shrink-0 font-mono text-[13px] tabular-nums">
                       {f.antes != null ? pesos(f.antes) : "—"} → {pesos(f.despues)} <span className="text-xs">{pct(f.pct)}</span>
                     </span>
                   </div>
@@ -433,7 +477,7 @@ function PantallaPrecios() {
                 <label className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-sm">
                   <input type="checkbox" className="mt-0.5" checked={grandesOk} onChange={(e) => setGrandesOk(e.target.checked)} />
                   <span>
-                    <AlertTriangle className="inline h-3.5 w-3.5 mr-1 text-destructive" />
+                    <AlertTriangle className="mr-1 inline h-3.5 w-3.5 text-destructive" />
                     {confirmar.filas.filter((f) => f.aparte).length === 1 ? "El marcado en rojo" : `Los ${confirmar.filas.filter((f) => f.aparte).length} marcados en rojo`} cambia
                     {confirmar.filas.filter((f) => f.aparte).length === 1 ? "" : "n"} mucho o le saca la promoción. Confirmo que lo revisé: una receta mal cargada en una pieza publica un precio malo.
                   </span>
@@ -444,7 +488,7 @@ function PantallaPrecios() {
                   Cancelar
                 </Button>
                 <Button onClick={aplicar} disabled={aplicando || (confirmar.filas.some((f) => f.aparte) && !grandesOk)}>
-                  {aplicando && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+                  {aplicando && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   Aplicar {confirmar.filas.length}
                 </Button>
               </DialogFooter>
@@ -456,9 +500,8 @@ function PantallaPrecios() {
   );
 }
 
-/** Un número junto al nombre de una pestaña; resaltado si hay algo para hacer. */
-function Contador({ n, resaltar }: { n: number; resaltar?: boolean }) {
-  return <span className={`rounded-full px-1.5 text-[11px] tabular-nums leading-4 ${resaltar && n > 0 ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>{n}</span>;
+function Cuenta({ n }: { n: number }) {
+  return <span className="font-mono text-[11px] text-muted-foreground tabular-nums">{n}</span>;
 }
 
 /** A cuántas publicaciones de cada cuenta llega un cambio (docs/sdd/011, RN-3). */
@@ -478,481 +521,176 @@ function AQueCuentas({ cuentas }: { cuentas: Array<"principal" | "otra" | null> 
   );
 }
 
-/** Las dos opciones de venta de una combinación en ML (spec 006): cuál tiene y cuál falta. */
-function LineaOpciones({ o }: { o: OpcionesMl | undefined }) {
-  if (!o) return <div className="text-xs text-muted-foreground">sin publicar en ML</div>;
-  if (o.uno > 0 && o.dos > 0) return <div className="text-xs text-muted-foreground">opción 1 y 2 publicadas</div>;
-  const falta = o.uno === 0 ? 1 : 2;
-  const precio = falta === 1 ? o.precioUno : o.precioDos;
+/** Un canal en la fila del producto: el precio que calcula el ERP y en qué está. */
+function Canal({ nombre, precio, antes, estado }: { nombre: string; precio: number | null | undefined; antes?: number | null; estado: { texto: string; tono: "accion" | "quieto" | "aviso" } }) {
+  const cambia = antes != null && precio != null && Math.abs(antes - precio) > 1;
   return (
-    <div className="text-xs text-amber-600 dark:text-amber-400" title={falta === 2 ? "3 cuotas sin interés y envío gratis, dejando lo mismo que la opción 1. Aproximado: el envío depende del precio final" : "Clásica, sin cuotas"}>
-      falta la opción {falta}
-      {precio != null && ` · publicaría ${falta === 2 ? "unos " : ""}${pesos(precio)}`}
-    </div>
-  );
-}
-
-function TablaCombinaciones({ filas, opciones, onMargenGuardado }: { filas: Propuesta["combinaciones"]; opciones: Record<string, OpcionesMl>; onMargenGuardado: () => void }) {
-  const [verFaltan, setVerFaltan] = useState(false);
-  // El margen es del producto: tildar una combinación elige su producto (spec 002).
-  const [elegidos, setElegidos] = useState<Set<string>>(new Set());
-  const [cambiando, setCambiando] = useState(false);
-  const conPrecio = filas.filter((c) => c.precios);
-  const faltan = filas.filter((c) => !c.precios);
-  const visibles = verFaltan ? faltan : conPrecio;
-  const productosVisibles = [...new Set(visibles.map((c) => c.modeloId))];
-  const alternar = (id: string, si: boolean) =>
-    setElegidos((prev) => {
-      const s = new Set(prev);
-      if (si) s.add(id);
-      else s.delete(id);
-      return s;
-    });
-  if (!filas.length) return <EmptyState icon={Tag} title="Nada para mostrar" description="No hay combinaciones activas con ese filtro." />;
-  return (
-    <Card className="overflow-x-auto rounded-xl py-0 gap-0 shadow-xs">
-      {elegidos.size > 0 && (
-        <div className="flex flex-wrap items-center gap-2 p-3 border-b text-sm bg-primary/5">
-          <span>
-            {elegidos.size} {elegidos.size === 1 ? "producto elegido" : "productos elegidos"}
-          </span>
-          <Button size="sm" onClick={() => setCambiando(true)}>
-            Cambiar margen
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setElegidos(new Set())}>
-            Limpiar
-          </Button>
-        </div>
-      )}
-      <Dialog open={cambiando} onOpenChange={(o) => !o && setCambiando(false)}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Margen de {elegidos.size} {elegidos.size === 1 ? "producto" : "productos"}</DialogTitle>
-            <DialogDescription>Mirá cómo quedan antes de guardar. No se publica nada.</DialogDescription>
-          </DialogHeader>
-          {cambiando && (
-            <MargenMasivo
-              modeloIds={[...elegidos]}
-              onCerrar={() => setCambiando(false)}
-              onGuardado={() => {
-                setCambiando(false);
-                setElegidos(new Set());
-                onMargenGuardado();
-              }}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-      <div className="flex items-center gap-2 p-3 border-b text-sm">
-        <button type="button" onClick={() => setVerFaltan(false)} className={!verFaltan ? "font-medium" : "text-muted-foreground hover:underline"}>
-          Con precio ({conPrecio.length})
-        </button>
-        <span className="text-muted-foreground">·</span>
-        <button type="button" onClick={() => setVerFaltan(true)} className={verFaltan ? "font-medium" : "text-muted-foreground hover:underline"}>
-          Falta costear ({faltan.length})
-        </button>
-      </div>
-      <table className="w-full text-sm">
-        <thead className="text-xs text-muted-foreground bg-muted/40">
-          <tr className="border-b">
-            <th className="p-2 w-8">
-              {!verFaltan && (
-                <input
-                  type="checkbox"
-                  aria-label="Elegir todos los productos"
-                  checked={productosVisibles.length > 0 && productosVisibles.every((id) => elegidos.has(id))}
-                  onChange={(e) => setElegidos(e.target.checked ? new Set(productosVisibles) : new Set())}
-                />
-              )}
-            </th>
-            <th className="text-left font-medium p-2">Combinación</th>
-            {verFaltan ? (
-              <th className="text-left font-medium p-2">Qué falta</th>
-            ) : (
-              <>
-                <th className="text-right font-medium p-2">Costo</th>
-                <th className="text-right font-medium p-2">ML</th>
-                <th className="text-right font-medium p-2">Web</th>
-                <th className="text-right font-medium p-2">Personalizados</th>
-                <th className="text-right font-medium p-2">Gana</th>
-              </>
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {visibles.map((c) => (
-            <tr key={c.combinacionId} className="border-b last:border-0 align-top">
-              <td className="p-2">
-                {!verFaltan && (
-                  <input type="checkbox" aria-label={`Elegir ${c.modelo}`} checked={elegidos.has(c.modeloId)} onChange={(e) => alternar(c.modeloId, e.target.checked)} />
-                )}
-              </td>
-              <td className="p-2">
-                <Link href={`/modelos/${c.modeloId}`} className="hover:underline">
-                  {c.nombre}
-                </Link>
-                {c.politica.margenPropio && <span className="ml-1.5 text-xs text-muted-foreground">(margen {c.politica.margen} % propio)</span>}
-              </td>
-              {verFaltan ? (
-                <td className="p-2 text-muted-foreground">{textoDeFalta(c.falta).replace(`${PREFIJO_FALTA} — `, "")}</td>
-              ) : (
-                <>
-                  <td className="p-2 text-right tabular-nums" title={`Impresión ${pesos(c.costo!.fabricacion)} + insumos ${pesos(c.costo!.insumos)}`}>
-                    {pesos(c.costo!.fabricacion + c.costo!.insumos)}
-                    {c.costo!.pieza.insumosSinDeclarar && <AlertTriangle className="inline h-3 w-3 ml-1 text-amber-500" aria-label="Bodega no tiene los insumos de la pieza" />}
-                  </td>
-                  <td className="p-2 text-right tabular-nums">
-                    {pesos(c.precios!.mlPublicado)}
-                    {c.precios!.mlPublicado !== c.precios!.ml && <div className="text-xs text-muted-foreground">paga {pesos(c.precios!.ml)}</div>}
-                    <LineaOpciones o={opciones[c.combinacionId]} />
-                  </td>
-                  <td className="p-2 text-right tabular-nums">{pesos(c.precios!.web)}</td>
-                  <td className="p-2 text-right tabular-nums">{pesos(c.precios!.personalizado)}</td>
-                  <td className="p-2 text-right tabular-nums text-muted-foreground">{c.precios!.ganancia != null ? pesos(c.precios!.ganancia) : "—"}</td>
-                </>
-              )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Card>
-  );
-}
-
-function Resultado({ r }: { r: ResultadoFila | undefined }) {
-  if (!r) return null;
-  const color = r.estado === "aplicado" ? "text-emerald-600 dark:text-emerald-400" : r.estado === "sin_cambios" ? "text-muted-foreground" : "text-destructive";
-  const texto = { aplicado: "Aplicado", sin_cambios: "Ya estaba", rechazado: "No se mandó", error: "Error" }[r.estado];
-  return (
-    <div className={`text-xs ${color}`}>
-      {texto}
-      {r.mensaje ? `: ${r.mensaje}` : ""}
-    </div>
-  );
-}
-
-function BarraDeSeleccion({
-  n,
-  aplicables = n,
-  onAplicar,
-  onLimpiar,
-  onFlex,
-}: {
-  n: number;
-  /** Cuántas de las elegidas tienen un precio para aplicar (en ML se puede elegir para Flex). */
-  aplicables?: number;
-  onAplicar: () => void;
-  onLimpiar: () => void;
-  onFlex?: (prender: boolean) => void;
-}) {
-  if (!n) return null;
-  return (
-    <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 p-3 border-b bg-muted text-sm">
-      <span className="font-medium">
-        {n} {n === 1 ? "elegida" : "elegidas"}
-      </span>
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="ghost" onClick={onLimpiar}>
-          Limpiar
-        </Button>
-        {onFlex && (
+    <div className="min-w-0 text-left md:text-right">
+      <div className="text-[11px] text-muted-foreground md:hidden">{nombre}</div>
+      <div className="font-mono text-sm tabular-nums whitespace-nowrap">
+        {cambia && (
           <>
-            <Button size="sm" variant="outline" onClick={() => onFlex(true)} title="Sin tiempo de disponibilidad y con Flex">
-              Con stock: Flex
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => onFlex(false)} title="Sin Flex y con días de disponibilidad">
-              Sin stock: a pedido
-            </Button>
+            <span className="text-muted-foreground line-through decoration-muted-foreground/40">{pesos(antes!)}</span> <span className="text-muted-foreground">→</span>{" "}
           </>
         )}
-        {aplicables > 0 && (
-          <Button size="sm" onClick={onAplicar}>
-            Aplicar {aplicables}
-          </Button>
-        )}
+        {precio != null ? pesos(precio) : <span className="text-muted-foreground">—</span>}
+      </div>
+      <div
+        className={`flex items-center gap-1.5 text-xs md:justify-end ${estado.tono === "accion" ? "text-foreground" : estado.tono === "aviso" ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}
+      >
+        {estado.tono === "accion" && <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />}
+        {estado.texto}
       </div>
     </div>
   );
 }
 
-function TablaCanal({
-  canal,
-  filas,
-  elegidas,
-  resultados,
-  onAlternar,
-  onAplicar,
-  onFlex,
-  conCuenta,
-}: {
-  canal: "mercadolibre" | "shop";
-  filas: FilaDeCanal[];
-  elegidas: Set<string>;
-  resultados: Map<string, ResultadoFila>;
-  onAlternar: (clave: string) => void;
-  onAplicar: (filas: FilaDeCanal[]) => void;
-  /** ML: entrega inmediata con Flex (true) o a pedido sin Flex (false) en las elegidas (spec 007). */
-  onFlex?: (prender: boolean, mlas: string[]) => void;
-  /** Mirando las dos cuentas de ML: cada fila dice de cuál es (docs/sdd/011). */
-  conCuenta?: boolean;
-}) {
-  // En la web cuenta el producto: si alguna de sus combinaciones cambia, se aplica entero.
-  const productosConCambio = new Set(filas.filter((f) => f.canal === "shop" && !f.motivo && conDiferencia(f)).map((f) => f.producto));
-  const sePuede = (f: FilaDeCanal) => !f.motivo && !f.ignorada && (f.canal === "shop" ? productosConCambio.has(f.producto) : conDiferencia(f));
-  const aplicables = filas.filter(sePuede);
-  const elegidasAca = aplicables.filter((f) => elegidas.has(f.clave));
-  // En ML se elige cualquier publicación (para Flex); "Aplicar" toma sólo las que tienen precio.
-  const ml = canal === "mercadolibre" && !!onFlex;
-  const seleccionables = ml ? filas : aplicables;
-  const elegidasTodas = seleccionables.filter((f) => elegidas.has(f.clave));
-  const mlasElegidas = [...new Set(elegidasTodas.map((f) => f.clave.split("|")[0]))];
-  if (!filas.length) return <EmptyState icon={Tag} title="Nada para mostrar" description="No hay publicaciones con ese filtro." />;
+function FilaProducto({ p, elegido, onElegir, onAbrir }: { p: Producto; elegido: boolean; onElegir: () => void; onAbrir: () => void }) {
+  const b = p.base?.precios;
+  const erp = p.erp;
+  const estadoErp = !erp
+    ? { texto: "—", tono: "quieto" as const }
+    : p.pendientes.erp
+      ? { texto: "por actualizar", tono: "accion" as const }
+      : erp.motivo?.startsWith(PREFIJO_FALTA)
+        ? { texto: "falta costear", tono: "aviso" as const }
+        : { texto: "al día", tono: "quieto" as const };
   return (
-    <Card className="overflow-x-auto rounded-xl py-0 gap-0 shadow-xs">
-      <BarraDeSeleccion
-        n={elegidasTodas.length}
-        aplicables={elegidasAca.length}
-        onAplicar={() => onAplicar(elegidasAca)}
-        onLimpiar={() => elegidasTodas.forEach((f) => onAlternar(f.clave))}
-        onFlex={ml ? (prender) => onFlex!(prender, mlasElegidas) : undefined}
+    <li
+      className={`group grid cursor-pointer grid-cols-[20px_minmax(0,1fr)_16px] items-center gap-x-4 gap-y-3 px-4 py-3 transition-colors hover:bg-muted/40 md:grid-cols-[20px_minmax(0,1.5fr)_repeat(3,minmax(0,1fr))_16px] ${elegido ? "bg-primary/[0.04]" : ""}`}
+      onClick={onAbrir}
+    >
+      <input
+        type="checkbox"
+        className="accent-primary"
+        aria-label={`Elegir ${p.nombre}`}
+        checked={elegido}
+        onClick={(e) => e.stopPropagation()}
+        onChange={onElegir}
       />
-      {canal === "shop" && (
-        <p className="p-3 border-b text-xs text-muted-foreground">
-          En la web se aplica cada producto entero: al elegir una combinación van todas las del producto, porque el Shop guarda el precio
-          como base más extras y decide él cómo repartirlo. Una combinación que el Shop ignora (una opción inactiva) no frena al resto.
-        </p>
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-muted">
+          {p.foto ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={p.foto} alt="" loading="lazy" className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <FileBox className="h-4 w-4 text-muted-foreground/40" strokeWidth={1.5} />
+            </div>
+          )}
+        </div>
+        <div className="min-w-0 space-y-1">
+          <div className="truncate text-sm font-medium">{p.nombre}</div>
+          {p.ajustes.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {p.ajustes.map((a) => (
+                <EtiquetaAjuste key={a.id} a={a} />
+              ))}
+            </div>
+          ) : (
+            <div className="truncate text-xs text-muted-foreground">
+              {p.faltaCostear && !b
+                ? textoDeFalta(p.combinaciones[0]?.falta ?? []).replace(`${PREFIJO_FALTA} — `, "Falta costear: ")
+                : `${p.combinaciones.length} ${p.combinaciones.length === 1 ? "combinación" : "combinaciones"}${p.base?.politica.margenPropio ? ` · margen ${p.base.politica.margen} % propio` : ""}`}
+            </div>
+          )}
+        </div>
+      </div>
+      <ChevronRight className="h-4 w-4 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 md:order-last" />
+      <div className="col-span-3 grid grid-cols-3 gap-3 pl-9 md:contents">
+        <Canal nombre="Mercado Libre" precio={b?.mlPublicado} estado={estadoDeCanal(p.ml, p.pendientes.ml.length)} />
+        <Canal nombre="Web" precio={b?.web} estado={estadoDeCanal(p.web, p.pendientes.web.length ? p.web.filter((f) => f.diferencia != null && Math.abs(f.diferencia) > 1).length || 1 : 0)} />
+        <Canal nombre="Venta directa" precio={erp?.propuesto ?? b?.personalizado} antes={p.pendientes.erp ? erp?.actual : null} estado={estadoErp} />
+      </div>
+    </li>
+  );
+}
+
+/** Publicaciones que no están unidas a ningún producto del ERP: no tienen precio propuesto. */
+function SinProducto({ filas }: { filas: Propuesta["canales"] }) {
+  const [abierto, setAbierto] = useState(false);
+  return (
+    <div className="rounded-xl border border-dashed">
+      <button type="button" onClick={() => setAbierto((x) => !x)} className="flex w-full items-center justify-between gap-3 p-4 text-left text-sm">
+        <span>
+          <span className="font-mono tabular-nums">{filas.length}</span> {filas.length === 1 ? "publicación sin producto" : "publicaciones sin producto"} del ERP
+          <span className="block text-xs text-muted-foreground">Sin producto no hay precio para proponer: se unen desde la página del producto.</span>
+        </span>
+        <ChevronRight className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${abierto ? "rotate-90" : ""}`} />
+      </button>
+      {abierto && (
+        <ul className="divide-y border-t">
+          {filas.map((f) => (
+            <li key={`${f.canal}-${f.clave}`} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+              <span className="min-w-0 truncate">
+                <span className="mr-2 text-xs text-muted-foreground">{f.canal === "shop" ? "Web" : "ML"}</span>
+                {f.enlace ? (
+                  <a href={f.enlace} target="_blank" rel="noreferrer" className="hover:underline">
+                    {f.titulo ?? f.clave}
+                  </a>
+                ) : (
+                  (f.titulo ?? f.clave)
+                )}
+              </span>
+              <span className="shrink-0 font-mono text-[13px] tabular-nums">{f.publicado != null ? pesos(f.publicado) : "—"}</span>
+            </li>
+          ))}
+        </ul>
       )}
-      <table className="w-full text-sm">
-        <thead className="text-xs text-muted-foreground bg-muted/40">
-          <tr className="border-b">
-            <th className="w-8 p-2">
-              {seleccionables.length > 0 && (
-                <input
-                  type="checkbox"
-                  aria-label="Elegir todas"
-                  checked={elegidasTodas.length === seleccionables.length}
-                  onChange={() => {
-                    const todas = elegidasTodas.length === seleccionables.length;
-                    seleccionables.forEach((f) => (todas ? elegidas.has(f.clave) : !elegidas.has(f.clave)) && onAlternar(f.clave));
-                  }}
-                />
-              )}
-            </th>
-            <th className="text-left font-medium p-2">Combinación</th>
-            <th className="text-right font-medium p-2">Publicado</th>
-            <th className="text-right font-medium p-2">Propuesto</th>
-            <th className="text-right font-medium p-2">Diferencia</th>
-            <th className="text-left font-medium p-2">Estado</th>
-            <th className="p-2" />
-          </tr>
-        </thead>
-        <tbody>
-          {filas.map((f) => {
-            const puede = sePuede(f);
-            return (
-              <tr key={f.clave} className={`border-b last:border-0 align-top transition-colors hover:bg-muted/40 ${elegidas.has(f.clave) ? "bg-primary/[0.06]" : ""}`}>
-                <td className="p-2">{(puede || ml) && <input type="checkbox" checked={elegidas.has(f.clave)} onChange={() => onAlternar(f.clave)} aria-label="Elegir" />}</td>
-                <td className="p-2">
-                  {f.modeloId ? (
-                    <Link href={`/modelos/${f.modeloId}`} className="hover:underline">
-                      {f.combinacion}
-                    </Link>
-                  ) : (
-                    <span className="text-muted-foreground">sin mapear</span>
-                  )}
-                  <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-1">
-                    {conCuenta && f.cuentaMl && <CuentaDeFila de={f.cuentaMl} />}
-                    {f.enlace ? (
-                      <a href={f.enlace} target="_blank" rel="noreferrer" className="hover:underline inline-flex items-center gap-0.5">
-                        {f.clave.replace(/\|$/, "")} <ExternalLink className="h-3 w-3" />
-                      </a>
-                    ) : (
-                      <span className="truncate max-w-[260px]">{f.titulo ?? f.clave}</span>
-                    )}
-                    {f.etiquetas.map((e) => (
-                      <Badge key={e} variant="outline" className="text-[10px] px-1 py-0 h-4">
-                        {e}
-                      </Badge>
-                    ))}
-                  </div>
-                  {f.porque && <div className="text-[11px] text-muted-foreground mt-0.5">{f.porque}</div>}
-                </td>
-                <td className="p-2 text-right tabular-nums">
-                  {f.publicado != null ? pesos(f.publicado) : <span className="text-muted-foreground">—</span>}
-                  {f.paga != null && f.publicado != null && Math.abs(f.paga - f.publicado) > 1 && <div className="text-xs text-muted-foreground">paga {pesos(f.paga)}</div>}
-                  <LineaDeja d={f.deja.hoy} />
-                </td>
-                <td className="p-2 text-right tabular-nums">
-                  {f.propuesto != null ? pesos(f.propuesto) : <span className="text-muted-foreground">—</span>}
-                  <LineaDeja d={f.deja.propuesto} />
-                </td>
-                <td className="p-2 text-right tabular-nums">
-                  <Diferencia diferencia={f.diferencia} porcentaje={f.pct} />
-                </td>
-                <td className="p-2 text-xs text-muted-foreground max-w-[280px]">
-                  {f.motivo ?? (conDiferencia(f) ? "se puede aplicar" : "al día")}
-                  {!f.motivo && f.aviso && <div className={f.aparte ? "text-destructive" : "text-amber-600 dark:text-amber-400"}>{f.aviso}</div>}
-                  <Resultado r={resultados.get(f.clave)} />
-                </td>
-                <td className="p-2 text-right">
-                  {puede && (
-                    <Button size="sm" variant={f.aparte ? "destructive" : "outline"} onClick={() => onAplicar([f])}>
-                      Aplicar
-                    </Button>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </Card>
+    </div>
   );
 }
 
-function CuentaDeFila({ de }: { de: "principal" | "otra" }) {
-  const { cuentas } = useCuentaActiva();
-  return (
-    <span className="inline-flex items-center gap-1 font-medium text-foreground/80">
-      <PuntoDeCuenta de={de} />
-      {de === "principal" ? cuentas.principal : cuentas.otra} ·
-    </span>
-  );
-}
-
-function TablaErp({
-  filas,
-  elegidas,
-  resultados,
-  onAlternar,
-  onAplicar,
-}: {
-  filas: FilaErp[];
-  elegidas: Set<string>;
-  resultados: Map<string, ResultadoFila>;
-  onAlternar: (clave: string) => void;
-  onAplicar: (filas: FilaErp[]) => void;
-}) {
-  const conCambio = (f: FilaErp) => conDiferencia(f) || f.adicionales.some((a) => Math.abs(a.propuesto - a.actual) > 1);
-  const aplicables = filas.filter((f) => !f.motivo && conCambio(f));
-  const elegidasAca = aplicables.filter((f) => elegidas.has(f.modeloId));
-  if (!filas.length) return <EmptyState icon={Tag} title="Nada para mostrar" description="No hay productos con ese filtro." />;
-  return (
-    <Card className="overflow-x-auto rounded-xl py-0 gap-0 shadow-xs">
-      <BarraDeSeleccion n={elegidasAca.length} onAplicar={() => onAplicar(elegidasAca)} onLimpiar={() => elegidasAca.forEach((f) => onAlternar(f.modeloId))} />
-      <p className="p-3 border-b text-xs text-muted-foreground">
-        El precio de venta del ERP es el de personalizados de la combinación más barata; cada opción suma la diferencia con esa (el pedido a mano suma lo mismo que da la
-        combinación).
-      </p>
-      <table className="w-full text-sm">
-        <thead className="text-xs text-muted-foreground bg-muted/40">
-          <tr className="border-b">
-            <th className="w-8 p-2" />
-            <th className="text-left font-medium p-2">Producto</th>
-            <th className="text-right font-medium p-2">Hoy</th>
-            <th className="text-right font-medium p-2">Propuesto</th>
-            <th className="text-right font-medium p-2">Diferencia</th>
-            <th className="text-left font-medium p-2">Opciones</th>
-            <th className="p-2" />
-          </tr>
-        </thead>
-        <tbody>
-          {filas.map((f) => {
-            const puede = !f.motivo && conCambio(f);
-            return (
-              <tr key={f.modeloId} className="border-b last:border-0 align-top">
-                <td className="p-2">{puede && <input type="checkbox" checked={elegidas.has(f.modeloId)} onChange={() => onAlternar(f.modeloId)} aria-label="Elegir" />}</td>
-                <td className="p-2">
-                  <Link href={`/modelos/${f.modeloId}`} className="hover:underline">
-                    {f.modelo}
-                  </Link>
-                  {f.motivo && <div className="text-xs text-muted-foreground max-w-[340px]">{f.motivo}</div>}
-                  <Resultado r={resultados.get(f.modeloId)} />
-                </td>
-                <td className="p-2 text-right tabular-nums">
-                  {pesos(f.actual)}
-                  <LineaDeja d={f.deja.hoy} />
-                </td>
-                <td className="p-2 text-right tabular-nums">
-                  {f.propuesto != null ? pesos(f.propuesto) : "—"}
-                  <LineaDeja d={f.deja.propuesto} />
-                </td>
-                <td className="p-2 text-right tabular-nums">
-                  <Diferencia diferencia={f.diferencia} porcentaje={f.pct} />
-                </td>
-                <td className="p-2 text-xs text-muted-foreground">
-                  {f.adicionales
-                    .filter((a) => a.propuesto > 0 || a.actual > 0)
-                    .map((a) => (
-                      <div key={a.varianteId}>
-                        {a.nombre}: +{pesos(a.actual)} → +{pesos(a.propuesto)}
-                      </div>
-                    ))}
-                  {f.desvios > 0 && <div className="text-amber-600">{f.desvios} combinaciones no suman exacto</div>}
-                </td>
-                <td className="p-2 text-right">
-                  {puede && (
-                    <Button size="sm" variant={esGrande(f.pct) ? "destructive" : "outline"} onClick={() => onAplicar([f])}>
-                      Aplicar
-                    </Button>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </Card>
-  );
-}
-
-function TablaHistorial({ cambios }: { cambios: Cambio[] | null }) {
+function Historial() {
+  const [cambios, setCambios] = useState<Cambio[] | null>(null);
+  useEffect(() => {
+    pedir<Cambio[]>("/api/precios/historial")
+      .then(setCambios)
+      .catch((e) => toast.error(`No se pudo leer el historial: ${e instanceof Error ? e.message : e}`));
+  }, []);
   if (!cambios) {
     return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground p-6">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" /> Leyendo…
       </div>
     );
   }
   if (!cambios.length) return <EmptyState icon={Tag} title="Todavía no se aplicó ningún precio" description="Cada precio que se aplique desde acá queda anotado." />;
-  const CANAL: Record<string, string> = { mercadolibre: "Mercado Libre", shop: "Web", erp: "ERP" };
+  const CANAL: Record<string, string> = { mercadolibre: "ML", shop: "Web", erp: "ERP" };
   return (
-    <Card className="overflow-x-auto rounded-xl py-0 gap-0 shadow-xs">
-      <table className="w-full text-sm">
-        <thead className="text-xs text-muted-foreground bg-muted/40">
-          <tr className="border-b">
-            <th className="text-left font-medium p-2">Cuándo</th>
-            <th className="text-left font-medium p-2">Canal</th>
-            <th className="text-left font-medium p-2">Clave</th>
-            <th className="text-right font-medium p-2">Antes</th>
-            <th className="text-right font-medium p-2">Después</th>
-            <th className="text-left font-medium p-2">Estado</th>
-            <th className="text-left font-medium p-2">Quién</th>
-          </tr>
-        </thead>
-        <tbody>
-          {cambios.map((c) => (
-            <tr key={c.id} className="border-b last:border-0 align-top">
-              <td className="p-2 whitespace-nowrap">{new Date(c.creadoEn).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })}</td>
-              <td className="p-2">{CANAL[c.canal] ?? c.canal}</td>
-              <td className="p-2 text-xs font-mono">{c.clave.replace(/\|$/, "")}</td>
-              <td className="p-2 text-right tabular-nums">{c.antes != null ? pesos(c.antes) : "—"}</td>
-              <td className="p-2 text-right tabular-nums">{pesos(c.despues)}</td>
-              <td className="p-2 text-xs">
-                {c.estado}
-                {c.respuesta?.error && <div className="text-destructive">{c.respuesta.error}</div>}
-                {!!c.respuesta?.otrosCambios?.length && <div className="text-destructive">cambiaron: {c.respuesta.otrosCambios.join(", ")}</div>}
-                {c.respuesta?.envioGratis && (
-                  <div className="text-amber-600">envío gratis: {c.respuesta.envioGratis.antes ? "sí" : "no"} → {c.respuesta.envioGratis.despues ? "sí" : "no"} (lo decide ML)</div>
-                )}
-                {c.respuesta?.nota && <div className="text-muted-foreground">{c.respuesta.nota}</div>}
-              </td>
-              <td className="p-2 text-xs text-muted-foreground">{c.usuario ?? "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Card>
+    <ul className="divide-y rounded-xl border">
+      {cambios.map((c) => {
+        const mal = c.estado !== "aplicado" && c.estado !== "sin_cambios";
+        return (
+          <li key={c.id} className="flex gap-3 p-3 text-sm">
+            <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${mal ? "bg-destructive" : "bg-muted-foreground/40"}`} aria-hidden />
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                <span className="min-w-0 truncate">
+                  <span className="mr-1.5 text-xs text-muted-foreground">{CANAL[c.canal] ?? c.canal}</span>
+                  <span className="font-mono text-xs">{c.clave.replace(/\|$/, "")}</span>
+                </span>
+                <span className="font-mono text-[13px] tabular-nums">
+                  {c.antes != null ? pesos(c.antes) : "—"} <span className="text-muted-foreground">→</span> {pesos(c.despues)}
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {new Date(c.creadoEn).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })} · {c.estado}
+                {c.usuario && ` · ${c.usuario}`}
+              </div>
+              {c.respuesta?.error && <div className="text-xs text-destructive">{c.respuesta.error}</div>}
+              {!!c.respuesta?.otrosCambios?.length && <div className="text-xs text-destructive">cambiaron: {c.respuesta.otrosCambios.join(", ")}</div>}
+              {c.respuesta?.envioGratis && (
+                <div className="text-xs text-amber-600 dark:text-amber-400">
+                  envío gratis: {c.respuesta.envioGratis.antes ? "sí" : "no"} → {c.respuesta.envioGratis.despues ? "sí" : "no"} (lo decide ML)
+                </div>
+              )}
+              {c.respuesta?.nota && <div className="text-xs text-muted-foreground">{c.respuesta.nota}</div>}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

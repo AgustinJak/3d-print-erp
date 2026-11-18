@@ -120,9 +120,33 @@ model Modelo {
   stock           Stock[]
   reglasInsumo    ReglaInsumo[]
   combinaciones   Combinacion[]
+  ajustesPrecio   AjustePrecio[]
 
   @@unique([tenantId, sku])
   @@map("modelos")
+}
+
+/// Un ajuste de precio de un producto en un canal (docs/sdd/015): un % (+3 = 3 % más) o un envío
+/// propio en pesos, con fecha de fin opcional. Vencido, el cálculo lo ignora.
+model AjustePrecio {
+  id            String    @id @default(cuid())
+  tenantId      String    @default("sendero3d") @map("tenant_id")
+  modeloId      String    @map("modelo_id")
+  /// ml | web | personalizado
+  canal         String
+  /// porcentaje | envio
+  tipo          String
+  valor         Decimal   @db.Decimal
+  hasta         DateTime? @db.Timestamptz(6)
+  nota          String?
+  usuario       String?
+  creadoEn      DateTime  @default(now()) @map("creado_en") @db.Timestamptz(6)
+  actualizadoEn DateTime  @default(now()) @map("actualizado_en") @db.Timestamptz(6)
+  modelo        Modelo    @relation(fields: [modeloId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, modeloId, canal, tipo])
+  @@index([tenantId, modeloId])
+  @@map("ajustes_precio")
 }
 
 // ==================== VARIANTES DE MODELO ====================

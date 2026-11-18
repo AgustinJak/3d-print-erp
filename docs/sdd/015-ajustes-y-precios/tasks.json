@@ -1,0 +1,158 @@
+{
+  "$schema": "../_plantillas/tasks.schema.json",
+  "featureId": "015-ajustes-y-precios",
+  "epic": "ninguna",
+  "version": "1.0.0",
+  "status": "in-review",
+  "branch": "feat/003-precios-desde-bodega",
+  "baseBranch": "master",
+  "pullRequest": null,
+  "validation": {
+    "approved": true,
+    "approvedBy": "Agustín",
+    "approvedAt": "2026-11-18",
+    "notes": "\"dale, las dos como proponés\": el % de la web también va a los packs, y el envío propio de ML cuenta sólo con envío gratis."
+  },
+  "updatedAt": "2026-11-18",
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Tabla ajustes_precio",
+      "description": "prisma/sql/ajustes-precio.sql: un ajuste por producto, canal y tipo (% o envío), con fecha de fin y nota; RLS prendido. Modelo AjustePrecio en Prisma. Aplicado con apply_migration.",
+      "component": "database",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "prisma/sql/ajustes-precio.sql",
+        "prisma/schema.prisma"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-11-18",
+      "notes": null
+    },
+    {
+      "id": "TASK-002",
+      "title": "Reglas y guardado de los ajustes",
+      "description": "ajustes-precio-reglas.ts (puro: vigente, resumir, validar, texto de la etiqueta) y ajustes-precio.ts (leer, guardar en uno o varios, borrar).",
+      "component": "backend",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-001"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/ajustes-precio-reglas.ts",
+        "src/lib/ajustes-precio.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-11-18",
+      "notes": null
+    },
+    {
+      "id": "TASK-003",
+      "title": "Los ajustes en el cálculo de precios",
+      "description": "precios-combinacion.ts: el envío propio reemplaza el de ML o web, y el % de cada canal va después de igualar la ganancia y se vuelve a redondear; en ML se reinfla con la promo; el precio fijo de ML no toma el %. precios-propuesta.ts trae productos con foto y ajustes.",
+      "component": "backend",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/precios-combinacion.ts",
+        "src/lib/precios-propuesta.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-11-18",
+      "notes": "scripts/sdd-015-probar-ajustes.ts: 17 de 17."
+    },
+    {
+      "id": "TASK-004",
+      "title": "Endpoints de ajustes y vista previa",
+      "description": "GET, PUT y DELETE /api/precios/ajustes; POST /api/precios/ajustes/vista-previa (hoy y nuevo sin guardar).",
+      "component": "backend",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/app/api/precios/ajustes/route.ts",
+        "src/app/api/precios/ajustes/vista-previa/route.ts",
+        "src/lib/ajustes-precio-vista.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-11-18",
+      "notes": null
+    },
+    {
+      "id": "TASK-005",
+      "title": "Precios por producto, con ficha al costado",
+      "description": "La pantalla de Precios rehecha: tarjetas que filtran, una fila por producto con sus tres canales y sus ajustes, ficha lateral con publicaciones, web, ERP, combinaciones y editor de ajustes; barra para varios productos (Ajustar, Margen, Aplicar). Historial y Configuración en paneles laterales.",
+      "component": "frontend",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-003",
+        "TASK-004"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/app/(app)/precios/page.tsx",
+        "src/components/precios/por-producto.ts",
+        "src/components/precios/ficha-precio.tsx",
+        "src/components/precios/editor-ajustes.tsx",
+        "src/components/precios/etiqueta-ajuste.tsx"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-11-18",
+      "notes": "scripts/sdd-015-probar-agrupado.ts: las 403 publicaciones con producto quedan repartidas y lo aplicable suma igual que por canal."
+    },
+    {
+      "id": "TASK-006",
+      "title": "Documentar en INV - Flujos",
+      "description": "Sección 10d, mapa de navegación (la ficha), ER con AJUSTE_PRECIO e índice de endpoints. Mermaid validado.",
+      "component": "docs",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-005"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "Cerebro Sendero 3D/01 - Inventario/INV - Flujos.md"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-11-18",
+      "notes": null
+    },
+    {
+      "id": "TASK-007",
+      "title": "Probar la pantalla en el navegador y publicar",
+      "description": "Revisar la pantalla nueva con sesión iniciada, y publicar con el OK de Agustín.",
+      "component": "frontend",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-005"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": "2026-11-18",
+      "notes": "Publicado con el OK de Agustín (\"sube\") sin la revisión visual en el navegador: el ERP local pedía sesión. Falta mirarla en producción."
+    }
+  ]
+}
