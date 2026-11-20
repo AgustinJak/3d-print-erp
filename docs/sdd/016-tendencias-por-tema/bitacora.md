@@ -59,3 +59,13 @@ Agustín validó:
 **Para el que sigue**
 - Revisar con Agustín los temas: las uniones Mundial y Gravity Falls, los temas que son tipo de producto (Herramientas, Exhibidor…) y Repuesto desactivado.
 - Después de publicar: borrar `/api/tendencias` (GET/POST), `[id]`, `seed` y `sugerencias/[id]` (TASK-008).
+
+## 2026-11-20 · Claude (pestaña Calendario)
+
+Agustín preguntó dónde quedaron las fechas y lo que mostraba la pantalla vieja. Se sumó la pestaña
+Calendario (`components/tendencias/calendario.tsx`):
+- los próximos 6 meses por mes, con póster y descripción;
+- un filtro por tipo;
+- "Sumar a un tema…" para los estrenos sueltos.
+
+La vista pasó de 120 a 183 días. Con los datos del 2026-11-20 hay 27 fechas, 19 sin tema y 20 con póster.

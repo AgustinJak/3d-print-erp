@@ -13,6 +13,7 @@ import { Segmentado } from "@/components/segmentado";
 import { json, pedir } from "@/components/producto/seccion";
 import { haceCuanto } from "@/components/precios/por-producto";
 import { BusquedasNuevas } from "@/components/tendencias/busquedas-nuevas";
+import { Calendario } from "@/components/tendencias/calendario";
 import { FichaTema } from "@/components/tendencias/ficha-tema";
 import { BarraDePuntaje, EtiquetaSenal, TIPO_DE_EVENTO, fechaCorta } from "@/components/tendencias/senal";
 import { ETIQUETA_DE_TIPO, TIPOS_DE_TEMA, diasHasta, type TipoDeTema } from "@/lib/temas";
@@ -31,6 +32,7 @@ const TIPOS_FILTRO: Array<["todos" | TipoDeTema, string]> = [["todos", "Todos lo
 
 export default function TendenciasPage() {
   const [v, setV] = useState<VistaDeTendencias | null>(null);
+  const [seccion, setSeccion] = useState<"temas" | "calendario">("temas");
   const [actualizando, setActualizando] = useState(false);
   const [filtro, setFiltro] = useState<Filtro>("mirar");
   const [tarjeta, setTarjeta] = useState<Tarjeta>(null);
@@ -156,7 +158,10 @@ export default function TendenciasPage() {
             <button
               key={t.k}
               type="button"
-              onClick={() => setTarjeta(activa ? null : t.k)}
+              onClick={() => {
+                setTarjeta(activa ? null : t.k);
+                setSeccion("temas");
+              }}
               aria-pressed={activa}
               className={`rounded-xl border bg-card p-4 text-left transition-colors hover:border-foreground/20 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${activa ? "border-primary ring-1 ring-primary" : ""}`}
             >
@@ -170,6 +175,23 @@ export default function TendenciasPage() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-3">
+          <Segmentado
+            etiqueta="Vista"
+            valor={seccion}
+            onChange={setSeccion}
+            opciones={[
+              ["temas", <>Temas</>],
+              ["calendario", <>Calendario <span className="font-mono text-muted-foreground tabular-nums">{v ? v.calendario.filter((e) => diasHasta(e.fecha) >= 0).length : ""}</span></>],
+            ]}
+          />
+          {seccion === "calendario" ? (
+            v ? (
+              <Calendario eventos={v.calendario} temas={activos.map((t) => ({ id: t.id, nombre: t.nombre }))} onAbrirTema={setAbierto} onCambio={cargar} />
+            ) : (
+              <Skeleton className="h-96 w-full rounded-xl" />
+            )
+          ) : (
+            <>
           <div className="flex flex-wrap items-center gap-2">
             <Segmentado
               chico
@@ -235,6 +257,8 @@ export default function TendenciasPage() {
                 ))}
               </ul>
             </div>
+          )}
+            </>
           )}
         </div>
 

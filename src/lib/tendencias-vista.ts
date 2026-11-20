@@ -15,7 +15,7 @@ import {
 
 /**
  * Lo que muestra /tendencias (docs/sdd/016, spec 004): los temas con sus señales, las búsquedas
- * nuevas de ML y el calendario de los próximos 120 días. Pocas consultas y el resto en memoria.
+ * nuevas de ML y el calendario de los próximos 6 meses. Pocas consultas y el resto en memoria.
  */
 
 const TENANT = "sendero3d";
@@ -194,7 +194,7 @@ export async function armarVista(): Promise<VistaDeTendencias> {
     prisma.modelo.findMany({ where: { tenantId: TENANT, activo: true, esInsumo: false, categoriaMl: { not: null } }, select: { categoriaMl: true }, distinct: ["categoriaMl"] }),
   ]);
   const tuyas = new Set(categoriasTuyas.map((c) => c.categoriaMl!));
-  const calendario = await calendarioProximo(120, temas);
+  const calendario = await calendarioProximo(183, temas);
   const activos = temas.filter((t) => t.activo);
 
   // Cada búsqueda va al tema de alias más largo que coincide.
