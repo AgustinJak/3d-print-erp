@@ -1,13 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import { mlFetch } from "@/lib/mercadolibre";
 import { CATEGORIA_SITIO, hoyEnArgentina, normalizar } from "@/lib/temas";
+import { leerVidrieras } from "@/lib/tendencias-descubrir";
 
 /**
  * Las búsquedas que suben en Mercado Libre (docs/sdd/016, spec 002).
  *
  * `GET /trends/MLA/{categoría}` da las 50 búsquedas que más crecieron en la semana contra dos
  * semanas antes. Se leen (decisión de Agustín, 2026-11-20): las categorías de los productos
- * activos, la raíz de cada una (Juguetes, Hogar…) y la del sitio entero. La foto se guarda una
+ * activos, la raíz de cada una (Juguetes, Hogar…) y la del sitio entero; y desde el 2026-11-20 las
+ * "vidrieras" de Descubrir (tendencias-descubrir.ts). La foto se guarda una
  * vez por día en `busquedas_ml`; leer dos veces el mismo día no duplica.
  */
 
@@ -63,6 +65,8 @@ export async function categoriasALeer(): Promise<Array<{ id: string; nombre: str
   const hojas = filas.map((f) => f.categoriaMl!).filter(Boolean);
   const datos = await datosDeCategorias(hojas);
   const out = new Map<string, string>([[CATEGORIA_SITIO, "todo ML"]]);
+  // Las vidrieras de "Descubrir" primero: son las que importan para sacar productos nuevos.
+  for (const v of await leerVidrieras()) out.set(v.id, v.nombre);
   for (const h of hojas) {
     const d = datos[h];
     out.set(h, d?.nombre ?? h);

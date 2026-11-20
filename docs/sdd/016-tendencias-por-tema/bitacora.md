@@ -69,3 +69,22 @@ Calendario (`components/tendencias/calendario.tsx`):
 - "Sumar a un tema…" para los estrenos sueltos.
 
 La vista pasó de 120 a 183 días. Con los datos del 2026-11-20 hay 27 fechas, 19 sin tema y 20 con póster.
+
+## 2026-11-20 · Claude (Descubrir)
+
+**Pedido de Agustín:** "mi gracia era con esa sección encontrar tendencias que vienen y que están
+para sacar nuevos productos, no mejorar o ver en qué tendencias están mis productos actuales".
+
+**Qué se hizo**
+- Se probó agrupar las búsquedas por palabra y no sirve: salen inflables, sillas, cartas. Los
+  nombres de franquicias no se detectan contando palabras.
+- Lo que sí funciona es mirar las categorías correctas: las subcategorías de Juguetes y Cotillón,
+  más Espadas y Llaveros. Ahí aparecen toy story, jujutsu kaisen, illit, stitch, minecraft, kuromi
+  y el grinch.
+- La pestaña principal pasó a ser **Descubrir** (`lib/tendencias-descubrir.ts`,
+  `components/tendencias/descubrir.tsx`), con "Lo que más suena", una tarjeta por categoría y
+  las acciones Buscar modelos, Crear producto, Seguir y Descartar.
+- Las categorías se eligen en pantalla (`/api/tendencias/vidrieras`) y el cron las lee.
+- Las pestañas quedaron Descubrir, Calendario y Mis temas. El panel "Búsquedas nuevas" se sacó
+  (`busquedas-nuevas.tsx` borrado).
+- Se guardó la foto del 2026-11-20 de las 10 categorías. "Nueva" y "subió" aparecen desde el 2026-11-27.

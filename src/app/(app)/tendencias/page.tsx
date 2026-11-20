@@ -12,17 +12,19 @@ import { EmptyState } from "@/components/empty-state";
 import { Segmentado } from "@/components/segmentado";
 import { json, pedir } from "@/components/producto/seccion";
 import { haceCuanto } from "@/components/precios/por-producto";
-import { BusquedasNuevas } from "@/components/tendencias/busquedas-nuevas";
+import { Descubrir } from "@/components/tendencias/descubrir";
 import { Calendario } from "@/components/tendencias/calendario";
 import { FichaTema } from "@/components/tendencias/ficha-tema";
 import { BarraDePuntaje, EtiquetaSenal, TIPO_DE_EVENTO, fechaCorta } from "@/components/tendencias/senal";
 import { ETIQUETA_DE_TIPO, TIPOS_DE_TEMA, diasHasta, type TipoDeTema } from "@/lib/temas";
 import type { TemaEnLista, VistaDeTendencias } from "@/lib/tendencias-vista";
+import type { Descubrir as DatosDescubrir } from "@/lib/tendencias-descubrir";
 
 /**
- * Tendencias por tema (docs/sdd/016): qué conviene mirar ahora, juntando lo que se busca en
- * Mercado Libre, lo que viene (estrenos, temporadas, fechas comerciales) y lo que vendés. Cada fila
- * dice por qué está ahí (RN-1); el click abre la ficha del tema al costado.
+ * Tendencias (docs/sdd/016): para sacar productos nuevos. Tres pestañas:
+ * - Descubrir: lo que sube en las categorías de ML donde entra lo que se imprime (la principal).
+ * - Calendario: lo que viene en los próximos 6 meses.
+ * - Mis temas: cómo andan tus temáticas, con señales que explican el orden (RN-1).
  */
 
 type Filtro = "mirar" | "todos";
@@ -32,7 +34,8 @@ const TIPOS_FILTRO: Array<["todos" | TipoDeTema, string]> = [["todos", "Todos lo
 
 export default function TendenciasPage() {
   const [v, setV] = useState<VistaDeTendencias | null>(null);
-  const [seccion, setSeccion] = useState<"temas" | "calendario">("temas");
+  const [d, setD] = useState<DatosDescubrir | null>(null);
+  const [seccion, setSeccion] = useState<"descubrir" | "calendario" | "temas">("descubrir");
   const [actualizando, setActualizando] = useState(false);
   const [filtro, setFiltro] = useState<Filtro>("mirar");
   const [tarjeta, setTarjeta] = useState<Tarjeta>(null);
@@ -44,7 +47,9 @@ export default function TendenciasPage() {
 
   const cargar = useCallback(async () => {
     try {
-      setV(await pedir<VistaDeTendencias>("/api/tendencias/temas"));
+      const [vista, descubrir] = await Promise.all([pedir<VistaDeTendencias>("/api/tendencias/temas"), pedir<DatosDescubrir>("/api/tendencias/descubrir")]);
+      setV(vista);
+      setD(descubrir);
     } catch (e) {
       toast.error(`No se pudo leer Tendencias: ${e instanceof Error ? e.message : e}`);
     }
@@ -135,7 +140,7 @@ export default function TendenciasPage() {
         <div className="max-w-2xl space-y-1.5">
           <h1 className="text-[28px] leading-[1.15] font-medium">Tendencias</h1>
           <p className="text-sm text-muted-foreground">
-            Lo que se busca en Mercado Libre, lo que viene y lo que vendés, por tema.
+            Lo que sube en Mercado Libre y lo que viene, para sacar productos nuevos.
             {v?.fotoMl && ` Búsquedas de ML del ${new Date(`${v.fotoMl}T12:00:00Z`).toLocaleDateString("es-AR", { day: "numeric", month: "numeric" })}.`}
           </p>
         </div>
@@ -151,6 +156,7 @@ export default function TendenciasPage() {
         </div>
       </header>
 
+      {seccion === "temas" && (
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {tarjetas.map((t) => {
           const activa = tarjeta === t.k;
@@ -172,19 +178,23 @@ export default function TendenciasPage() {
           );
         })}
       </div>
+      )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className={`grid gap-6 ${seccion === "calendario" ? "" : "lg:grid-cols-[minmax(0,1fr)_300px]"}`}>
         <div className="min-w-0 space-y-3">
           <Segmentado
             etiqueta="Vista"
             valor={seccion}
             onChange={setSeccion}
             opciones={[
-              ["temas", <>Temas</>],
+              ["descubrir", <>Descubrir</>],
               ["calendario", <>Calendario <span className="font-mono text-muted-foreground tabular-nums">{v ? v.calendario.filter((e) => diasHasta(e.fecha) >= 0).length : ""}</span></>],
+              ["temas", <>Mis temas</>],
             ]}
           />
-          {seccion === "calendario" ? (
+          {seccion === "descubrir" ? (
+            <Descubrir datos={d} onAbrirTema={setAbierto} onCambio={cargar} onCategoriasGuardadas={actualizar} />
+          ) : seccion === "calendario" ? (
             v ? (
               <Calendario eventos={v.calendario} temas={activos.map((t) => ({ id: t.id, nombre: t.nombre }))} onAbrirTema={setAbierto} onCambio={cargar} />
             ) : (
@@ -262,23 +272,7 @@ export default function TendenciasPage() {
           )}
         </div>
 
-        <aside className="space-y-6">
-          <section className="space-y-3 rounded-xl border bg-card p-4">
-            <div>
-              <h2 className="text-sm font-medium">Búsquedas nuevas</h2>
-              <p className="text-xs text-muted-foreground">Suben en ML y no son de ningún tema</p>
-            </div>
-            {v ? (
-              <BusquedasNuevas
-                nuevas={v.nuevas}
-                temas={activos.map((t) => ({ id: t.id, nombre: t.nombre }))}
-                onCrear={(palabra) => setNuevoTema({ nombre: palabra.charAt(0).toUpperCase() + palabra.slice(1), palabra, tipo: "otro" })}
-                onCambio={cargar}
-              />
-            ) : (
-              <Skeleton className="h-40 w-full rounded-lg" />
-            )}
-          </section>
+        <aside className={`space-y-6 ${seccion === "calendario" ? "hidden" : ""}`}>
 
           <section className="space-y-3 rounded-xl border bg-card p-4">
             <div>

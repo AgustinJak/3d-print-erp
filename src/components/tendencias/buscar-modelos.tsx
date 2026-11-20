@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ExternalLink, Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ const FUENTE: Record<STLModel["source"], string> = {
 };
 
 /** Modelos para imprimir de un tema: Printables, Thingiverse, Cults y MyMiniFactory. Busca al pedirlo. */
-export function BuscarModelos({ inicial }: { inicial: string }) {
+export function BuscarModelos({ inicial, buscarAlAbrir = false }: { inicial: string; buscarAlAbrir?: boolean }) {
   const [q, setQ] = useState(inicial);
   const [resultados, setResultados] = useState<STLModel[] | null>(null);
   const [buscando, setBuscando] = useState(false);
@@ -35,6 +35,12 @@ export function BuscarModelos({ inicial }: { inicial: string }) {
       setBuscando(false);
     }
   }
+
+  useEffect(() => {
+    // Desde Descubrir se abre para buscar: arranca sola con la palabra.
+    if (buscarAlAbrir) Promise.resolve().then(buscar);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="space-y-3">
