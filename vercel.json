@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/facturacion-ml",
       "schedule": "5 10 * * *"
+    },
+    {
+      "path": "/api/cron/tendencias",
+      "schedule": "30 10 * * *"
     }
   ]
 }

@@ -1,0 +1,213 @@
+{
+  "$schema": "../_plantillas/tasks.schema.json",
+  "featureId": "016-tendencias-por-tema",
+  "epic": "ninguna",
+  "version": "1.0.0",
+  "status": "in-progress",
+  "branch": "feat/003-precios-desde-bodega",
+  "baseBranch": "master",
+  "pullRequest": null,
+  "validation": {
+    "approved": true,
+    "approvedBy": "Agustín",
+    "approvedAt": "2026-11-20",
+    "notes": "Temas con alias sin tocar productos (JOJO+Jojos, K4os+Kpop K4os, Devil may cry ×2, One Piece ×2); Huntrix, K4os y BTS separados; categorías de ML de los productos + raíz + sitio; fase 1 primero, claves de la fase 2 después."
+  },
+  "updatedAt": "2026-11-20",
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Tablas de temas y búsquedas de ML",
+      "description": "prisma/sql/tendencias-por-tema.sql: temas, busquedas_ml, busquedas_descartadas y las columnas nuevas de eventos_tendencia (tema_id, fecha_ar, anual, archivado). RLS prendido. Modelos en Prisma. Aplicado con apply_migration.",
+      "component": "database",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "prisma/sql/tendencias-por-tema.sql",
+        "prisma/schema.prisma"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-11-20",
+      "notes": "Aplicado con apply_migration. prisma generate: el motor quedó tomado por el MCP de publicidad (EPERM al renombrar el .dll), pero el cliente se generó y anda; el motor es el mismo."
+    },
+    {
+      "id": "TASK-002",
+      "title": "Temas: normalizar, coincidir, señales y siembra",
+      "description": "lib/temas.ts (puro) con sus pruebas, y scripts/sdd-016-sembrar-temas.ts con las uniones que valide Agustín.",
+      "component": "api",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-001"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/temas.ts",
+        "scripts/sdd-016-probar-temas.ts",
+        "scripts/sdd-016-sembrar-temas.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-11-20",
+      "notes": "37 temas de 42 series. 28 de 28 en scripts/sdd-016-probar-temas.ts. Repuesto desactivado (coincidía con repuesto vaso avent). Sin validar con Agustín: Mundial + Mundial fifa 2026 y Graviti falls → Gravity Falls."
+    },
+    {
+      "id": "TASK-003",
+      "title": "Búsquedas de ML por categoría",
+      "description": "lib/tendencias-ml.ts: categorías de los productos y sus raíces, /trends por categoría, foto diaria en busquedas_ml.",
+      "component": "integration",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-001"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/tendencias-ml.ts",
+        "scripts/sdd-016-probar-busquedas.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-11-20",
+      "notes": "31 categorías con datos, 1005 búsquedas el 2026-11-20."
+    },
+    {
+      "id": "TASK-004",
+      "title": "Calendario: estreno en Argentina, fechas anuales y archivo",
+      "description": "lib/tendencias-calendario.ts y lib/fechas-comerciales.ts: release_dates AR de TMDB, fechas comerciales que se repiten (con las móviles), archivo de vencidos, vínculo con temas. Sin viralidad ni sugerencias de plantilla.",
+      "component": "integration",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/tendencias-calendario.ts",
+        "src/lib/fechas-comerciales.ts",
+        "src/lib/tmdb.ts",
+        "scripts/sdd-016-probar-calendario.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-11-20",
+      "notes": "14 de 14 en scripts/sdd-016-probar-calendario.ts. Primera vuelta: 11 estrenos con fecha AR, 9 eventos vinculados, 158 archivados."
+    },
+    {
+      "id": "TASK-005",
+      "title": "Endpoints y cron",
+      "description": "GET/POST /api/tendencias/temas, GET/PATCH /api/tendencias/temas/[id], POST /api/tendencias/busquedas, /api/tendencias/sync con lib/tendencias-sync.ts, y /api/cron/tendencias diario en vercel.json. lib/tendencias-vista.ts arma la lista con señales y ventas por tema.",
+      "component": "api",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-003",
+        "TASK-004"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/tendencias-vista.ts",
+        "src/lib/tendencias-sync.ts",
+        "src/app/api/tendencias/temas",
+        "src/app/api/tendencias/busquedas/route.ts",
+        "src/app/api/cron/tendencias/route.ts",
+        "vercel.json"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-11-20",
+      "notes": "Endpoints nuevos: /api/tendencias/temas, temas/[id], busquedas, eventos, eventos/[id], /api/cron/tendencias (10:30 UTC)."
+    },
+    {
+      "id": "TASK-006",
+      "title": "Pantalla de Tendencias por tema (unslop)",
+      "description": "Lista de temas con señales, búsquedas nuevas, calendario y ficha lateral con productos, ventas, eventos, modelos para imprimir y Crear producto (/modelos/nuevo con nombre y serie).",
+      "component": "ui",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-005"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/app/(app)/tendencias/page.tsx",
+        "src/components/tendencias"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-11-20",
+      "notes": "Compila y pasa el lint. Sin revisión visual: el ERP local pide sesión."
+    },
+    {
+      "id": "TASK-007",
+      "title": "Documentar",
+      "description": "INV - Flujos (navegación, endpoints, cron, sección con mermaid validado), INV - Radar de Tendencias, Flujos del ecosistema (ML /trends) y README de SDD.",
+      "component": "docs",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-006"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": "2026-11-20",
+      "notes": "INV - Flujos (sección 17, navegación, endpoints), INV - Radar de Tendencias reescrita, Flujos del ecosistema (contrato 6c). Mermaid validado."
+    },
+    {
+      "id": "TASK-008",
+      "title": "Probar y publicar la fase 1",
+      "description": "Correr la siembra, revisar los temas con Agustín, mirar la pantalla y publicar con su OK. Después, borrar /api/tendencias/seed y /api/tendencias/sugerencias.",
+      "component": "test",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-007"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-009",
+      "title": "Fase 2: música y k-pop",
+      "description": "YouTube (lo más visto en música en Argentina y los videoclips nuevos de los canales oficiales de los grupos de un tema) y Last.fm (artistas más escuchados en Argentina cruzados con k-pop).",
+      "component": "integration",
+      "status": "blocked",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-008"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": "Faltan YOUTUBE_API_KEY y LASTFM_API_KEY en Vercel.",
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-010",
+      "title": "Fase 2: recitales en Argentina",
+      "description": "Fechas en Argentina de los artistas de cada tema (Bandsintown) y carga a mano desde la ficha.",
+      "component": "integration",
+      "status": "blocked",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-008"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": "Bandsintown pide aprobación para dar el app id; si no lo dan, sólo carga a mano.",
+      "completedAt": null,
+      "notes": null
+    }
+  ]
+}

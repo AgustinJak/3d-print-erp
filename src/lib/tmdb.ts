@@ -302,3 +302,24 @@ export function tmdbSeriesToEvento(series: TMDBSeries) {
     sugerencias: generateSugerencias(series.genre_ids),
   };
 }
+
+/**
+ * El estreno en cines de Argentina (docs/sdd/016, RN-5): `GET /movie/{id}/release_dates`, la entrada
+ * `AR` de tipo 2 (limitado) o 3 (cines), la primera. null si TMDB no la tiene. La fecha principal
+ * de TMDB es la primera del mundo, no la de acá.
+ */
+export async function fechaDeEstrenoAr(movieId: number): Promise<Date | null> {
+  const r = await tmdbFetch<{ results: Array<{ iso_3166_1: string; release_dates: Array<{ release_date: string; type: number }> }> }>(
+    `/movie/${movieId}/release_dates`
+  );
+  const ar = r.results.find((x) => x.iso_3166_1 === "AR");
+  const fechas = (ar?.release_dates ?? [])
+    .filter((d) => d.type === 2 || d.type === 3)
+    .map((d) => new Date(d.release_date))
+    .filter((d) => !isNaN(d.getTime()))
+    .sort((a, b) => a.getTime() - b.getTime());
+  if (!fechas.length) return null;
+  const f = fechas[0];
+  // Como día de calendario, a la medianoche UTC (ver `diasHasta` en lib/temas.ts).
+  return new Date(Date.UTC(f.getUTCFullYear(), f.getUTCMonth(), f.getUTCDate()));
+}

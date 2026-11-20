@@ -302,13 +302,62 @@ model EventoTendencia {
   fuente      String    @default("manual") // tmdb, anilist, manual
   fuenteId    String?   @map("fuente_id") // ID externo (ej: TMDB movie ID)
   activo      Boolean   @default(true)
+  /// docs/sdd/016: el tema al que pertenece, el estreno en Argentina, si se repite cada año y si ya pasó.
+  temaId      String?   @map("tema_id")
+  fechaAr     DateTime? @map("fecha_ar")
+  anual       Boolean   @default(false)
+  archivado   Boolean   @default(false)
   creadoEn    DateTime  @default(now()) @map("creado_en")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
   sugerencias SugerenciaProducto[]
+  tema        Tema?                @relation(fields: [temaId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, fuente, fuenteId])
   @@map("eventos_tendencia")
+}
+
+/// docs/sdd/016: un tema (JOJO, K4os, Labubu) junta productos por su serie, búsquedas de ML y eventos.
+model Tema {
+  id        String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  tenantId  String   @default("sendero3d") @map("tenant_id")
+  nombre    String
+  /// anime, pelicula, serie, kpop, musica, juego, personaje, deporte, otro
+  tipo      String   @default("otro")
+  /// Normalizados: sin mayúsculas ni tildes.
+  alias     String[] @default([])
+  activo    Boolean  @default(true)
+  creadoEn  DateTime @default(now()) @map("creado_en")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  eventos EventoTendencia[]
+
+  @@map("temas")
+}
+
+/// docs/sdd/016: la foto diaria de GET /trends/MLA/{categoría}.
+model BusquedaMl {
+  id          String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  tenantId    String   @default("sendero3d") @map("tenant_id")
+  categoriaId String   @map("categoria_id")
+  categoria   String?
+  palabra     String
+  normalizada String
+  posicion    Int
+  url         String?
+  dia         DateTime @db.Date
+
+  @@unique([tenantId, categoriaId, normalizada, dia], map: "busquedas_ml_unica")
+  @@map("busquedas_ml")
+}
+
+model BusquedaDescartada {
+  tenantId    String   @default("sendero3d") @map("tenant_id")
+  normalizada String
+  creadoEn    DateTime @default(now()) @map("creado_en")
+
+  @@id([tenantId, normalizada])
+  @@map("busquedas_descartadas")
 }
 
 model SugerenciaProducto {

@@ -242,7 +242,8 @@ function AltaProducto() {
 
   // Lo que viene del cotizador ("Crear producto con esto"), si viene.
   const [nombre, setNombre] = useState(() => params.get("nombre") ?? "");
-  const [serie, setSerie] = useState("");
+  // Desde Tendencias llega con la serie del tema (docs/sdd/016).
+  const [serie, setSerie] = useState(() => params.get("serie") ?? "");
   const [fabrica, setFabrica] = useState(true);
   const [material, setMaterial] = useState(() => params.get("material") ?? "");
   const [gramos, setGramos] = useState(() => params.get("gramos") ?? "");

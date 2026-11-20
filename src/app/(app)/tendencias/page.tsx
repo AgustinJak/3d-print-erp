@@ -1,1200 +1,404 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
-import {
-  Zap, Search, Plus, Trash2, ChevronDown, ChevronUp,
-  Calendar, Flame, Pencil, Loader2, RefreshCw, Link2, X,
-  ExternalLink, Box,
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { motion } from "motion/react";
+import { CalendarDays, ChevronRight, Loader2, Plus, Radar, RefreshCw, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  Popover, PopoverContent, PopoverTrigger,
-} from "@/components/ui/popover";
-/* simple alert helper (no sonner dependency) */
-const notify = {
-  success: (msg: string) => { console.log("\u2705", msg); },
-  error: (msg: string) => { console.error("\u274C", msg); alert(msg); },
-};
+import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/empty-state";
+import { Segmentado } from "@/components/segmentado";
+import { json, pedir } from "@/components/producto/seccion";
+import { haceCuanto } from "@/components/precios/por-producto";
+import { BusquedasNuevas } from "@/components/tendencias/busquedas-nuevas";
+import { FichaTema } from "@/components/tendencias/ficha-tema";
+import { BarraDePuntaje, EtiquetaSenal, TIPO_DE_EVENTO, fechaCorta } from "@/components/tendencias/senal";
+import { ETIQUETA_DE_TIPO, TIPOS_DE_TEMA, diasHasta, type TipoDeTema } from "@/lib/temas";
+import type { TemaEnLista, VistaDeTendencias } from "@/lib/tendencias-vista";
 
-/* ────────── types ────────── */
+/**
+ * Tendencias por tema (docs/sdd/016): qué conviene mirar ahora, juntando lo que se busca en
+ * Mercado Libre, lo que viene (estrenos, temporadas, fechas comerciales) y lo que vendés. Cada fila
+ * dice por qué está ahí (RN-1); el click abre la ficha del tema al costado.
+ */
 
-interface ModeloRef {
-  id: string;
-  nombre: string;
-  imagenUrl: string | null;
-}
+type Filtro = "mirar" | "todos";
+type Tarjeta = "ml" | "fechas" | "oportunidad" | "bajan" | null;
 
-interface Sugerencia {
-  id?: string;
-  nombre: string;
-  tipoProducto: string;
-  dificultad: string;
-  potencialVenta: number;
-  ventanaInicio: string;
-  modeloVinculadoId?: string | null;
-  modeloVinculado?: ModeloRef | null;
-}
-
-interface Evento {
-  id: string;
-  titulo: string;
-  tipo: string;
-  fecha: string;
-  fechaFin: string | null;
-  descripcion: string | null;
-  imagenUrl: string | null;
-  nivelViral: string;
-  fuente: string;
-  sugerencias: Sugerencia[];
-}
-
-interface STLModel {
-  id: string;
-  name: string;
-  author: string;
-  imageUrl: string | null;
-  url: string;
-  source: string;
-  likes?: number;
-  downloads?: number;
-}
-
-/* ────────── constants ────────── */
-
-const TIPOS = [
-  { value: "pelicula", label: "Pelicula", color: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
-  { value: "serie", label: "Serie", color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
-  { value: "anime", label: "Anime", color: "bg-pink-500/20 text-pink-400 border-pink-500/30" },
-  { value: "concierto", label: "Concierto", color: "bg-orange-500/20 text-orange-400 border-orange-500/30" },
-  { value: "fecha_comercial", label: "Fecha comercial", color: "bg-green-500/20 text-green-400 border-green-500/30" },
-  { value: "gaming", label: "Gaming", color: "bg-red-500/20 text-red-400 border-red-500/30" },
-  { value: "evento", label: "Evento", color: "bg-gray-500/20 text-gray-400 border-gray-500/30" },
-];
-
-const NIVELES_VIRAL = [
-  { value: "bajo", label: "Bajo", fires: 1, color: "text-slate-400" },
-  { value: "medio", label: "Medio", fires: 2, color: "text-yellow-400" },
-  { value: "alto", label: "Alto", fires: 3, color: "text-orange-400" },
-  { value: "explosivo", label: "Explosivo", fires: 4, color: "text-red-500" },
-];
-
-const TIPOS_PRODUCTO = [
-  { value: "replica", label: "Replica" },
-  { value: "accesorio", label: "Accesorio" },
-  { value: "decoracion", label: "Decoracion" },
-  { value: "funcional", label: "Funcional" },
-  { value: "soporte", label: "Soporte" },
-  { value: "llavero", label: "Llavero" },
-];
-
-const DIFICULTADES = [
-  { value: "baja", label: "Baja", color: "bg-green-500/20 text-green-400 border-green-500/30" },
-  { value: "media", label: "Media", color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
-  { value: "alta", label: "Alta", color: "bg-red-500/20 text-red-400 border-red-500/30" },
-];
-
-const MESES = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
-];
-
-/* ────────── helpers ────────── */
-
-function getTipoMeta(tipo: string) {
-  return TIPOS.find((t) => t.value === tipo) || TIPOS[TIPOS.length - 1];
-}
-
-function getNivelMeta(nivel: string) {
-  return NIVELES_VIRAL.find((n) => n.value === nivel) || NIVELES_VIRAL[0];
-}
-
-function getDificultadMeta(dif: string) {
-  return DIFICULTADES.find((d) => d.value === dif) || DIFICULTADES[0];
-}
-
-function parseDate(dateStr: string) {
-  // Handle both "2026-06-21" and "2026-06-21T00:00:00.000Z"
-  const s = dateStr.slice(0, 10);
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
-
-function formatDateES(dateStr: string) {
-  const d = parseDate(dateStr);
-  return d.toLocaleDateString("es-AR", { day: "numeric", month: "long", year: "numeric" });
-}
-
-function startOfDay(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-
-function daysDiff(a: Date, b: Date) {
-  return Math.floor((b.getTime() - a.getTime()) / 86400000);
-}
-
-function monthLabel(dateStr: string) {
-  const d = parseDate(dateStr);
-  return `${MESES[d.getMonth()]} ${d.getFullYear()}`;
-}
-
-/* ────────── empty form ────────── */
-
-const emptySugerencia: Sugerencia = {
-  nombre: "",
-  tipoProducto: "replica",
-  dificultad: "media",
-  potencialVenta: 2,
-  ventanaInicio: "",
-  modeloVinculadoId: null,
-  modeloVinculado: null,
-};
-
-const emptyForm = {
-  titulo: "",
-  tipo: "evento",
-  fecha: new Date().toISOString().slice(0, 10),
-  fechaFin: "",
-  descripcion: "",
-  imagenUrl: "",
-  nivelViral: "medio",
-  fuente: "manual",
-  sugerencias: [] as Sugerencia[],
-};
-
-/* ────────── Viral fires component ────────── */
-
-function ViralFires({ nivel }: { nivel: string }) {
-  const meta = getNivelMeta(nivel);
-  const isExplosivo = nivel === "explosivo";
-  return (
-    <span className={`inline-flex items-center gap-0.5 ${meta.color} ${isExplosivo ? "font-medium" : ""}`}>
-      {Array.from({ length: meta.fires }).map((_, i) => (
-        <span key={i}>🔥</span>
-      ))}
-    </span>
-  );
-}
-
-/* ────────── Model link popover ────────── */
-
-function VincularModeloPopover({
-  sugerencia,
-  modelos,
-  onLink,
-}: {
-  sugerencia: Sugerencia;
-  modelos: ModeloRef[];
-  onLink: (sugerenciaId: string, modeloId: string | null) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-
-  const filtered = modelos.filter((m) =>
-    m.nombre.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  if (sugerencia.modeloVinculado) {
-    return (
-      <div className="flex items-center gap-1.5 text-xs">
-        {sugerencia.modeloVinculado.imagenUrl && (
-          <img
-            src={sugerencia.modeloVinculado.imagenUrl}
-            alt=""
-            className="h-5 w-5 rounded object-cover"
-          />
-        )}
-        <a
-          href={`/modelos/${sugerencia.modeloVinculado.id}`}
-          className="text-blue-400 hover:underline flex items-center gap-1"
-        >
-          <Link2 className="h-3 w-3" />
-          {sugerencia.modeloVinculado.nombre}
-        </a>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            if (sugerencia.id) onLink(sugerencia.id, null);
-          }}
-          className="text-muted-foreground hover:text-destructive ml-0.5"
-          title="Desvincular modelo"
-        >
-          <X className="h-3 w-3" />
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <Popover open={open} onOpenChange={(o) => setOpen(o)}>
-      <PopoverTrigger
-        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-      >
-        <Link2 className="h-3 w-3" />
-        Vincular modelo
-      </PopoverTrigger>
-      <PopoverContent className="w-64 p-2" align="start">
-        <Input
-          placeholder="Buscar modelo..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="mb-2 h-8 text-xs"
-        />
-        <div className="max-h-48 overflow-y-auto space-y-0.5">
-          {filtered.length === 0 && (
-            <p className="text-xs text-muted-foreground p-2 text-center">Sin resultados</p>
-          )}
-          {filtered.map((m) => (
-            <button
-              key={m.id}
-              className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent flex items-center gap-2 transition-colors"
-              onClick={() => {
-                if (sugerencia.id) {
-                  onLink(sugerencia.id, m.id);
-                  setOpen(false);
-                  setSearchTerm("");
-                }
-              }}
-            >
-              {m.imagenUrl && (
-                <img src={m.imagenUrl} alt="" className="h-5 w-5 rounded object-cover shrink-0" />
-              )}
-              <span className="truncate">{m.nombre}</span>
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-/* ────────── Event card ────────── */
-
-/* ────────── STL Search Panel ────────── */
-
-function STLSearchPanel({ titulo }: { titulo: string }) {
-  const [stlResults, setStlResults] = useState<STLModel[]>([]);
-  const [stlLoading, setStlLoading] = useState(false);
-  const [stlExpanded, setStlExpanded] = useState(false);
-  const [stlQuery, setStlQuery] = useState("");
-  const [searched, setSearched] = useState(false);
-
-  const searchSTL = async (query: string) => {
-    if (!query || query.length < 2) return;
-    setStlLoading(true);
-    setSearched(true);
-    try {
-      const res = await fetch(`/api/tendencias/stl-search?q=${encodeURIComponent(query)}&limit=6`);
-      if (res.ok) {
-        const data = await res.json();
-        setStlResults(data);
-      }
-    } catch {
-      console.error("Error buscando STLs");
-    } finally {
-      setStlLoading(false);
-    }
-  };
-
-  const handleExpand = () => {
-    if (!stlExpanded && !searched) {
-      // Auto-search con el título del evento
-      const cleanTitle = titulo.replace(/[-–—:()]/g, " ").replace(/\s+/g, " ").trim();
-      const words = cleanTitle.split(" ").slice(0, 3).join(" ");
-      setStlQuery(words);
-      searchSTL(words);
-    }
-    setStlExpanded(!stlExpanded);
-  };
-
-  const sourceLabel = (s: string) => {
-    switch (s) {
-      case "printables": return "Printables";
-      case "thingiverse": return "Thingiverse";
-      case "myminifactory": return "MyMiniFactory";
-      case "cults3d": return "Cults3D";
-      default: return s;
-    }
-  };
-
-  const sourceColor = (s: string) => {
-    switch (s) {
-      case "printables": return "bg-orange-500/20 text-orange-400 border-orange-500/30";
-      case "thingiverse": return "bg-blue-500/20 text-blue-400 border-blue-500/30";
-      case "myminifactory": return "bg-green-500/20 text-green-400 border-green-500/30";
-      case "cults3d": return "bg-purple-500/20 text-purple-400 border-purple-500/30";
-      default: return "bg-gray-500/20 text-gray-400";
-    }
-  };
-
-  return (
-    <div className="mt-2">
-      <button
-        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        onClick={handleExpand}
-      >
-        {stlExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-        <Box className="h-3.5 w-3.5" />
-        Buscar modelos STL
-      </button>
-
-      {stlExpanded && (
-        <div className="mt-2 space-y-2">
-          {/* Search bar */}
-          <div className="flex gap-2">
-            <Input
-              value={stlQuery}
-              onChange={(e) => setStlQuery(e.target.value)}
-              placeholder="Buscar modelos 3D..."
-              className="h-8 text-sm"
-              onKeyDown={(e) => e.key === "Enter" && searchSTL(stlQuery)}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 px-3"
-              onClick={() => searchSTL(stlQuery)}
-              disabled={stlLoading}
-            >
-              {stlLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
-            </Button>
-          </div>
-
-          {/* Results */}
-          {stlLoading && (
-            <div className="text-center py-3 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
-              Buscando en marketplaces...
-            </div>
-          )}
-
-          {!stlLoading && searched && stlResults.length === 0 && (
-            <p className="text-xs text-muted-foreground text-center py-2">
-              No se encontraron modelos. Probá con otro término.
-            </p>
-          )}
-
-          {stlResults.length > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              {stlResults.map((stl) => (
-                <a
-                  key={stl.id}
-                  href={stl.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-lg border p-2 hover:bg-accent/50 transition-colors block"
-                >
-                  {stl.imageUrl && (
-                    <img
-                      src={stl.imageUrl}
-                      alt={stl.name}
-                      className="w-full h-24 object-cover rounded-md mb-1.5"
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                    />
-                  )}
-                  <p className="text-xs font-medium line-clamp-2 leading-tight">{stl.name}</p>
-                  <div className="flex items-center justify-between mt-1">
-                    <span className="text-[10px] text-muted-foreground truncate">{stl.author}</span>
-                    <Badge variant="outline" className={`text-[10px] px-1 py-0 ${sourceColor(stl.source)}`}>
-                      {sourceLabel(stl.source)}
-                    </Badge>
-                  </div>
-                  {(stl.likes || stl.downloads) ? (
-                    <div className="flex gap-2 mt-1 text-[10px] text-muted-foreground">
-                      {stl.likes ? <span>❤️ {stl.likes}</span> : null}
-                      {stl.downloads ? <span>⬇️ {stl.downloads}</span> : null}
-                    </div>
-                  ) : null}
-                  <div className="flex items-center gap-1 mt-1 text-[10px] text-primary">
-                    <ExternalLink className="h-2.5 w-2.5" /> Ver modelo
-                  </div>
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ────────── Event Card ────────── */
-
-function EventoCard({
-  evento,
-  modelos,
-  onEdit,
-  onDelete,
-  onLinkModelo,
-}: {
-  evento: Evento;
-  modelos: ModeloRef[];
-  onEdit: (e: Evento) => void;
-  onDelete: (id: string) => void;
-  onLinkModelo: (sugerenciaId: string, modeloId: string | null) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const tipoMeta = getTipoMeta(evento.tipo);
-
-  const vinculadas = evento.sugerencias.filter((s) => s.modeloVinculado).length;
-
-  return (
-    <Card className="group relative transition-all hover:shadow-md">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 mb-1">
-              <Badge variant="outline" className={`text-xs ${tipoMeta.color}`}>
-                {tipoMeta.label}
-              </Badge>
-              <ViralFires nivel={evento.nivelViral} />
-            </div>
-            <h3 className="font-semibold text-base truncate">{evento.titulo}</h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              <Calendar className="inline h-3.5 w-3.5 mr-1 -mt-0.5" />
-              {formatDateES(evento.fecha)}
-              {evento.fechaFin && ` \u2014 ${formatDateES(evento.fechaFin)}`}
-            </p>
-            {evento.descripcion && (
-              <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{evento.descripcion}</p>
-            )}
-          </div>
-          <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(evento)}>
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onDelete(evento.id)}>
-              <Trash2 className="h-3.5 w-3.5 text-destructive" />
-            </Button>
-          </div>
-        </div>
-
-        {/* sugerencias */}
-        {evento.sugerencias && evento.sugerencias.length > 0 && (
-          <div className="mt-3">
-            <button
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => setExpanded(!expanded)}
-            >
-              {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-              {evento.sugerencias.length} sugerencia{evento.sugerencias.length !== 1 ? "s" : ""} de producto
-              {vinculadas > 0 && (
-                <Badge variant="secondary" className="text-[10px] ml-1 px-1.5 py-0">
-                  {vinculadas} vinculado{vinculadas !== 1 ? "s" : ""}
-                </Badge>
-              )}
-            </button>
-            {expanded && (
-              <div className="mt-2 space-y-2">
-                {evento.sugerencias.map((s, i) => {
-                  const difMeta = getDificultadMeta(s.dificultad);
-                  const tipoProd = TIPOS_PRODUCTO.find((t) => t.value === s.tipoProducto);
-                  return (
-                    <div key={s.id || i} className="rounded-md border p-2 text-sm space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium">{s.nombre}</span>
-                        {tipoProd && (
-                          <Badge variant="outline" className="text-xs">{tipoProd.label}</Badge>
-                        )}
-                        <Badge variant="outline" className={`text-xs ${difMeta.color}`}>
-                          {difMeta.label}
-                        </Badge>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                        <span>
-                          Potencial:{" "}
-                          {Array.from({ length: s.potencialVenta }).map((_, j) => (
-                            <span key={j}>🔥</span>
-                          ))}
-                        </span>
-                        {s.ventanaInicio && <span>Empezar: {s.ventanaInicio}</span>}
-                      </div>
-                      {/* modelo vinculado */}
-                      <div className="pt-1">
-                        <VincularModeloPopover
-                          sugerencia={s}
-                          modelos={modelos}
-                          onLink={onLinkModelo}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* STL Search */}
-        <STLSearchPanel titulo={evento.titulo} />
-      </CardContent>
-    </Card>
-  );
-}
-
-/* ────────── Annual Calendar ────────── */
-
-function CalendarioAnual({ eventos }: { eventos: Evento[] }) {
-  const counts = new Map<number, number>();
-  for (const ev of eventos) {
-    const m = parseDate(ev.fecha).getMonth();
-    counts.set(m, (counts.get(m) || 0) + 1);
-  }
-  const maxCount = Math.max(...Array.from(counts.values()), 1);
-
-  return (
-    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-2">
-      {MESES.map((mes, i) => {
-        const c = counts.get(i) || 0;
-        const intensity = c === 0 ? 0 : Math.ceil((c / maxCount) * 4);
-        const bg = [
-          "bg-muted/30",
-          "bg-orange-500/10",
-          "bg-orange-500/20",
-          "bg-orange-500/40",
-          "bg-orange-500/60",
-        ][intensity];
-        return (
-          <div
-            key={i}
-            className={`rounded-lg p-2 text-center border transition-colors ${bg}`}
-          >
-            <div className="text-xs font-medium">{mes.slice(0, 3)}</div>
-            <div className="text-lg font-bold mt-1">{c}</div>
-            <div className="text-[10px] text-muted-foreground">evento{c !== 1 ? "s" : ""}</div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ────────── Main page ────────── */
+const TIPOS_FILTRO: Array<["todos" | TipoDeTema, string]> = [["todos", "Todos los tipos"], ...TIPOS_DE_TEMA.map((t) => [t, ETIQUETA_DE_TIPO[t]] as ["todos" | TipoDeTema, string])];
 
 export default function TendenciasPage() {
-  const [eventos, setEventos] = useState<Evento[]>([]);
-  const [modelos, setModelos] = useState<ModeloRef[]>([]);
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [seedLoading, setSeedLoading] = useState(false);
-  const [syncLoading, setSyncLoading] = useState(false);
+  const [v, setV] = useState<VistaDeTendencias | null>(null);
+  const [actualizando, setActualizando] = useState(false);
+  const [filtro, setFiltro] = useState<Filtro>("mirar");
+  const [tarjeta, setTarjeta] = useState<Tarjeta>(null);
+  const [tipo, setTipo] = useState<"todos" | TipoDeTema>("todos");
+  const [q, setQ] = useState("");
+  const [abierto, setAbierto] = useState<string | null>(null);
+  const [nuevoTema, setNuevoTema] = useState<{ nombre: string; palabra: string | null; tipo: TipoDeTema } | null>(null);
+  const [creando, setCreando] = useState(false);
 
-  // filters
-  const [search, setSearch] = useState("");
-  const [filterTipo, setFilterTipo] = useState("todos");
-  const [filterNivel, setFilterNivel] = useState("todos");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-
-  // dialog
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState(emptyForm);
-  const [saving, setSaving] = useState(false);
-
-  /* ── fetch ── */
-  const fetchEventos = useCallback(async () => {
+  const cargar = useCallback(async () => {
     try {
-      const res = await fetch("/api/tendencias");
-      if (!res.ok) throw new Error();
-      setEventos(await res.json());
-    } catch {
-      notify.error("Error al cargar tendencias");
-    } finally {
-      setInitialLoading(false);
+      setV(await pedir<VistaDeTendencias>("/api/tendencias/temas"));
+    } catch (e) {
+      toast.error(`No se pudo leer Tendencias: ${e instanceof Error ? e.message : e}`);
     }
   }, []);
-
-  const fetchModelos = useCallback(async () => {
-    try {
-      const res = await fetch("/api/modelos");
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setModelos(
-        data.map((m: Record<string, unknown>) => ({
-          id: m.id as string,
-          nombre: m.nombre as string,
-          imagenUrl: (m.imagenUrl as string) || null,
-        }))
-      );
-    } catch {
-      // silent - modelos are optional for core functionality
-    }
-  }, []);
-
   useEffect(() => {
-    fetchEventos();
-    fetchModelos();
-  }, [fetchEventos, fetchModelos]);
+    cargar();
+  }, [cargar]);
 
-  /* ── link/unlink modelo to sugerencia ── */
-  const handleLinkModelo = async (sugerenciaId: string, modeloId: string | null) => {
+  async function actualizar() {
+    setActualizando(true);
     try {
-      const res = await fetch(`/api/tendencias/sugerencias/${sugerenciaId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modeloVinculadoId: modeloId }),
-      });
-      if (!res.ok) throw new Error();
-      notify.success(modeloId ? "Modelo vinculado" : "Modelo desvinculado");
-      fetchEventos();
-    } catch {
-      notify.error("Error al vincular modelo");
-    }
-  };
-
-  /* ── seed AR calendar ── */
-  const handleSeed = async () => {
-    setSeedLoading(true);
-    try {
-      const res = await fetch("/api/tendencias/seed", { method: "POST" });
-      if (!res.ok) throw new Error();
-      notify.success("Calendario AR cargado");
-      fetchEventos();
-    } catch {
-      notify.error("Error al cargar calendario AR");
+      await pedir("/api/tendencias/sync", { method: "POST" });
+      await cargar();
+      toast.success("Tendencias al día: búsquedas de ML y calendario");
+    } catch (e) {
+      toast.error(`No se pudo actualizar: ${e instanceof Error ? e.message : e}`);
     } finally {
-      setSeedLoading(false);
+      setActualizando(false);
     }
-  };
+  }
 
-  /* ── sync TMDB + AniList ── */
-  const handleSync = async () => {
-    setSyncLoading(true);
+  async function crearTema() {
+    if (!nuevoTema) return;
+    setCreando(true);
     try {
-      const res = await fetch("/api/tendencias/sync", { method: "POST" });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      notify.success(data.message ?? "Sincronización completada");
-      fetchEventos();
-    } catch {
-      notify.error("Error al sincronizar tendencias externas");
+      const r = await pedir<{ id: string }>("/api/tendencias/temas", json("POST", { nombre: nuevoTema.nombre, tipo: nuevoTema.tipo, palabra: nuevoTema.palabra }));
+      toast.success(`Tema «${nuevoTema.nombre}» creado`);
+      setNuevoTema(null);
+      await cargar();
+      setAbierto(r.id);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
     } finally {
-      setSyncLoading(false);
+      setCreando(false);
     }
-  };
+  }
 
-  /* ── filtering & sorting ── */
-  const filtered = eventos
-    .filter((ev) => {
-      if (search && !ev.titulo.toLowerCase().includes(search.toLowerCase())) return false;
-      if (filterTipo !== "todos" && ev.tipo !== filterTipo) return false;
-      if (filterNivel !== "todos" && ev.nivelViral !== filterNivel) return false;
+  const temas = useMemo(() => v?.temas ?? [], [v]);
+  const activos = useMemo(() => temas.filter((t) => t.activo), [temas]);
+  const tiene = (t: TemaEnLista, clave: string) => t.lectura.senales.some((s) => s.clave === clave);
+  const cerca = (t: TemaEnLista) => t.eventos.some((e) => {
+    const d = diasHasta(e.fecha);
+    return d >= 0 && d <= 45;
+  });
+  const totales = useMemo(
+    () => ({
+      ml: activos.filter((t) => tiene(t, "ml")).length,
+      fechas: activos.filter(cerca).length,
+      oportunidad: activos.filter((t) => t.lectura.oportunidad).length,
+      bajan: activos.filter((t) => tiene(t, "baja")).length,
+      mirar: activos.filter((t) => t.lectura.puntaje > 0).length,
+    }),
+    [activos]
+  );
+  const maximo = Math.max(1, ...activos.map((t) => t.lectura.puntaje));
+
+  const visibles = useMemo(() => {
+    const n = q.trim().toLowerCase();
+    return temas.filter((t) => {
+      if (filtro === "mirar" && (!t.activo || t.lectura.puntaje <= 0) && !tarjeta) return false;
+      if (tarjeta && !t.activo) return false;
+      if (tarjeta === "ml" && !tiene(t, "ml")) return false;
+      if (tarjeta === "fechas" && !cerca(t)) return false;
+      if (tarjeta === "oportunidad" && !t.lectura.oportunidad) return false;
+      if (tarjeta === "bajan" && !tiene(t, "baja")) return false;
+      if (tipo !== "todos" && t.tipo !== tipo) return false;
+      if (n && !t.nombre.toLowerCase().includes(n) && !t.alias.some((a) => a.includes(n))) return false;
       return true;
-    })
-    .sort((a, b) => {
-      const diff = a.fecha.localeCompare(b.fecha);
-      return sortDir === "asc" ? diff : -diff;
     });
+  }, [temas, filtro, tarjeta, tipo, q]);
 
-  /* ── time buckets ── */
-  const today = startOfDay(new Date());
-  const in7 = new Date(today.getTime() + 7 * 86400000);
-  const in30 = new Date(today.getTime() + 30 * 86400000);
+  const tarjetas: Array<{ k: Exclude<Tarjeta, null>; titulo: string; n: number; detalle: string }> = [
+    { k: "ml", titulo: "Suben en Mercado Libre", n: totales.ml, detalle: "temas con búsquedas en el top 50" },
+    { k: "fechas", titulo: "Vienen pronto", n: totales.fechas, detalle: "con una fecha en los próximos 45 días" },
+    { k: "oportunidad", titulo: "Sin producto", n: totales.oportunidad, detalle: "se buscan o vienen, y no tenés" },
+    { k: "bajan", titulo: "Bajan", n: totales.bajan, detalle: "vendieron menos que el mes anterior" },
+  ];
 
-  const estaSemana = filtered.filter((ev) => {
-    const d = parseDate(ev.fecha);
-    return d >= today && d < in7;
+  const proximas = (v?.calendario ?? []).filter((e) => {
+    const d = diasHasta(e.fecha);
+    return d >= 0 && d <= 60;
   });
-  const esteMes = filtered.filter((ev) => {
-    const d = parseDate(ev.fecha);
-    return d >= in7 && d < in30;
-  });
-  const proximamente = filtered.filter((ev) => {
-    const d = parseDate(ev.fecha);
-    return d >= in30;
-  });
-
-  // group proximamente by month
-  const proxByMonth = new Map<string, Evento[]>();
-  for (const ev of proximamente) {
-    const key = monthLabel(ev.fecha);
-    if (!proxByMonth.has(key)) proxByMonth.set(key, []);
-    proxByMonth.get(key)!.push(ev);
-  }
-
-  /* ── dialog handlers ── */
-  const openCreate = () => {
-    setEditingId(null);
-    setForm({ ...emptyForm, fecha: new Date().toISOString().slice(0, 10), sugerencias: [] });
-    setDialogOpen(true);
-  };
-
-  const openEdit = (ev: Evento) => {
-    setEditingId(ev.id);
-    setForm({
-      titulo: ev.titulo,
-      tipo: ev.tipo,
-      fecha: ev.fecha.slice(0, 10),
-      fechaFin: ev.fechaFin?.slice(0, 10) || "",
-      descripcion: ev.descripcion || "",
-      imagenUrl: ev.imagenUrl || "",
-      nivelViral: ev.nivelViral,
-      fuente: ev.fuente || "manual",
-      sugerencias: ev.sugerencias?.map((s) => ({ ...s })) || [],
-    });
-    setDialogOpen(true);
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm("Eliminar este evento?")) return;
-    try {
-      await fetch(`/api/tendencias/${id}`, { method: "DELETE" });
-      notify.success("Evento eliminado");
-      fetchEventos();
-    } catch {
-      notify.error("Error al eliminar");
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.titulo.trim() || !form.fecha) {
-      notify.error("Titulo y fecha son obligatorios");
-      return;
-    }
-    setSaving(true);
-    try {
-      const url = editingId ? `/api/tendencias/${editingId}` : "/api/tendencias";
-      const method = editingId ? "PUT" : "POST";
-      const body = {
-        ...form,
-        fechaFin: form.fechaFin || null,
-        descripcion: form.descripcion || null,
-        imagenUrl: form.imagenUrl || null,
-        sugerencias: form.sugerencias.map((s) => ({
-          nombre: s.nombre,
-          tipoProducto: s.tipoProducto,
-          dificultad: s.dificultad,
-          potencialVenta: s.potencialVenta,
-          ventanaInicio: s.ventanaInicio || null,
-          modeloVinculadoId: s.modeloVinculadoId || null,
-        })),
-      };
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error();
-      notify.success(editingId ? "Evento actualizado" : "Evento creado");
-      setDialogOpen(false);
-      fetchEventos();
-    } catch {
-      notify.error("Error al guardar evento");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const updateField = (field: string, value: string) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  /* ── sugerencias handlers ── */
-  const addSugerencia = () => {
-    setForm((prev) => ({
-      ...prev,
-      sugerencias: [...prev.sugerencias, { ...emptySugerencia }],
-    }));
-  };
-
-  const removeSugerencia = (idx: number) => {
-    setForm((prev) => ({
-      ...prev,
-      sugerencias: prev.sugerencias.filter((_, i) => i !== idx),
-    }));
-  };
-
-  const updateSugerencia = (idx: number, field: string, value: string | number | null) => {
-    setForm((prev) => ({
-      ...prev,
-      sugerencias: prev.sugerencias.map((s, i) => (i === idx ? { ...s, [field]: value } : s)),
-    }));
-  };
-
-  /* ── render helpers ── */
-  const renderSection = (title: string, items: Evento[]) => {
-    if (items.length === 0) return null;
-    return (
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          {title}
-          <Badge variant="secondary" className="text-xs">{items.length}</Badge>
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {items.map((ev) => (
-            <EventoCard
-              key={ev.id}
-              evento={ev}
-              modelos={modelos}
-              onEdit={openEdit}
-              onDelete={handleDelete}
-              onLinkModelo={handleLinkModelo}
-            />
-          ))}
-        </div>
-      </section>
-    );
-  };
-
-  /* ── loading ── */
-  if (initialLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  const resumenSync = v?.sync?.resumen as { ml?: { categorias?: number; palabras?: number; error?: string }; calendario?: { guardados?: number; error?: string } } | undefined;
 
   return (
-    <div className="space-y-6">
-      {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-[28px] leading-[1.15] font-medium flex items-center gap-2">
-            <Zap className="h-6 w-6 text-yellow-500" />
-            Radar de Tendencias
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Detecta oportunidades de mercado para tu negocio 3D
+    <motion.div className="space-y-6 pb-16" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: "easeOut" }}>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl space-y-1.5">
+          <h1 className="text-[28px] leading-[1.15] font-medium">Tendencias</h1>
+          <p className="text-sm text-muted-foreground">
+            Lo que se busca en Mercado Libre, lo que viene y lo que vendés, por tema.
+            {v?.fotoMl && ` Búsquedas de ML del ${new Date(`${v.fotoMl}T12:00:00Z`).toLocaleDateString("es-AR", { day: "numeric", month: "numeric" })}.`}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handleSync} disabled={syncLoading}>
-            {syncLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-            Sincronizar tendencias
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" onClick={actualizar} disabled={actualizando}>
+            {actualizando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />}
+            Actualizar
+            <span className="text-xs font-normal text-muted-foreground">{actualizando ? "leyendo…" : haceCuanto(v?.sync?.hora ?? null)}</span>
           </Button>
-          <Button variant="outline" onClick={handleSeed} disabled={seedLoading}>
-            {seedLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Calendar className="mr-2 h-4 w-4" />}
-            Cargar calendario AR
-          </Button>
-          <Button onClick={openCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            Agregar evento
+          <Button size="sm" variant="ghost" onClick={() => setNuevoTema({ nombre: "", palabra: null, tipo: "otro" })}>
+            <Plus className="h-4 w-4" strokeWidth={1.5} /> Nuevo tema
           </Button>
         </div>
+      </header>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {tarjetas.map((t) => {
+          const activa = tarjeta === t.k;
+          return (
+            <button
+              key={t.k}
+              type="button"
+              onClick={() => setTarjeta(activa ? null : t.k)}
+              aria-pressed={activa}
+              className={`rounded-xl border bg-card p-4 text-left transition-colors hover:border-foreground/20 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${activa ? "border-primary ring-1 ring-primary" : ""}`}
+            >
+              <div className="text-xs text-muted-foreground">{t.titulo}</div>
+              <div className={`mt-2 font-mono text-[28px] leading-none font-medium tabular-nums ${t.n === 0 ? "text-muted-foreground/60" : ""}`}>{v ? t.n : "·"}</div>
+              <div className="mt-1.5 truncate text-xs text-muted-foreground">{t.detalle}</div>
+            </button>
+          );
+        })}
       </div>
 
-      {/* ── Filters ── */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por titulo..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <Select value={filterTipo} onValueChange={(v) => v && setFilterTipo(v)}>
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Tipo" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos los tipos</SelectItem>
-            {TIPOS.map((t) => (
-              <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={filterNivel} onValueChange={(v) => v && setFilterNivel(v)}>
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Nivel viral" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos los niveles</SelectItem>
-            {NIVELES_VIRAL.map((n) => (
-              <SelectItem key={n.value} value={n.value}>{n.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={sortDir} onValueChange={(v) => v && setSortDir(v as "asc" | "desc")}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="asc">Fecha (ascendente)</SelectItem>
-            <SelectItem value="desc">Fecha (descendente)</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* ── Empty state ── */}
-      {filtered.length === 0 && (
-        <div className="text-center py-16">
-          <Zap className="mx-auto h-12 w-12 text-muted-foreground/40" />
-          <p className="mt-4 text-muted-foreground">
-            {eventos.length === 0
-              ? "No hay eventos cargados. Agrega uno o carga el calendario AR!"
-              : "No se encontraron eventos con esos filtros."}
-          </p>
-        </div>
-      )}
-
-      {/* ── Esta Semana ── */}
-      {renderSection("📅 Esta Semana", estaSemana)}
-
-      {/* ── Este Mes ── */}
-      {renderSection("📅 Este Mes", esteMes)}
-
-      {/* ── Proximamente ── */}
-      {Array.from(proxByMonth.entries()).map(([month, items]) => (
-        <section key={month} className="space-y-3">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            🚀 {month}
-            <Badge variant="secondary" className="text-xs">{items.length}</Badge>
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {items.map((ev) => (
-              <EventoCard
-                key={ev.id}
-                evento={ev}
-                modelos={modelos}
-                onEdit={openEdit}
-                onDelete={handleDelete}
-                onLinkModelo={handleLinkModelo}
-              />
-            ))}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Segmentado
+              chico
+              etiqueta="Qué temas"
+              valor={filtro}
+              onChange={(x) => {
+                setFiltro(x);
+                setTarjeta(null);
+              }}
+              opciones={[
+                ["mirar", <>Para mirar <span className="font-mono text-muted-foreground tabular-nums">{totales.mirar}</span></>],
+                ["todos", <>Todos <span className="font-mono text-muted-foreground tabular-nums">{temas.length}</span></>],
+              ]}
+            />
+            {tarjeta && (
+              <button type="button" onClick={() => setTarjeta(null)} className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs">
+                {tarjetas.find((t) => t.k === tarjeta)?.titulo} <X className="h-3 w-3" />
+              </button>
+            )}
+            <select value={tipo} onChange={(e) => setTipo(e.target.value as typeof tipo)} className="h-7 rounded-md border bg-transparent px-2 text-xs" aria-label="Tipo de tema">
+              {TIPOS_FILTRO.map(([k, l]) => (
+                <option key={k} value={k}>
+                  {l}
+                </option>
+              ))}
+            </select>
+            <div className="relative min-w-[180px] flex-1">
+              <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar tema o alias" className="h-8 pl-8" />
+            </div>
           </div>
-        </section>
-      ))}
 
-      {/* ── Calendario Anual ── */}
-      {eventos.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-lg font-semibold">📊 Calendario Anual</h2>
-          <CalendarioAnual eventos={eventos} />
-        </section>
-      )}
-
-      {/* ── Add/Edit Dialog ── */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editingId ? "Editar Evento" : "Nuevo Evento"}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* titulo */}
-            <div className="space-y-2">
-              <Label htmlFor="ev-titulo">Titulo *</Label>
-              <Input
-                id="ev-titulo"
-                value={form.titulo}
-                onChange={(e) => updateField("titulo", e.target.value)}
-                placeholder="Ej: Estreno de Spider-Man 4"
-                required
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* tipo */}
-              <div className="space-y-2">
-                <Label>Tipo *</Label>
-                <Select value={form.tipo} onValueChange={(v) => v && updateField("tipo", v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {TIPOS.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* nivel viral */}
-              <div className="space-y-2">
-                <Label>Nivel viral *</Label>
-                <Select value={form.nivelViral} onValueChange={(v) => v && updateField("nivelViral", v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {NIVELES_VIRAL.map((n) => (
-                      <SelectItem key={n.value} value={n.value}>{n.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* fecha */}
-              <div className="space-y-2">
-                <Label htmlFor="ev-fecha">Fecha *</Label>
-                <Input
-                  id="ev-fecha"
-                  type="date"
-                  value={form.fecha}
-                  onChange={(e) => updateField("fecha", e.target.value)}
-                  required
-                />
-              </div>
-
-              {/* fechaFin */}
-              <div className="space-y-2">
-                <Label htmlFor="ev-fechaFin">Fecha fin (opcional)</Label>
-                <Input
-                  id="ev-fechaFin"
-                  type="date"
-                  value={form.fechaFin}
-                  onChange={(e) => updateField("fechaFin", e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* descripcion */}
-            <div className="space-y-2">
-              <Label htmlFor="ev-desc">Descripcion</Label>
-              <Textarea
-                id="ev-desc"
-                value={form.descripcion}
-                onChange={(e) => updateField("descripcion", e.target.value)}
-                placeholder="Detalles del evento..."
-                rows={3}
-              />
-            </div>
-
-            {/* imagenUrl */}
-            <div className="space-y-2">
-              <Label htmlFor="ev-img">URL de imagen (opcional)</Label>
-              <Input
-                id="ev-img"
-                value={form.imagenUrl}
-                onChange={(e) => updateField("imagenUrl", e.target.value)}
-                placeholder="https://..."
-              />
-            </div>
-
-            {/* ── Sugerencias ── */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-base">Sugerencias de producto</Label>
-                <Button type="button" variant="outline" size="sm" onClick={addSugerencia}>
-                  <Plus className="mr-1 h-3.5 w-3.5" />
-                  Agregar
-                </Button>
-              </div>
-
-              {form.sugerencias.map((sug, idx) => (
-                <div key={idx} className="rounded-lg border p-3 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-muted-foreground">Sugerencia {idx + 1}</span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => removeSugerencia(idx)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Nombre *</Label>
-                      <Input
-                        value={sug.nombre}
-                        onChange={(e) => updateSugerencia(idx, "nombre", e.target.value)}
-                        placeholder="Ej: Mascara de Spider-Man"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Tipo producto</Label>
-                      <Select
-                        value={sug.tipoProducto}
-                        onValueChange={(v) => v && updateSugerencia(idx, "tipoProducto", v)}
-                      >
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {TIPOS_PRODUCTO.map((t) => (
-                            <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Dificultad</Label>
-                      <Select
-                        value={sug.dificultad}
-                        onValueChange={(v) => v && updateSugerencia(idx, "dificultad", v)}
-                      >
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {DIFICULTADES.map((d) => (
-                            <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Potencial de venta (1-3)</Label>
-                      <Select
-                        value={sug.potencialVenta.toString()}
-                        onValueChange={(v) => v && updateSugerencia(idx, "potencialVenta", parseInt(v))}
-                      >
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1">🔥 Bajo</SelectItem>
-                          <SelectItem value="2">🔥🔥 Medio</SelectItem>
-                          <SelectItem value="3">🔥🔥🔥 Alto</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Ventana de inicio</Label>
-                      <Input
-                        value={sug.ventanaInicio}
-                        onChange={(e) => updateSugerencia(idx, "ventanaInicio", e.target.value)}
-                        placeholder="Ej: 2 semanas antes del estreno"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Modelo del catalogo</Label>
-                      <Select
-                        value={sug.modeloVinculadoId || "__none__"}
-                        onValueChange={(v) => v && updateSugerencia(idx, "modeloVinculadoId", v === "__none__" ? null : v)}
-                      >
-                        <SelectTrigger><SelectValue placeholder="Sin vincular" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">Sin vincular</SelectItem>
-                          {modelos.map((m) => (
-                            <SelectItem key={m.id} value={m.id}>{m.nombre}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
+          {!v ? (
+            <div className="divide-y rounded-xl border">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-4 p-4">
+                  <Skeleton className="h-11 w-11 rounded-lg" />
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="ml-auto h-4 w-48" />
                 </div>
               ))}
             </div>
-
-            {/* ── Actions ── */}
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Guardando...
-                  </>
-                ) : (
-                  "Guardar"
-                )}
-              </Button>
+          ) : !visibles.length ? (
+            <EmptyState
+              icon={Radar}
+              title={temas.length ? "Nada para mostrar" : "Todavía no hay temas"}
+              description={temas.length ? "Ningún tema con ese filtro. Probá con Todos." : "Los temas salen de la serie de tus productos."}
+            />
+          ) : (
+            <div className="overflow-hidden rounded-xl border bg-card">
+              <div className="hidden items-center gap-4 border-b px-4 py-2 text-xs text-muted-foreground md:grid md:grid-cols-[44px_minmax(0,1fr)_96px_64px_16px]">
+                <span />
+                <span>
+                  {visibles.length} {visibles.length === 1 ? "tema" : "temas"}
+                </span>
+                <span className="text-right">Vendidos 30 d</span>
+                <span className="text-right">Señal</span>
+                <span />
+              </div>
+              <ul className="divide-y">
+                {visibles.map((t) => (
+                  <FilaTema key={t.id} t={t} maximo={maximo} onAbrir={() => setAbierto(t.id)} />
+                ))}
+              </ul>
             </div>
-          </form>
+          )}
+        </div>
+
+        <aside className="space-y-6">
+          <section className="space-y-3 rounded-xl border bg-card p-4">
+            <div>
+              <h2 className="text-sm font-medium">Búsquedas nuevas</h2>
+              <p className="text-xs text-muted-foreground">Suben en ML y no son de ningún tema</p>
+            </div>
+            {v ? (
+              <BusquedasNuevas
+                nuevas={v.nuevas}
+                temas={activos.map((t) => ({ id: t.id, nombre: t.nombre }))}
+                onCrear={(palabra) => setNuevoTema({ nombre: palabra.charAt(0).toUpperCase() + palabra.slice(1), palabra, tipo: "otro" })}
+                onCambio={cargar}
+              />
+            ) : (
+              <Skeleton className="h-40 w-full rounded-lg" />
+            )}
+          </section>
+
+          <section className="space-y-3 rounded-xl border bg-card p-4">
+            <div>
+              <h2 className="text-sm font-medium">Próximas fechas</h2>
+              <p className="text-xs text-muted-foreground">Los próximos 60 días</p>
+            </div>
+            {!v ? (
+              <Skeleton className="h-40 w-full rounded-lg" />
+            ) : !proximas.length ? (
+              <p className="text-sm text-muted-foreground">Nada en los próximos 60 días.</p>
+            ) : (
+              <ul className="-mx-2">
+                {proximas.map((e) => {
+                  const d = diasHasta(e.fecha);
+                  const contenido = (
+                    <>
+                      <span className="w-11 shrink-0 font-mono text-xs text-muted-foreground tabular-nums">{fechaCorta(e.fecha)}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{e.titulo}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {e.temaNombre ?? TIPO_DE_EVENTO[e.tipo] ?? e.tipo}
+                          {e.temaNombre && ` · ${TIPO_DE_EVENTO[e.tipo] ?? e.tipo}`}
+                          {!e.enArgentina && " · fecha mundial"}
+                        </span>
+                      </span>
+                      <span className={`shrink-0 text-xs ${d <= 21 ? "text-foreground" : "text-muted-foreground"}`}>{d === 0 ? "hoy" : `${d} d`}</span>
+                    </>
+                  );
+                  return (
+                    <li key={(e.id ?? e.titulo) + e.fecha}>
+                      {e.temaId ? (
+                        <button type="button" onClick={() => setAbierto(e.temaId)} className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted/60">
+                          {contenido}
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-3 px-2 py-1.5 text-sm">{contenido}</div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        </aside>
+      </div>
+
+      {v?.sync && (
+        <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+          <CalendarDays className="h-3.5 w-3.5" strokeWidth={1.5} />
+          Última actualización {haceCuanto(v.sync.hora)}
+          {resumenSync?.ml && (resumenSync.ml.error ? ` · ML no contestó: ${resumenSync.ml.error}` : ` · ML: ${resumenSync.ml.palabras ?? 0} búsquedas en ${resumenSync.ml.categorias ?? 0} categorías`)}
+          {resumenSync?.calendario && (resumenSync.calendario.error ? ` · el calendario falló: ${resumenSync.calendario.error}` : ` · ${resumenSync.calendario.guardados ?? 0} estrenos y temporadas`)}
+          {" · se actualiza sola cada mañana"}
+        </p>
+      )}
+
+      <FichaTema temaId={abierto} temas={activos.map((t) => ({ id: t.id, nombre: t.nombre }))} onCerrar={() => setAbierto(null)} onCambio={cargar} />
+
+      <Dialog open={!!nuevoTema} onOpenChange={(o) => !o && setNuevoTema(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nuevo tema</DialogTitle>
+            <DialogDescription>
+              {nuevoTema?.palabra
+                ? `«${nuevoTema.palabra}» queda como alias: las búsquedas que la contengan suman a este tema.`
+                : "Un tema junta productos por su serie, búsquedas de ML y fechas. Después le podés sumar alias."}
+            </DialogDescription>
+          </DialogHeader>
+          {nuevoTema && (
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px]">
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Nombre</span>
+                <Input autoFocus value={nuevoTema.nombre} onChange={(e) => setNuevoTema({ ...nuevoTema, nombre: e.target.value })} className="h-8" />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Tipo</span>
+                <select value={nuevoTema.tipo} onChange={(e) => setNuevoTema({ ...nuevoTema, tipo: e.target.value as TipoDeTema })} className="h-8 w-full rounded-md border bg-transparent px-2 text-sm">
+                  {TIPOS_DE_TEMA.map((x) => (
+                    <option key={x} value={x}>
+                      {ETIQUETA_DE_TIPO[x]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setNuevoTema(null)}>
+              Cancelar
+            </Button>
+            <Button disabled={creando || (nuevoTema?.nombre.trim().length ?? 0) < 2} onClick={crearTema}>
+              {creando && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Crear
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </motion.div>
+  );
+}
+
+function FilaTema({ t, maximo, onAbrir }: { t: TemaEnLista; maximo: number; onAbrir: () => void }) {
+  const { ultimos30: u, anteriores30: a } = t.ventas;
+  return (
+    <li
+      className={`group grid cursor-pointer grid-cols-[44px_minmax(0,1fr)_16px] items-center gap-x-4 gap-y-2 px-4 py-3 transition-colors hover:bg-muted/40 md:grid-cols-[44px_minmax(0,1fr)_96px_64px_16px] ${t.activo ? "" : "opacity-60"}`}
+      onClick={onAbrir}
+    >
+      <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-lg bg-muted">
+        {t.foto ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={t.foto} alt="" loading="lazy" className="h-full w-full object-cover" />
+        ) : (
+          <span className="text-sm font-medium text-muted-foreground/60">{t.nombre.slice(0, 1).toUpperCase()}</span>
+        )}
+      </div>
+      <div className="min-w-0 space-y-1.5">
+        <div className="flex items-baseline gap-2">
+          <span className="truncate text-sm font-medium">{t.nombre}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {ETIQUETA_DE_TIPO[t.tipo] ?? t.tipo} · {t.productos} {t.productos === 1 ? "producto" : "productos"}
+            {!t.activo && " · desactivado"}
+          </span>
+        </div>
+        {t.lectura.senales.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {t.lectura.senales
+              .filter((s) => s.clave !== "ventas")
+              .map((s) => (
+                <EtiquetaSenal key={s.clave + s.texto} s={s} />
+              ))}
+            {t.lectura.senales.some((s) => s.clave === "ventas") && <span className="self-center text-xs text-muted-foreground md:hidden">{t.lectura.senales.find((s) => s.clave === "ventas")?.texto}</span>}
+          </div>
+        ) : (
+          <div className="text-xs text-muted-foreground">Sin señales esta semana</div>
+        )}
+      </div>
+      <ChevronRight className="h-4 w-4 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 md:order-last" />
+      <div className="hidden text-right md:block">
+        <div className="font-mono text-sm tabular-nums">{u}</div>
+        <div className={`text-xs ${u >= 5 && u >= 1.5 * a ? "text-foreground" : "text-muted-foreground"}`}>antes {a}</div>
+      </div>
+      <div className="hidden justify-end md:flex">
+        <BarraDePuntaje puntaje={t.lectura.puntaje} maximo={maximo} />
+      </div>
+    </li>
   );
 }
