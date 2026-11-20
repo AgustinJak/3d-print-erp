@@ -46,3 +46,18 @@ Agustín validó:
 - Las Flex sí tienen etiqueta en ML: aparecen `printed` las impresas desde la web. Falta ver si `shipment_labels` las devuelve.
 - `envioYaSalio` quedó exportado desde `mercadolibre-sync.ts`.
 - El caso con token válido de punta a punta se prueba con la Bodega 2.41 instalada. No se usa el refresh token de la PC en un script porque Supabase lo rota y se cortaría la sesión de la Bodega.
+
+## 2026-11-20 · Claude (la prueba e imprimir desde la lista)
+
+**Pedido de Agustín:** "si lo lee dale avanzá con el pedido para imprimir hoy que falta para probar y seguí
+con lo que falta; además reformá la sección estéticamente con la habilidad que usamos".
+
+**La prueba (TASK-001)**
+- Se usó el envío Flex 48583355640.
+- La etiqueta de la API es idéntica a las Flex de la web (`scripts/sdd-017-prueba-etiqueta.ts` y una comparación estructural sin leer el contenido): trae el troquel y sale Flex.
+- **Bajarla por la API no la marca impresa en ML**: quedó `ready_to_print`. Por eso la Bodega anota lo que imprime (`label_prints.envioId`) y lo muestra como "impresa HH:MM".
+- El ZPL quedó en la carpeta de etiquetas de Agustín para imprimirlo con lo de siempre.
+
+**Lo que se hizo**
+- ERP: `lib/etiquetas-ml.ts` y `GET /api/bodega/etiquetas`.
+- Bodega 2.42: `imprimirEnvios` (`labels:imprimirEnvios`), `label_prints` con `envioId` y `flex`, y la página rehecha.

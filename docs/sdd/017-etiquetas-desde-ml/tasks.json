@@ -20,15 +20,15 @@
       "title": "Prueba con una etiqueta real de ML",
       "description": "Con el OK de Agustín y un envío que igual hay que despachar: bajar por la API el ZPL (zpl2) y compararlo con el de la web. Ver troquel, Flex, medidas, que pase a printed, y si /shipments admite multiget.",
       "component": "integration",
-      "status": "blocked",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [],
       "specs": [],
       "acceptanceCriteria": [],
       "files": [],
-      "blockedReason": "Espera el próximo envío de ML que haya que despachar (decisión de Agustín, 2026-11-20).",
-      "completedAt": null,
-      "notes": null
+      "blockedReason": null,
+      "completedAt": "2026-11-20",
+      "notes": "Con el envío Flex 48583355640 (Bola de JOJOS), con el OK de Agustín. zpl2 devuelve un ZIP con el .txt. La etiqueta es idéntica en estructura a las Flex de la web: los mismos comandos, 32 campos, 10 en la parte de arriba (el troquel) y 19,4 cm. Las Flex salen por la API. Bajarla por la API NO la marca printed: quedó ready_to_print. El ZPL se dejó en la carpeta de etiquetas de Agustín para imprimirlo."
     },
     {
       "id": "TASK-002",
@@ -76,24 +76,28 @@
       "title": "GET /api/bodega/etiquetas",
       "description": "ZPL de los envíos pedidos (shipment_labels zpl2, de a 50 y por cuenta), descomprimido, no-store, sin loguearlo, sólo de pedidos de ese negocio.",
       "component": "api",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-002"
       ],
       "specs": [],
       "acceptanceCriteria": [],
-      "files": [],
+      "files": [
+        "src/lib/etiquetas-ml.ts",
+        "src/app/api/bodega/etiquetas/route.ts",
+        "package.json"
+      ],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-11-20",
+      "notes": "fflate pasa a dependencia directa. Devuelve los bytes de ML (latin1), no-store, sin loguear el contenido."
     },
     {
       "id": "TASK-005",
       "title": "Bodega: Para despachar e Imprimir las de hoy",
       "description": "etiquetas-erp.ts, IPC labels:envios y labels:imprimirEnvios, label_prints con envioId y flex, y la sección en Etiquetas.tsx; Descargas queda como respaldo.",
       "component": "ui",
-      "status": "in-progress",
+      "status": "in-review",
       "origin": "plan",
       "dependencies": [
         "TASK-003",
@@ -104,7 +108,7 @@
       "files": [],
       "blockedReason": null,
       "completedAt": null,
-      "notes": "Hecha la parte de la lista (ParaDespachar.tsx, labels:envios, etiquetas-erp.ts) en la 2.41. Falta imprimir desde la lista: depende de TASK-004."
+      "notes": "Bodega 2.42: imprimir las de hoy (Flex primero), sólo Flex, una, reimprimir y sumar las de mañana. Lo impreso se anota en label_prints con envioId, porque ML no la marca impresa por la API. La página se rediseñó (unslop): Hoy arriba con la acción principal, y archivos e historial plegables."
     },
     {
       "id": "TASK-006",
