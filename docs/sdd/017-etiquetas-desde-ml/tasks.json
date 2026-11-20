@@ -1,0 +1,144 @@
+{
+  "$schema": "../_plantillas/tasks.schema.json",
+  "featureId": "017-etiquetas-desde-ml",
+  "epic": "ninguna",
+  "version": "1.0.0",
+  "status": "in-progress",
+  "branch": "feat/003-precios-desde-bodega",
+  "baseBranch": "master",
+  "pullRequest": null,
+  "validation": {
+    "approved": true,
+    "approvedBy": "Agustín",
+    "approvedAt": "2026-11-20",
+    "notes": "Sólo la cuenta Sendero 3D. Imprimir las de hoy y avisar las de mañana listas. La TASK-001 con el próximo envío a despachar."
+  },
+  "updatedAt": "2026-11-20",
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Prueba con una etiqueta real de ML",
+      "description": "Con el OK de Agustín y un envío que igual hay que despachar: bajar por la API el ZPL (zpl2) y compararlo con el de la web. Ver troquel, Flex, medidas, que pase a printed, y si /shipments admite multiget.",
+      "component": "integration",
+      "status": "blocked",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": "Espera el próximo envío de ML que haya que despachar (decisión de Agustín, 2026-11-20).",
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-002",
+      "title": "Autenticación de la Bodega en el ERP",
+      "description": "getTenantDeBodega() con Authorization: Bearer (token de Supabase) y sólo sendero3d; bypass del middleware para /api/bodega/envios y /api/bodega/etiquetas.",
+      "component": "auth",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-001"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/tenant.ts",
+        "src/middleware.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-11-20",
+      "notes": "getTenantDeBodega(request): Bearer validado con supabase.auth.getUser y sólo sendero3d. Bypass del middleware sólo para /api/bodega/envios y /api/bodega/etiquetas. Se hizo antes de la TASK-001 porque la lista no depende del formato de la etiqueta (Agustín: \"dale arrancá la lista y subila\")."
+    },
+    {
+      "id": "TASK-003",
+      "title": "GET /api/bodega/envios",
+      "description": "Pedidos de ML sin despachar más el estado del envío en ML (lista, impresa, en fabricación), despacho y Flex, sin datos del comprador.",
+      "component": "api",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [
+        "src/lib/envios-para-despachar.ts",
+        "src/app/api/bodega/envios/route.ts",
+        "scripts/sdd-017-probar-envios.ts"
+      ],
+      "blockedReason": null,
+      "completedAt": "2026-11-20",
+      "notes": "12 envíos el 2026-11-20, sin errores ni datos del comprador. El número de envío sale de GET /orders/{id} (el ERP no lo guarda)."
+    },
+    {
+      "id": "TASK-004",
+      "title": "GET /api/bodega/etiquetas",
+      "description": "ZPL de los envíos pedidos (shipment_labels zpl2, de a 50 y por cuenta), descomprimido, no-store, sin loguearlo, sólo de pedidos de ese negocio.",
+      "component": "api",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-005",
+      "title": "Bodega: Para despachar e Imprimir las de hoy",
+      "description": "etiquetas-erp.ts, IPC labels:envios y labels:imprimirEnvios, label_prints con envioId y flex, y la sección en Etiquetas.tsx; Descargas queda como respaldo.",
+      "component": "ui",
+      "status": "in-progress",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-003",
+        "TASK-004"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": "Hecha la parte de la lista (ParaDespachar.tsx, labels:envios, etiquetas-erp.ts) en la 2.41. Falta imprimir desde la lista: depende de TASK-004."
+    },
+    {
+      "id": "TASK-006",
+      "title": "Documentar",
+      "description": "INV - Flujos, BOD - Flujos y Flujos del ecosistema (contrato Bodega → ERP por HTTP y ML shipment_labels).",
+      "component": "docs",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-005"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    },
+    {
+      "id": "TASK-007",
+      "title": "Probar y publicar",
+      "description": "ERP y Bodega 2.41, con el OK de Agustín.",
+      "component": "test",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-006"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    }
+  ]
+}

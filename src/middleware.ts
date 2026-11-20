@@ -22,6 +22,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // La Bodega (app de escritorio, docs/sdd/017) no tiene cookies: manda el token de su sesión de
+  // Supabase en Authorization: Bearer, y lo valida el endpoint con getTenantDeBodega(). Sólo estas
+  // rutas, no todo /api/bodega/ (altas y piezas siguen con cookie).
+  if (pathname === "/api/bodega/envios" || pathname === "/api/bodega/etiquetas") {
+    return NextResponse.next();
+  }
+
   // Callback de OAuth de Mercado Libre: ML redirige al usuario sin garantía de
   // cookies. La identidad del tenant se valida con el `state` firmado (HMAC).
   if (pathname.startsWith("/api/ml/oauth/callback")) {

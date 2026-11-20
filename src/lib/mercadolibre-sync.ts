@@ -775,7 +775,7 @@ const SUBSTATUS_DESPACHADO = new Set([
 ]);
 
 /** True si el envío ya salió del vendedor (en camino o entregado). */
-function envioYaSalio(status?: string, substatus?: string | null): boolean {
+export function envioYaSalio(status?: string, substatus?: string | null): boolean {
   if (status === "shipped" || status === "delivered" || status === "not_delivered") {
     return true;
   }
