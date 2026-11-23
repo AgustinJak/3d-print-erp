@@ -3,7 +3,7 @@
   "featureId": "017-etiquetas-desde-ml",
   "epic": "ninguna",
   "version": "1.0.0",
-  "status": "in-progress",
+  "status": "done",
   "branch": "feat/003-precios-desde-bodega",
   "baseBranch": "master",
   "pullRequest": null,
@@ -97,7 +97,7 @@
       "title": "Bodega: Para despachar e Imprimir las de hoy",
       "description": "etiquetas-erp.ts, IPC labels:envios y labels:imprimirEnvios, label_prints con envioId y flex, y la sección en Etiquetas.tsx; Descargas queda como respaldo.",
       "component": "ui",
-      "status": "in-review",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-003",
@@ -107,7 +107,7 @@
       "acceptanceCriteria": [],
       "files": [],
       "blockedReason": null,
-      "completedAt": null,
+      "completedAt": "2026-11-20",
       "notes": "Bodega 2.42: imprimir las de hoy (Flex primero), sólo Flex, una, reimprimir y sumar las de mañana. Lo impreso se anota en label_prints con envioId, porque ML no la marca impresa por la API. La página se rediseñó (unslop): Hoy arriba con la acción principal, y archivos e historial plegables."
     },
     {
@@ -115,7 +115,7 @@
       "title": "Documentar",
       "description": "INV - Flujos, BOD - Flujos y Flujos del ecosistema (contrato Bodega → ERP por HTTP y ML shipment_labels).",
       "component": "docs",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-005"
@@ -124,15 +124,15 @@
       "acceptanceCriteria": [],
       "files": [],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-11-20",
+      "notes": "INV - Flujos (sección 18 y endpoints), BOD - Flujos (labels:envios, labels:imprimirEnvios, 2.41 y 2.42) y Flujos del ecosistema (contratos 3c y 6d). Mermaid validado."
     },
     {
       "id": "TASK-007",
       "title": "Probar y publicar",
       "description": "ERP y Bodega 2.41, con el OK de Agustín.",
       "component": "test",
-      "status": "pending",
+      "status": "completed",
       "origin": "plan",
       "dependencies": [
         "TASK-006"
@@ -141,8 +141,8 @@
       "acceptanceCriteria": [],
       "files": [],
       "blockedReason": null,
-      "completedAt": null,
-      "notes": null
+      "completedAt": "2026-11-20",
+      "notes": "ERP en producción; Bodega 2.41 y 2.42 publicadas. Agustín instaló la 2.42 e imprimió la Flex de la Bola de JOJOS desde la lista: \"anduvo todo perfecto\"."
     }
   ]
 }

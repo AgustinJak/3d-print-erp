@@ -61,3 +61,14 @@ con lo que falta; además reformá la sección estéticamente con la habilidad q
 **Lo que se hizo**
 - ERP: `lib/etiquetas-ml.ts` y `GET /api/bodega/etiquetas`.
 - Bodega 2.42: `imprimirEnvios` (`labels:imprimirEnvios`), `label_prints` con `envioId` y `flex`, y la página rehecha.
+
+## 2026-11-20 · Claude (cierre)
+
+Agustín instaló la Bodega 2.42 e imprimió la Flex de la Bola de JOJOS desde "Para despachar": "anduvo
+todo perfecto". La prueba fue completa: lista, ERP, Mercado Libre e impresora. El SDD queda en `done`.
+
+**Para el que sigue**
+- Si ML algún día empieza a marcar `printed` al bajar por la API, el estado de ML y el de la Bodega
+  van a coincidir; no hace falta tocar nada.
+- Posibles siguientes: mover el pedido del ERP a "listo para despachar" al imprimir (cambia la máquina
+  de estados, quedó fuera de alcance).

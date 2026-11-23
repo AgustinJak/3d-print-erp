@@ -221,6 +221,7 @@ model Pedido {
 
   cliente  Cliente?       @relation(fields: [clienteId], references: [id], onDelete: SetNull)
   items    ItemPedido[]
+  reparto  EnvioReparto[]
   reservas ReservaStock[]
 
   @@unique([tenantId, externoId])
@@ -960,6 +961,96 @@ model PeriodoMl {
 
   @@id([tenantId, clave, grupo, cuentaMlId])
   @@map("periodos_ml")
+}
+
+// ==================== REPARTO (docs/sdd/018) ====================
+
+/// Una zona de la lista del repartidor (SyB Logística), con lo que se le paga por envío entregado.
+model ZonaReparto {
+  id              String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  tenantId        String   @default("sendero3d") @map("tenant_id")
+  nombre          String
+  precio          Decimal  @db.Decimal
+  partidos        String[] @default([])
+  localidades     String[] @default([])
+  codigosPostales String?  @map("codigos_postales")
+  orden           Int      @default(0)
+  activo          Boolean  @default(true)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  envios EnvioReparto[]
+
+  @@map("zonas_reparto")
+}
+
+/// Localidad → partido (georef o a mano), para no preguntar de nuevo.
+model LocalidadReparto {
+  tenantId    String   @default("sendero3d") @map("tenant_id")
+  normalizada String
+  partido     String?
+  fuente      String   @default("georef")
+  creadoEn    DateTime @default(now()) @map("creado_en")
+
+  @@id([tenantId, normalizada])
+  @@map("localidades_reparto")
+}
+
+/// La hoja de un día: el link que se le manda al repartidor (sólo su hash).
+model HojaReparto {
+  id        String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  tenantId  String    @default("sendero3d") @map("tenant_id")
+  dia       DateTime  @db.Date
+  tokenHash String?   @unique @map("token_hash")
+  vence     DateTime?
+  enviadoEn DateTime? @map("enviado_en")
+  creadoEn  DateTime  @default(now()) @map("creado_en")
+
+  envios EnvioReparto[]
+
+  @@unique([tenantId, dia], map: "hojas_reparto_dia")
+  @@map("hojas_reparto")
+}
+
+model LiquidacionReparto {
+  id       String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  tenantId String   @default("sendero3d") @map("tenant_id")
+  desde    DateTime @db.Date
+  hasta    DateTime @db.Date
+  envios   Int
+  total    Decimal  @db.Decimal
+  pagadoEn DateTime @default(now()) @map("pagado_en")
+  usuario  String?
+
+  enviosReparto EnvioReparto[]
+
+  @@unique([tenantId, desde], map: "liquidaciones_reparto_semana")
+  @@map("liquidaciones_reparto")
+}
+
+/// Un envío ofrecido al repartidor. ofrecido | tomado | rechazado | entregado | no_entregado.
+model EnvioReparto {
+  id            String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  tenantId      String    @default("sendero3d") @map("tenant_id")
+  hojaId        String    @map("hoja_id")
+  pedidoId      String    @map("pedido_id")
+  origen        String
+  envioMl       String?   @map("envio_ml")
+  zonaId        String?   @map("zona_id")
+  zonaNombre    String?   @map("zona_nombre")
+  precio        Decimal?  @db.Decimal
+  estado        String    @default("ofrecido")
+  motivo        String?
+  marcadoEn     DateTime? @map("marcado_en")
+  liquidacionId String?   @map("liquidacion_id")
+  creadoEn      DateTime  @default(now()) @map("creado_en")
+
+  hoja        HojaReparto         @relation(fields: [hojaId], references: [id], onDelete: Cascade)
+  pedido      Pedido              @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  zona        ZonaReparto?        @relation(fields: [zonaId], references: [id], onDelete: SetNull)
+  liquidacion LiquidacionReparto? @relation(fields: [liquidacionId], references: [id], onDelete: SetNull)
+
+  @@unique([hojaId, pedidoId], map: "envios_reparto_unico")
+  @@map("envios_reparto")
 }
 
 /// Una bonificación Flex que entró a Mercado Pago (docs/sdd/007).

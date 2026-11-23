@@ -29,6 +29,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // El link del repartidor (docs/sdd/018): no tiene usuario. La llave es el token del link, que
+  // validan la página y su API (lib/reparto.ts). Sólo /r/<token> y /api/r/<token>.
+  if (/^\/(api\/)?r\/[A-Za-z0-9_-]+(\/[A-Za-z0-9-]+)?$/.test(pathname)) {
+    return NextResponse.next();
+  }
+
   // Callback de OAuth de Mercado Libre: ML redirige al usuario sin garantía de
   // cookies. La identidad del tenant se valida con el `state` firmado (HMAC).
   if (pathname.startsWith("/api/ml/oauth/callback")) {

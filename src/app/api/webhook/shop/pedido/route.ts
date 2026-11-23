@@ -587,6 +587,10 @@ export async function POST(request: NextRequest) {
             url: payload.shop_url,
             recibido_en: new Date().toISOString(),
             warnings,
+            // La dirección de ESTE pedido (docs/sdd/018): la del cliente sólo se guarda si estaba vacía,
+            // y el repartidor necesita la de cada envío. Más el teléfono, para avisar al llegar.
+            ...(payload.direccion_envio ? { direccion_envio: payload.direccion_envio } : {}),
+            ...(payload.cliente.telefono ? { telefono_envio: payload.cliente.telefono } : {}),
           } as Prisma.InputJsonValue,
           items: { create: itemsData },
         },

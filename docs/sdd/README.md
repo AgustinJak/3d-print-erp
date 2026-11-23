@@ -66,6 +66,7 @@ propia (`NNN-cambios-en-el-shop.md`) y lo implementa la sesión de ese sistema.
 | 014 | [modelos-en-el-erp](014-modelos-en-el-erp/sdd-funcional.md) | in-progress (validado el 2026-11-16) | `master` |
 | 015 | [ajustes-y-precios](015-ajustes-y-precios/sdd-funcional.md) | in-review (publicado el 2026-11-18; falta verla en producción) | `master` |
 | 016 | [tendencias-por-tema](016-tendencias-por-tema/sdd-funcional.md) | in-progress (fase 1 lista el 2026-11-20; falta publicar) | `master` |
-| 017 | [etiquetas-desde-ml](017-etiquetas-desde-ml/sdd-funcional.md) | validated (2026-11-20; la prueba espera un envío) | `master` |
+| 017 | [etiquetas-desde-ml](017-etiquetas-desde-ml/sdd-funcional.md) | done (en producción y probado el 2026-11-20) | `master` |
+| 018 | [reparto-con-mensajeria](018-reparto-con-mensajeria/sdd-funcional.md) | in-review (publicado el 2026-11-23) | `master` |
 
 `planned` = pedida y descrita en el SDD funcional de la 001 (sección 8), todavía sin carpeta.

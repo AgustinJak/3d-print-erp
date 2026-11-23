@@ -25,6 +25,7 @@ import {
   FolderOpen,
   Calculator,
   Puzzle,
+  Truck,
 } from "lucide-react";
 import {
   Sidebar,
@@ -54,6 +55,8 @@ const navInicio = [
 const navVentas = [
   { title: "Pedidos", href: "/pedidos", icon: ShoppingCart },
   { title: "Historial de pedidos", href: "/historial", icon: History },
+  // El repartidor de Flex y de la mensajería de la web (docs/sdd/018).
+  { title: "Reparto", href: "/reparto", icon: Truck },
   { title: "Clientes", href: "/clientes", icon: Users },
 ];
 

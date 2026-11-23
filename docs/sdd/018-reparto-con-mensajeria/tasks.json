@@ -1,0 +1,171 @@
+{
+  "$schema": "../_plantillas/tasks.schema.json",
+  "featureId": "018-reparto-con-mensajeria",
+  "epic": "ninguna",
+  "version": "1.0.0",
+  "status": "in-review",
+  "branch": "feat/003-precios-desde-bodega",
+  "baseBranch": "master",
+  "pullRequest": null,
+  "validation": {
+    "approved": true,
+    "approvedBy": "Agustín",
+    "approvedAt": "2026-11-23",
+    "notes": "Repartidor: otra persona con la lista de SyB. Todos tildados por defecto. Usan Reparto Agustín y Twai. Se paga lo entregado; link del día por WhatsApp; cuánto deja cada envío; móvil primero."
+  },
+  "updatedAt": "2026-11-23",
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Tablas y siembra de zonas",
+      "description": "prisma/sql/reparto.sql (zonas_reparto, hojas_reparto, envios_reparto, liquidaciones_reparto), modelos Prisma, siembra de las 4 zonas con los precios de SyB y los códigos postales de la web.",
+      "component": "database",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": "2026-11-23",
+      "notes": "Aplicado con apply_migration; 4 zonas sembradas con los precios de la imagen. Las de la web difieren en Ituzaingó, Guernica y Korn: manda la imagen."
+    },
+    {
+      "id": "TASK-002",
+      "title": "Zona de una dirección",
+      "description": "lib/zonas-reparto.ts (puro): CABA, localidades sueltas, CP, partido o localidad; La Matanza partida. Prueba con direcciones reales sin mostrarlas.",
+      "component": "api",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-001"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": "2026-11-23",
+      "notes": "15 de 15 en scripts/sdd-018-probar-zonas.ts. La web sólo tiene CP para CABA, así que el GBA va por partido con georef (datos.gob.ar), cacheado en localidades_reparto."
+    },
+    {
+      "id": "TASK-003",
+      "title": "Guardar la dirección de la web en el pedido",
+      "description": "El webhook de la web guarda direccion_envio en origen_externo del pedido (hoy sólo en el cliente si estaba vacía).",
+      "component": "integration",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": "2026-11-23",
+      "notes": "El webhook guarda direccion_envio y telefono_envio en origen_externo. Los pedidos viejos usan clientes.direccion."
+    },
+    {
+      "id": "TASK-004",
+      "title": "Hoja del día y endpoints del ERP",
+      "description": "GET /api/reparto/hoy, POST /api/reparto/hoja (link con token hasheado, 48 h), PATCH de envíos, zonas.",
+      "component": "api",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-002",
+        "TASK-003"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": "2026-11-23",
+      "notes": "lib/reparto.ts y /api/reparto/*. 16 de 16 en scripts/sdd-018-probar-hoja.ts, con hoja de prueba borrada."
+    },
+    {
+      "id": "TASK-005",
+      "title": "Página del repartidor, móvil primero",
+      "description": "/reparto/[token] fuera de (app), sin sesión: lista por zona, Google Maps, Lo llevo / No lo llevo / Entregado / No se pudo; rutas públicas con bypass del middleware y límite de pedidos.",
+      "component": "ui",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-004"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": "2026-11-23",
+      "notes": "/r/[token] fuera de (app), con layout propio noindex. Vista en el navegador a 375 px con una hoja de prueba (Lo llevo → Entregado), que después se borró. ML trae coordenadas: Maps va al punto exacto. El teléfono de ML viene enmascarado."
+    },
+    {
+      "id": "TASK-006",
+      "title": "Reparto en el ERP",
+      "description": "Hoy (tildar, corregir zona, mandar por WhatsApp, respuestas en vivo), Semanas y Tarifas, con el estilo de Precios.",
+      "component": "ui",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-004"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": "2026-11-23",
+      "notes": "/reparto con Hoy, Semanas y Tarifas; Reparto en el menú, en Ventas. Sin revisión visual: pide sesión."
+    },
+    {
+      "id": "TASK-007",
+      "title": "Liquidación y cuánto te dejó",
+      "description": "Semanas de lunes a domingo, entregados por zona, copiar resumen, marcar pagado; bonificación Flex (flex_ml) o cobro de la web menos el pago.",
+      "component": "api",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-004"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": "2026-11-23",
+      "notes": "Semanas de lunes a domingo por día de la hoja, te dejó y cruce de Flex con delivered de ML."
+    },
+    {
+      "id": "TASK-008",
+      "title": "Documentar",
+      "description": "INV - Flujos (sección nueva, rutas públicas), Flujos del ecosistema (dirección de la web en el pedido).",
+      "component": "docs",
+      "status": "completed",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-005",
+        "TASK-006",
+        "TASK-007"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": "2026-11-23",
+      "notes": "INV - Flujos (sección 19, endpoints) y Flujos del ecosistema (contrato 1, georef)."
+    },
+    {
+      "id": "TASK-009",
+      "title": "Probar y publicar",
+      "description": "Una hoja de prueba de punta a punta en el celular, y publicar con el OK de Agustín.",
+      "component": "test",
+      "status": "pending",
+      "origin": "plan",
+      "dependencies": [
+        "TASK-008"
+      ],
+      "specs": [],
+      "acceptanceCriteria": [],
+      "files": [],
+      "blockedReason": null,
+      "completedAt": null,
+      "notes": null
+    }
+  ]
+}
