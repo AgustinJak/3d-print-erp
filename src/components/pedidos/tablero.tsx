@@ -1,7 +1,7 @@
 "use client";
 
 import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
-import { AlertTriangle, Package, Zap } from "lucide-react";
+import { AlertTriangle, Bike, Mail, Package, Store, Zap } from "lucide-react";
 import { PuntoDeCuenta, useCuentaActiva } from "@/components/cuenta-activa";
 import { nombreConVariantes } from "@/lib/items";
 
@@ -30,6 +30,8 @@ export interface PedidoDelTablero {
   /** Cuándo libera la plata ML: en "Esperando cobro" es la fecha que importa. */
   fechaLiquidacionMl?: string | null;
   canalVenta: string;
+  /** "syb" (moto), "correo_argentino", "retiro"; en las ventas directas, texto libre. */
+  metodoEnvio?: string | null;
   etiquetas: string[];
   precioEnvio: number;
   cliente: { nombre: string } | null;
@@ -49,6 +51,20 @@ const ETAPAS: Array<{ clave: string; titulo: string; estados: string[]; estado: 
 const money = (n: number) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n);
 const totalDe = (p: PedidoDelTablero) => p.items.reduce((s, i) => s + i.precioUnitario * i.cantidad + i.ajusteManual, 0) + p.precioEnvio;
 const CANAL: Record<string, string> = { mercadolibre: "ML", shop: "Web" };
+
+/**
+ * Cómo sale un pedido que no es de ML: moto (SyB), correo o retiro. La web manda "syb",
+ * "correo_argentino" o "retiro"; las ventas directas lo guardan escrito ("Correo Argentino").
+ */
+function envioDe(p: PedidoDelTablero): { texto: string; Icono: typeof Bike } | null {
+  if (p.canalVenta === "mercadolibre") return null;
+  const m = (p.metodoEnvio ?? "").toLowerCase();
+  if (!m) return null;
+  if (m === "syb" || m.includes("moto") || m.includes("mensaj")) return { texto: "Moto", Icono: Bike };
+  if (m.includes("correo")) return { texto: "Correo", Icono: Mail };
+  if (m.includes("retiro")) return { texto: "Retiro", Icono: Store };
+  return null;
+}
 
 function cuando(fecha: string | null): { texto: string; tarde: boolean; pronto: boolean } | null {
   if (!fecha) return null;
@@ -78,6 +94,7 @@ function Tarjeta({ p, arrastrando, onAbrir }: { p: PedidoDelTablero; arrastrando
   const fecha = esperandoCobro ? cobro(p.fechaLiquidacionMl ?? null) : cuando(p.fechaEntrega);
   const deCuenta = p.canalVenta === "mercadolibre" ? (cuentas.otra && p.etiquetas.includes(cuentas.otra) ? "otra" : "principal") : null;
   const piezas = p.items.reduce((s, i) => s + i.cantidad, 0);
+  const envio = envioDe(p);
   return (
     <div
       role="button"
@@ -113,6 +130,11 @@ function Tarjeta({ p, arrastrando, onAbrir }: { p: PedidoDelTablero; arrastrando
           {p.etiquetas.includes("flex") && (
             <span className="inline-flex items-center gap-0.5">
               · <Zap className="h-3 w-3" strokeWidth={1.5} /> Flex
+            </span>
+          )}
+          {envio && (
+            <span className="inline-flex items-center gap-0.5">
+              · <envio.Icono className="h-3 w-3" strokeWidth={1.5} /> {envio.texto}
             </span>
           )}
           {p.etiquetas.includes("revision_manual") && (
