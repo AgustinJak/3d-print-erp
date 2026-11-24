@@ -33,6 +33,8 @@ export interface EnvioParaDespachar {
   ml: { status: string | null; substatus: string | null };
   /** Lo que va en la caja: la combinación vendida (con su opción), o el producto. */
   productos: Array<{ nombre: string; cantidad: number }>;
+  /** El estado del pedido en el ERP (Confirmado, En producción, Terminado), para Reparto. */
+  estadoPedido?: string;
 }
 
 export interface EnviosParaDespachar {
@@ -67,6 +69,7 @@ export async function enviosParaDespachar(): Promise<EnviosParaDespachar> {
     select: {
       id: true,
       idMercadolibre: true,
+      estado: true,
       fechaEntrega: true,
       origenExterno: true,
       items: {
@@ -115,6 +118,7 @@ export async function enviosParaDespachar(): Promise<EnviosParaDespachar> {
       estado: estadoDe(envio),
       ml: { status: envio?.status ?? null, substatus: envio?.substatus ?? null },
       productos: p.items.map((i) => ({ nombre: i.combinacion?.nombre ?? i.modelo?.nombre ?? i.descripcion ?? "Producto", cantidad: i.cantidad })),
+      estadoPedido: p.estado,
     };
     return fila;
   });

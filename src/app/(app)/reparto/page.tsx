@@ -14,7 +14,8 @@ import type { Candidato, Dia, Semana } from "@/lib/reparto";
 
 /**
  * Reparto (docs/sdd/018): el repartidor de Flex y de la mensajería de la web.
- * - Hoy: los envíos del día con zona y precio; se tildan y se le manda el link por WhatsApp.
+ * - Por día: los envíos de un día de despacho (hoy, mañana…) con zona y precio; se tildan y se le
+ *   manda el link de ese día por WhatsApp, también el día antes.
  * - Semanas: lo entregado de lunes a domingo, el total, cuánto dejó, y marcar pagado.
  * - Tarifas: el precio por zona (la lista de SyB Logística).
  */
@@ -45,7 +46,7 @@ export default function RepartoPage() {
         valor={pestana}
         onChange={setPestana}
         opciones={[
-          ["hoy", <>Hoy</>],
+          ["hoy", <>Por día</>],
           ["semanas", <>Semanas</>],
           ["tarifas", <>Tarifas</>],
         ]}
@@ -57,18 +58,28 @@ export default function RepartoPage() {
 
 // ─── Hoy ───────────────────────────────────────────────────────────────
 
+const ESTADO_PEDIDO: Record<string, string> = { CONFIRMADO: "confirmado", EN_PRODUCCION: "en producción", TERMINADO: "listo" };
+
+function nombreDelDia(dia: string, hoy: string, largo = false): string {
+  const manana = new Date(new Date(`${hoy}T12:00:00Z`).getTime() + 864e5).toISOString().slice(0, 10);
+  if (dia === hoy) return "Hoy";
+  if (dia === manana) return "Mañana";
+  return new Date(`${dia}T12:00:00Z`).toLocaleDateString("es-AR", largo ? { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" } : { weekday: "short", day: "numeric", timeZone: "UTC" });
+}
+
 function Hoy() {
   const [d, setD] = useState<Dia | null>(null);
+  const [dia, setDia] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
   const [elegidos, setElegidos] = useState<Set<string>>(new Set());
   const [zonaDe, setZonaDe] = useState<Record<string, string>>({});
   const [mandando, setMandando] = useState(false);
   const [link, setLink] = useState<string | null>(null);
 
-  const cargar = useCallback(async (primera = false) => {
+  const cargar = useCallback(async (primera = false, diaPedido: string | null = dia) => {
     setCargando(true);
     try {
-      const r = await pedir<Dia>("/api/reparto/hoy");
+      const r = await pedir<Dia>(`/api/reparto/hoy${diaPedido ? `?dia=${diaPedido}` : ""}`);
       setD(r);
       // Por defecto, todos tildados (decisión de Agustín): lo ya ofrecido y lo nuevo.
       if (primera) setElegidos(new Set(r.candidatos.filter((c) => c.enHoja?.estado !== "rechazado").map((c) => c.pedidoId)));
@@ -77,10 +88,30 @@ function Hoy() {
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [dia]);
   useEffect(() => {
     cargar(true);
-  }, [cargar]);
+    // Sólo al entrar: cambiar de día recarga desde elegirDia.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function elegirDia(nuevo: string) {
+    setDia(nuevo);
+    setLink(null);
+    setZonaDe({});
+    cargar(true, nuevo);
+  }
+
+  async function mover(c: Candidato, nuevo: string) {
+    if (!nuevo) return;
+    try {
+      await pedir("/api/reparto/mover", json("POST", { pedidoId: c.pedidoId, dia: nuevo }));
+      toast.success(`Pedido ${c.numero} movido al ${new Date(`${nuevo}T12:00:00Z`).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", timeZone: "UTC" })}`);
+      cargar(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   const zonaElegida = (c: Candidato) => {
     const id = zonaDe[c.pedidoId] ?? c.zona?.id ?? null;
@@ -108,7 +139,7 @@ function Hoy() {
     try {
       const r = await pedir<{ link: string; envios: number }>(
         "/api/reparto/hoja",
-        json("POST", { elegidos: tildados.map((c) => ({ pedidoId: c.pedidoId, origen: c.origen, envioMl: c.envioMl, zonaId: zonaElegida(c)?.id ?? null })) })
+        json("POST", { dia: d.dia, elegidos: tildados.map((c) => ({ pedidoId: c.pedidoId, origen: c.origen, envioMl: c.envioMl, zonaId: zonaElegida(c)?.id ?? null })) })
       );
       setLink(r.link);
       toast.success(`Hoja lista con ${r.envios} ${r.envios === 1 ? "envío" : "envíos"}`);
@@ -133,14 +164,51 @@ function Hoy() {
       </div>
     );
 
-  const mensaje = link ? `Hola! Estos son los envíos de hoy. Marcá cuáles llevás y después cuáles entregaste: ${link}` : "";
+  const delDia = nombreDelDia(d.dia, d.hoy, true);
+  const delDiaTexto = d.dia === d.hoy ? "de hoy" : d.dia === d.proximos[1]?.dia ? "de mañana" : `del ${delDia}`;
+  const mensaje = link ? `Hola! Estos son los envíos ${delDiaTexto}. Marcá cuáles llevás y después cuáles entregaste: ${link}` : "";
   const respondidos = d.candidatos.filter((c) => c.enHoja && c.enHoja.estado !== "ofrecido").length;
 
   return (
     <div className="space-y-4">
+      {/* El día: se le puede mandar la hoja de mañana hoy (decisión de Agustín, 2026-11-23). */}
+      <div role="tablist" aria-label="Día de reparto" className="flex gap-2 overflow-x-auto pb-1">
+        {d.proximos.map((p) => {
+          const puesto = p.dia === d.dia;
+          const total = p.flex + p.web;
+          return (
+            <button
+              key={p.dia}
+              type="button"
+              role="tab"
+              aria-selected={puesto}
+              onClick={() => elegirDia(p.dia)}
+              className={`min-w-[104px] shrink-0 rounded-xl border px-3 py-2 text-left transition-colors ${puesto ? "border-primary ring-1 ring-primary" : "hover:border-foreground/20"} ${total ? "" : "opacity-60"}`}
+            >
+              <div className="flex items-center gap-1.5 text-sm font-medium first-letter:uppercase">
+                {nombreDelDia(p.dia, d.hoy)}
+                {p.hoja && <Check className="h-3.5 w-3.5 text-primary" strokeWidth={2} aria-label="hoja mandada" />}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {total ? (
+                  <>
+                    {p.flex > 0 && `${p.flex} Flex`}
+                    {p.flex > 0 && p.web > 0 && " · "}
+                    {p.web > 0 && `${p.web} web`}
+                  </>
+                ) : (
+                  "nada"
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          {new Date(`${d.dia}T12:00:00Z`).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" })}
+        <p className="text-sm text-muted-foreground first-letter:uppercase">
+          {delDia}
+          {d.dia === d.hoy && " (con los atrasados)"}
           {d.hoja?.enviadaEn && ` · hoja mandada a las ${hora(d.hoja.enviadaEn)} · ${respondidos} respondidos`}
         </p>
         <Button size="sm" variant="ghost" onClick={() => cargar()} disabled={cargando}>
@@ -150,7 +218,7 @@ function Hoy() {
       </div>
 
       {!d.candidatos.length ? (
-        <EmptyState icon={Truck} title="Hoy no hay envíos para el repartidor" description="Ni Flex de Mercado Libre para hoy ni mensajería de la web pendiente." />
+        <EmptyState icon={Truck} title="No hay envíos para ese día" description="Ni Flex de Mercado Libre ni mensajería de la web con despacho ese día. Elegí otro día arriba." />
       ) : (
         <div className="overflow-hidden rounded-xl border bg-card">
           <div className="hidden items-center gap-4 border-b px-4 py-2 text-xs text-muted-foreground md:grid md:grid-cols-[20px_88px_minmax(0,1fr)_150px_110px_110px]">
@@ -204,6 +272,8 @@ function Hoy() {
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {c.localidad ?? "sin localidad"} · {c.origen === "flex" ? "venta" : "pedido"} {c.numero}
+                      {c.estadoPedido && ` · ${ESTADO_PEDIDO[c.estadoPedido] ?? c.estadoPedido}`}
+                      {c.etiqueta === "en_fabricacion" && " · ML todavía no liberó la etiqueta (fecha estimada)"}
                       {c.enHoja && (
                         <>
                           {" · "}
@@ -211,6 +281,19 @@ function Hoy() {
                         </>
                       )}
                     </p>
+                    {c.origen === "web" && (!c.enHoja || c.enHoja.estado === "ofrecido") && (
+                      <label className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                        Mover a otro día
+                        <input
+                          type="date"
+                          min={d.hoy}
+                          defaultValue={c.fecha ?? undefined}
+                          onChange={(e) => e.target.value && e.target.value !== c.fecha && mover(c, e.target.value)}
+                          className="h-6 rounded-md border bg-transparent px-1.5 text-xs"
+                          aria-label="Mover a otro día"
+                        />
+                      </label>
+                    )}
                   </div>
                   <div className="col-start-2 md:col-start-auto">
                     <select
@@ -249,7 +332,7 @@ function Hoy() {
       {link && (
         <div className="space-y-3 rounded-xl border bg-card p-4">
           <p className="text-sm">
-            Link de hoy listo. Vence en 48 horas; si lo volvés a mandar, el anterior deja de andar.
+            Link {delDiaTexto} listo. Vale hasta el final del día siguiente; si lo volvés a mandar, el anterior deja de andar.
           </p>
           <div className="flex flex-wrap gap-2">
             <a href={`https://wa.me/?text=${encodeURIComponent(mensaje)}`} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground">
@@ -278,7 +361,7 @@ function Hoy() {
           </span>
           <Button size="sm" onClick={mandar} disabled={mandando || !tildados.length}>
             {mandando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Truck className="h-3.5 w-3.5" strokeWidth={1.5} />}
-            {d.hoja?.enviadaEn ? "Actualizar y mandar de nuevo" : "Mandar al repartidor"}
+            {d.hoja?.enviadaEn ? "Actualizar y mandar de nuevo" : `Mandar la hoja ${delDiaTexto}`}
           </Button>
         </div>
       )}

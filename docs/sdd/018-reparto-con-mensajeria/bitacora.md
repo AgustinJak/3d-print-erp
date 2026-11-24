@@ -56,3 +56,20 @@ No hay "alta". Se corrigió el funcional. La liquidación cruza los Flex marcado
 
 **Para el que sigue**
 - Las uniones de zona que difieren de la web: Ituzaingó en la 1 y Guernica y Korn en la 3, según la imagen de SyB. Confirmar con Agustín si cobra distinto.
+
+## 2026-11-23 · Claude (por día)
+
+**Pedido de Agustín:** mandarle la hoja un día antes, o la de un día puntual (el martes), no sólo la
+de hoy. Eligió la fecha estimada de la web, que se mueve a mano, y un link por día.
+
+**Qué se hizo**
+- `armarDia(dia)` con los próximos 7 días y su cuenta:
+  - el día de un Flex es el de ML (o el de la etiqueta si es a pedido);
+  - el de la web, `fechaEntrega`;
+  - hoy suma los atrasados.
+- `mandarHoja(dia, …)`: el link vale hasta las 23:59 del día siguiente.
+- `moverPedidoWeb` (`POST /api/reparto/mover`): cambia `fechaEntrega` y saca el pedido de la hoja de otro día si no estaba marcado.
+- Se muestra el estado del pedido (confirmado, en producción, listo) y si ML todavía no liberó la etiqueta.
+- 17 de 17. El 2026-11-23 había 4 Flex para el martes 24 (uno por zona) y 1 web para el 25.
+
+**Nota:** hoy ningún pedido pendiente está "En producción", todos están en "Confirmado". El estado se ve, pero no decide el día.

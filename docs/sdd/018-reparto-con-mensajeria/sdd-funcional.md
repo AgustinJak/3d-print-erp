@@ -143,6 +143,8 @@ flowchart TD
 | 2026-11-23 | El repartidor es **otra persona** (no SyB), que cobra con la lista de SyB | La web sigue cobrando lo suyo; "cuánto te dejó" en la web es lo cobrado menos el pago | Agustín |
 | 2026-11-23 | En la hoja vienen **todos tildados** | Se destilda lo que no va | Agustín |
 | 2026-11-23 | **Agustín y Twai** usan Reparto (hoja, link, liquidar) | Los dos despachan | Agustín |
+| 2026-11-23 | **Un link por día de despacho**, que se puede mandar el día antes; vale hasta el final del día siguiente | Que el repartidor vaya eligiendo | Agustín |
+| 2026-11-23 | **La fecha de la web es la estimada** (pedido + 3 días hábiles) y se mueve a mano | La web no manda fecha prometida | Agustín |
 
 ## 10. Preguntas abiertas
 
