@@ -67,6 +67,21 @@ function nombreDelDia(dia: string, hoy: string, largo = false): string {
   return new Date(`${dia}T12:00:00Z`).toLocaleDateString("es-AR", largo ? { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" } : { weekday: "short", day: "numeric", timeZone: "UTC" });
 }
 
+// Lo que respondió el repartidor, para separar qué lleva él y qué va por otro lado (2026-11-23).
+type Filtro = "todos" | "lleva" | "no" | "sin";
+const grupoDe = (c: Candidato): Exclude<Filtro, "todos"> | null => {
+  const e = c.enHoja?.estado;
+  if (!e) return null;
+  if (e === "rechazado") return "no";
+  if (e === "ofrecido") return "sin";
+  return "lleva";
+};
+const FILTROS: Array<[Exclude<Filtro, "todos">, string]> = [
+  ["lleva", "Lo lleva"],
+  ["no", "No lo lleva"],
+  ["sin", "Sin responder"],
+];
+
 // Por defecto, todos tildados (decisión de Agustín): lo ya ofrecido y lo nuevo, menos lo que rechazó.
 const porDefecto = (candidatos: Candidato[]) => new Set(candidatos.filter((c) => c.enHoja?.estado !== "rechazado").map((c) => c.pedidoId));
 
@@ -79,6 +94,7 @@ function Hoy() {
   const [zonaDe, setZonaDe] = useState<Record<string, string>>({});
   const [mandando, setMandando] = useState(false);
   const [linkDe, setLinkDe] = useState<Record<string, string>>({});
+  const [filtro, setFiltro] = useState<Filtro>("todos");
   const vistosRef = useRef<Record<string, Set<string>>>({});
 
   const cargar = useCallback(async () => {
@@ -126,6 +142,7 @@ function Hoy() {
 
   function elegirDia(nuevo: string) {
     setDia(nuevo);
+    setFiltro("todos");
   }
 
   async function mover(c: Candidato, nuevo: string) {
@@ -204,7 +221,8 @@ function Hoy() {
   const delDia = nombreDelDia(d.dia, d.hoy, true);
   const delDiaTexto = d.dia === d.hoy ? "de hoy" : d.dia === d.proximos[1]?.dia ? "de mañana" : `del ${delDia}`;
   const mensaje = link ? `Hola! Estos son los envíos ${delDiaTexto}. Marcá cuáles llevás y después cuáles entregaste: ${link}` : "";
-  const respondidos = d.candidatos.filter((c) => c.enHoja && c.enHoja.estado !== "ofrecido").length;
+  const cuantos = (g: Exclude<Filtro, "todos">) => d.candidatos.filter((c) => grupoDe(c) === g).length;
+  const visibles = filtro === "todos" ? d.candidatos : d.candidatos.filter((c) => grupoDe(c) === filtro);
 
   return (
     <div className="space-y-4">
@@ -246,13 +264,40 @@ function Hoy() {
         <p className="text-sm text-muted-foreground first-letter:uppercase">
           {delDia}
           {d.dia === d.hoy && " (con los atrasados)"}
-          {d.hoja?.enviadaEn && ` · hoja mandada a las ${hora(d.hoja.enviadaEn)} · ${respondidos} respondidos`}
+          {d.hoja?.enviadaEn && ` · hoja mandada a las ${hora(d.hoja.enviadaEn)}`}
         </p>
         <Button size="sm" variant="ghost" onClick={() => cargar()} disabled={cargando}>
           {cargando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />}
           Actualizar
         </Button>
       </div>
+
+      {/* Qué lleva y qué no: tocar uno filtra la lista. */}
+      {d.hoja?.enviadaEn && d.candidatos.length > 0 && (
+        <div role="group" aria-label="Lo que respondió el repartidor" className="flex flex-wrap gap-2">
+          {FILTROS.map(([g, texto]) => {
+            const n = cuantos(g);
+            const puesto = filtro === g;
+            return (
+              <button
+                key={g}
+                type="button"
+                aria-pressed={puesto}
+                onClick={() => setFiltro(puesto ? "todos" : g)}
+                className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors ${puesto ? "border-primary ring-1 ring-primary" : "hover:border-foreground/20"} ${g === "no" && n > 0 ? "border-amber-500/50 bg-amber-500/10" : ""}`}
+              >
+                <span className={g === "no" && n > 0 ? "text-amber-700 dark:text-amber-300" : ""}>{texto}</span>
+                <span className="font-mono tabular-nums">{n}</span>
+              </button>
+            );
+          })}
+          {filtro !== "todos" && (
+            <Button size="sm" variant="ghost" onClick={() => setFiltro("todos")}>
+              Ver todos
+            </Button>
+          )}
+        </div>
+      )}
 
       {!d.candidatos.length ? (
         <EmptyState icon={Truck} title="No hay envíos para ese día" description="Ni Flex de Mercado Libre ni mensajería de la web con despacho ese día. Elegí otro día arriba." />
@@ -273,12 +318,13 @@ function Hoy() {
             <span className="text-right">Repartidor</span>
           </div>
           <ul className="divide-y">
-            {d.candidatos.map((c) => {
+            {!visibles.length && <li className="px-4 py-6 text-center text-sm text-muted-foreground">Ninguno en este grupo.</li>}
+            {visibles.map((c) => {
               const z = zonaElegida(c);
               const pago = c.enHoja?.precio ?? z?.precio ?? null;
               const deja = c.ingreso != null && pago != null ? c.ingreso - pago : null;
               return (
-                <li key={c.pedidoId} className={`grid grid-cols-[20px_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5 px-4 py-3 md:grid-cols-[20px_88px_minmax(0,1fr)_150px_110px_110px] ${elegidos.has(c.pedidoId) ? "" : "opacity-60"}`}>
+                <li key={c.pedidoId} className={`grid grid-cols-[20px_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5 px-4 py-3 md:grid-cols-[20px_88px_minmax(0,1fr)_150px_110px_110px] ${c.enHoja?.estado === "rechazado" ? "bg-amber-500/10" : elegidos.has(c.pedidoId) ? "" : "opacity-60"}`}>
                   <input
                     type="checkbox"
                     className="accent-primary"
