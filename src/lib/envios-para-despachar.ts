@@ -14,7 +14,7 @@ import { envioYaSalio } from "@/lib/mercadolibre-sync";
  */
 
 const TENANT = "sendero3d";
-const EN_PARALELO = 5;
+const EN_PARALELO = 8;
 
 export type EstadoEtiqueta = "lista" | "impresa" | "en_fabricacion" | "pendiente" | "sin_dato";
 
@@ -35,6 +35,11 @@ export interface EnvioParaDespachar {
   productos: Array<{ nombre: string; cantidad: number }>;
   /** El estado del pedido en el ERP (Confirmado, En producción, Terminado), para Reparto. */
   estadoPedido?: string;
+  /**
+   * Sólo para Reparto (`conDestino`), para la zona: provincia, localidad y CP del envío. La Bodega no
+   * lo pide ni lo recibe (RN-1).
+   */
+  destino?: { provincia: string | null; localidad: string | null; cp: string | null };
 }
 
 export interface EnviosParaDespachar {
@@ -59,7 +64,7 @@ async function enTandas<T, R>(xs: T[], fn: (x: T) => Promise<R>): Promise<R[]> {
   return out;
 }
 
-export async function enviosParaDespachar(): Promise<EnviosParaDespachar> {
+export async function enviosParaDespachar(op: { conDestino?: boolean } = {}): Promise<EnviosParaDespachar> {
   const pedidos = await prisma.pedido.findMany({
     where: {
       tenantId: TENANT,
@@ -120,6 +125,10 @@ export async function enviosParaDespachar(): Promise<EnviosParaDespachar> {
       productos: p.items.map((i) => ({ nombre: i.combinacion?.nombre ?? i.modelo?.nombre ?? i.descripcion ?? "Producto", cantidad: i.cantidad })),
       estadoPedido: p.estado,
     };
+    if (op.conDestino && envio) {
+      const a = (envio as { receiver_address?: { state?: { name?: string | null } | null; city?: { name?: string | null } | null; neighborhood?: { name?: string | null } | null; zip_code?: string | null } }).receiver_address ?? {};
+      fila.destino = { provincia: a.state?.name ?? null, localidad: a.city?.name ?? a.neighborhood?.name ?? null, cp: a.zip_code ?? null };
+    }
     return fila;
   });
 

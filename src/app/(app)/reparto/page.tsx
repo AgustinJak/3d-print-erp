@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { motion } from "motion/react";
 import { AlertTriangle, Check, Copy, ExternalLink, Loader2, MessageCircle, RefreshCw, Truck, Zap } from "lucide-react";
@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { Segmentado } from "@/components/segmentado";
 import { json, pedir, pesos } from "@/components/producto/seccion";
-import type { Candidato, Dia, Semana } from "@/lib/reparto";
+import type { Candidato, Dia, Reparto, Semana } from "@/lib/reparto";
 
 /**
  * Reparto (docs/sdd/018): el repartidor de Flex y de la mensajería de la web.
@@ -67,39 +67,65 @@ function nombreDelDia(dia: string, hoy: string, largo = false): string {
   return new Date(`${dia}T12:00:00Z`).toLocaleDateString("es-AR", largo ? { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" } : { weekday: "short", day: "numeric", timeZone: "UTC" });
 }
 
+// Por defecto, todos tildados (decisión de Agustín): lo ya ofrecido y lo nuevo, menos lo que rechazó.
+const porDefecto = (candidatos: Candidato[]) => new Set(candidatos.filter((c) => c.enHoja?.estado !== "rechazado").map((c) => c.pedidoId));
+
 function Hoy() {
-  const [d, setD] = useState<Dia | null>(null);
+  // La semana entera llega de una vez: cambiar de día no vuelve a leer Mercado Libre (2026-11-23).
+  const [r, setR] = useState<Reparto | null>(null);
   const [dia, setDia] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
-  const [elegidos, setElegidos] = useState<Set<string>>(new Set());
+  const [elegidosDe, setElegidosDe] = useState<Record<string, Set<string>>>({});
   const [zonaDe, setZonaDe] = useState<Record<string, string>>({});
   const [mandando, setMandando] = useState(false);
-  const [link, setLink] = useState<string | null>(null);
+  const [linkDe, setLinkDe] = useState<Record<string, string>>({});
+  const vistosRef = useRef<Record<string, Set<string>>>({});
 
-  const cargar = useCallback(async (primera = false, diaPedido: string | null = dia) => {
+  const cargar = useCallback(async () => {
     setCargando(true);
     try {
-      const r = await pedir<Dia>(`/api/reparto/hoy${diaPedido ? `?dia=${diaPedido}` : ""}`);
-      setD(r);
-      // Por defecto, todos tildados (decisión de Agustín): lo ya ofrecido y lo nuevo.
-      if (primera) setElegidos(new Set(r.candidatos.filter((c) => c.enHoja?.estado !== "rechazado").map((c) => c.pedidoId)));
+      const nuevo = await pedir<Reparto>("/api/reparto/hoy");
+      setR(nuevo);
+      // Lo que ya se tildó a mano se respeta; los días nuevos arrancan con todo tildado. Lo que
+      // apareció en un día ya visto (un pedido nuevo) entra tildado.
+      const vistos = vistosRef.current;
+      setElegidosDe((antes) => {
+        const out: Record<string, Set<string>> = {};
+        for (const x of nuevo.dias) {
+          const previo = antes[x.dia];
+          if (!previo) {
+            out[x.dia] = porDefecto(x.candidatos);
+            continue;
+          }
+          const s = new Set([...previo].filter((id) => x.candidatos.some((c) => c.pedidoId === id)));
+          for (const id of porDefecto(x.candidatos)) if (!vistos[x.dia]?.has(id)) s.add(id);
+          out[x.dia] = s;
+        }
+        return out;
+      });
+      vistosRef.current = Object.fromEntries(nuevo.dias.map((x) => [x.dia, new Set(x.candidatos.map((c) => c.pedidoId))]));
     } catch (e) {
-      toast.error(`No se pudo leer el día: ${e instanceof Error ? e.message : e}`);
+      toast.error(`No se pudo leer el reparto: ${e instanceof Error ? e.message : e}`);
     } finally {
       setCargando(false);
     }
-  }, [dia]);
-  useEffect(() => {
-    cargar(true);
-    // Sólo al entrar: cambiar de día recarga desde elegirDia.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => {
+    cargar();
+  }, [cargar]);
+
+  const diaPuesto = dia ?? r?.hoy ?? null;
+  const delDiaPuesto = r?.dias.find((x) => x.dia === diaPuesto) ?? r?.dias[0];
+  const d: Dia | null = r && delDiaPuesto ? { ...r, dia: delDiaPuesto.dia, candidatos: delDiaPuesto.candidatos, hoja: delDiaPuesto.hoja } : null;
+  const elegidos = (d && elegidosDe[d.dia]) || new Set<string>();
+  const setElegidos = (f: Set<string> | ((s: Set<string>) => Set<string>)) => {
+    if (!d) return;
+    setElegidosDe((x) => ({ ...x, [d.dia]: typeof f === "function" ? f(x[d.dia] ?? new Set()) : f }));
+  };
+  const link = d ? (linkDe[d.dia] ?? null) : null;
 
   function elegirDia(nuevo: string) {
     setDia(nuevo);
-    setLink(null);
-    setZonaDe({});
-    cargar(true, nuevo);
   }
 
   async function mover(c: Candidato, nuevo: string) {
@@ -107,7 +133,7 @@ function Hoy() {
     try {
       await pedir("/api/reparto/mover", json("POST", { pedidoId: c.pedidoId, dia: nuevo }));
       toast.success(`Pedido ${c.numero} movido al ${new Date(`${nuevo}T12:00:00Z`).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", timeZone: "UTC" })}`);
-      cargar(false);
+      cargar();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     }
@@ -133,17 +159,28 @@ function Hoy() {
     }
   }
 
-  async function mandar() {
+  // Lo que cambió desde la última vez que se guardó la hoja: si no cambió nada, no hay que mandar nada.
+  const nuevos = tildados.filter((c) => !c.enHoja).length;
+  const quitados = (d?.candidatos ?? []).filter((c) => c.enHoja?.estado === "ofrecido" && !elegidos.has(c.pedidoId)).length;
+  const cambios = nuevos + quitados;
+
+  async function mandar(linkNuevo = false) {
     if (!d) return;
+    if (linkNuevo && !confirm("¿Generar un link nuevo? El que ya le mandaste deja de andar y tenés que mandarle el nuevo. Lo que ya marcó no se pierde.")) return;
     setMandando(true);
+    const delDia = d.dia;
     try {
-      const r = await pedir<{ link: string; envios: number }>(
+      const res = await pedir<{ link: string | null; envios: number }>(
         "/api/reparto/hoja",
-        json("POST", { dia: d.dia, elegidos: tildados.map((c) => ({ pedidoId: c.pedidoId, origen: c.origen, envioMl: c.envioMl, zonaId: zonaElegida(c)?.id ?? null })) })
+        json("POST", { dia: delDia, linkNuevo, elegidos: tildados.map((c) => ({ pedidoId: c.pedidoId, origen: c.origen, envioMl: c.envioMl, zonaId: zonaElegida(c)?.id ?? null })) })
       );
-      setLink(r.link);
-      toast.success(`Hoja lista con ${r.envios} ${r.envios === 1 ? "envío" : "envíos"}`);
-      cargar();
+      if (res.link) {
+        setLinkDe((x) => ({ ...x, [delDia]: res.link! }));
+        toast.success(`Hoja lista con ${res.envios} ${res.envios === 1 ? "envío" : "envíos"}`);
+      } else {
+        toast.success("Guardado. Él lo ve en el mismo link: no hace falta mandárselo de nuevo.");
+      }
+      await cargar();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -332,7 +369,7 @@ function Hoy() {
       {link && (
         <div className="space-y-3 rounded-xl border bg-card p-4">
           <p className="text-sm">
-            Link {delDiaTexto} listo. Vale hasta el final del día siguiente; si lo volvés a mandar, el anterior deja de andar.
+            Link {delDiaTexto} listo. Vale hasta el final del día siguiente. Si después cambiás algo, él lo ve en este mismo link.
           </p>
           <div className="flex flex-wrap gap-2">
             <a href={`https://wa.me/?text=${encodeURIComponent(mensaje)}`} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground">
@@ -359,10 +396,30 @@ function Hoy() {
             <span className="font-mono tabular-nums">{pesos(totalSiEntrega)}</span> si los entrega
             {sinZona > 0 && <span className="text-amber-600 dark:text-amber-400"> · {sinZona} sin zona</span>}
           </span>
-          <Button size="sm" onClick={mandar} disabled={mandando || !tildados.length}>
-            {mandando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Truck className="h-3.5 w-3.5" strokeWidth={1.5} />}
-            {d.hoja?.enviadaEn ? "Actualizar y mandar de nuevo" : `Mandar la hoja ${delDiaTexto}`}
-          </Button>
+          {!d.hoja?.enviadaEn ? (
+            <Button size="sm" onClick={() => mandar()} disabled={mandando || !tildados.length}>
+              {mandando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Truck className="h-3.5 w-3.5" strokeWidth={1.5} />}
+              Mandar la hoja {delDiaTexto}
+            </Button>
+          ) : cambios > 0 ? (
+            <Button size="sm" onClick={() => mandar()} disabled={mandando || !tildados.length}>
+              {mandando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" strokeWidth={2} />}
+              Guardar cambios
+              <span className="font-normal opacity-80">
+                ({[nuevos && `+${nuevos}`, quitados && `−${quitados}`].filter(Boolean).join(" ")})
+              </span>
+            </Button>
+          ) : (
+            <>
+              <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                <Check className="h-3.5 w-3.5 text-primary" strokeWidth={2} /> Ya la tiene
+              </span>
+              <Button size="sm" variant="ghost" onClick={() => mandar(true)} disabled={mandando} title="Si perdiste el link: genera otro y el anterior deja de andar">
+                {mandando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />}
+                Link nuevo
+              </Button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -484,7 +541,7 @@ function Tarifas() {
   const [v, setV] = useState<Record<string, string>>({});
   const [guardando, setGuardando] = useState(false);
   const cargar = useCallback(() => {
-    pedir<Dia>("/api/reparto/hoy")
+    pedir<Pick<Dia, "zonas">>("/api/reparto/zonas")
       .then((r) => {
         setZonas(r.zonas);
         setV(Object.fromEntries(r.zonas.map((z) => [z.id, String(z.precio)])));

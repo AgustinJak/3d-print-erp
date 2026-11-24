@@ -37,6 +37,10 @@ export default function HojaRepartidor({ params }: { params: Promise<{ token: st
 
   useEffect(() => {
     cargar();
+    // Si vuelve a la pestaña (o al celular), trae lo último: los cambios de la hoja se ven sin otro link.
+    const alVolver = () => document.visibilityState === "visible" && cargar();
+    document.addEventListener("visibilitychange", alVolver);
+    return () => document.removeEventListener("visibilitychange", alVolver);
   }, [cargar]);
 
   async function marcar(e: EnvioDelRepartidor, estado: Estado, motivo?: string) {

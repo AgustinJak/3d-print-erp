@@ -73,3 +73,20 @@ de hoy. Eligió la fecha estimada de la web, que se mueve a mano, y un link por 
 - 17 de 17. El 2026-11-23 había 4 Flex para el martes 24 (uno por zona) y 1 web para el 25.
 
 **Nota:** hoy ningún pedido pendiente está "En producción", todos están en "Confirmado". El estado se ve, pero no decide el día.
+
+## 2026-11-23 · Claude (más rápido, mismo link)
+
+**Pedido de Agustín:** tocar un día tardaba mucho, y cada vez que entraba la barra decía "Actualizar y
+mandar de nuevo", como si hubiera que volver a mandarlo.
+
+**Qué se hizo**
+- `armarReparto()` arma los 7 días de una vez (`GET /api/reparto/hoy`): ML se lee al entrar y con
+  Actualizar; cambiar de día ya no lo relee. Antes, unos 20 segundos por día. `armarDia(dia)` queda
+  como atajo para los scripts.
+- `enviosParaDespachar({ conDestino })` trae provincia, localidad y CP sólo para Reparto: la zona ya
+  no vuelve a pedir cada envío a ML. La Bodega no los recibe.
+- Tarifas lee las zonas de `GET /api/reparto/zonas`, sin pasar por ML.
+- `mandarHoja` **deja el mismo link** si la hoja ya se mandó y sigue vigente; sólo `linkNuevo`
+  genera otro. La barra dice "Guardar cambios (+n −n)" si hay algo nuevo, y "Ya la tiene" si no.
+- La hoja del repartidor se recarga cuando vuelve a la pestaña.
+- 22 de 22 (`sdd-018-probar-hoja.ts`, con un día sin hoja para no tocar las mandadas).

@@ -74,14 +74,25 @@ export interface Candidato {
   fecha: string | null;
 }
 
+export interface HojaDelDia {
+  id: string;
+  enviadaEn: string | null;
+  vence: string | null;
+}
+
 export interface Dia {
   dia: string;
   hoy: string;
   candidatos: Candidato[];
   zonas: Array<{ id: string; nombre: string; precio: number }>;
-  hoja: { id: string; enviadaEn: string | null; vence: string | null } | null;
+  hoja: HojaDelDia | null;
   /** Cuántos envíos hay para cada uno de los próximos días (para elegir el día). */
   proximos: Array<{ dia: string; flex: number; web: number; hoja: boolean }>;
+}
+
+/** Los próximos 7 días de una sola vez: cambiar de día en la pantalla no vuelve a leer ML. */
+export interface Reparto extends Omit<Dia, "dia" | "candidatos" | "hoja"> {
+  dias: Array<{ dia: string; candidatos: Candidato[]; hoja: HojaDelDia | null }>;
 }
 
 /** El día argentino de una fecha ISO. */
@@ -93,19 +104,27 @@ function zonaCorta(z: ZonaParaResolver | null) {
   return z ? { id: z.id, nombre: z.nombre, precio: z.precio } : null;
 }
 
+type ItemDePedido = { cantidad: number; descripcion: string | null; modelo: { nombre: string } | null; combinacion: { nombre: string } | null };
+const productosDe = (items: ItemDePedido[]) => items.map((i) => ({ nombre: i.combinacion?.nombre ?? i.modelo?.nombre ?? i.descripcion ?? "Producto", cantidad: i.cantidad }));
+
+type FilaDeHoja = { id: string; pedidoId: string; origen: string; envioMl: string | null; estado: string; precio: unknown; zonaId: string | null; zonaNombre: string | null; marcadoEn: Date | null };
+const enHojaDe = (h: FilaDeHoja | undefined) =>
+  h ? { id: h.id, estado: h.estado as EstadoReparto, precio: h.precio == null ? null : Number(h.precio), zonaNombre: h.zonaNombre, marcadoEn: h.marcadoEn?.toISOString() ?? null } : null;
+
 /**
- * Los envíos de un día de despacho (decisión de Agustín, 2026-11-23: mandarle un día antes y que vaya
- * eligiendo). Por defecto hoy, que suma los atrasados.
+ * Los envíos de los próximos 7 días de despacho (decisión de Agustín, 2026-11-23: mandarle un día
+ * antes y que vaya eligiendo). Hoy suma los atrasados. ML se lee una sola vez para toda la semana
+ * (2026-11-23: leerlo en cada cambio de día tardaba unos 20 segundos).
  * - Flex: la fecha de ML (el SLA, exacto) o, si es a pedido, el día en que ML libera la etiqueta
  *   (lo estima la sincronización, `resolverFechasEnvio`).
  * - Web: la fecha estimada del pedido (pedido + 3 días hábiles al entrar), que se mueve a mano.
  */
-export async function armarDia(diaPedido?: unknown): Promise<Dia> {
+export async function armarReparto(): Promise<Reparto> {
   const hoy = hoyEnArgentina();
-  const dia = esDia(diaPedido) && diaPedido >= hoy ? diaPedido : hoy;
+  const dias = Array.from({ length: 7 }, (_, i) => sumarDias(hoy, i));
   const zonas = await zonasActivas();
-  const [{ envios }, webTodos, hoja, hojasProximas] = await Promise.all([
-    enviosParaDespachar(),
+  const [{ envios }, webTodos, hojas] = await Promise.all([
+    enviosParaDespachar({ conDestino: true }),
     prisma.pedido.findMany({
       where: { tenantId: TENANT, canalVenta: "shop", metodoEnvio: "syb", estado: { in: ["CONFIRMADO", "EN_PRODUCCION", "TERMINADO"] } },
       select: {
@@ -118,124 +137,133 @@ export async function armarDia(diaPedido?: unknown): Promise<Dia> {
         items: { select: { cantidad: true, descripcion: true, modelo: { select: { nombre: true } }, combinacion: { select: { nombre: true } } } },
       },
     }),
-    prisma.hojaReparto.findUnique({ where: { tenantId_dia: { tenantId: TENANT, dia: fechaDia(dia) } }, include: { envios: true } }),
-    prisma.hojaReparto.findMany({ where: { tenantId: TENANT, dia: { gte: fechaDia(hoy), lte: fechaDia(sumarDias(hoy, 6)) }, enviadoEn: { not: null } }, select: { dia: true } }),
+    prisma.hojaReparto.findMany({ where: { tenantId: TENANT, dia: { gte: fechaDia(hoy), lte: fechaDia(dias[6]) } }, include: { envios: true } }),
   ]);
-  const enHoja = new Map((hoja?.envios ?? []).map((e) => [e.pedidoId, e]));
+  const hojaDe = new Map(hojas.map((h) => [h.dia.toISOString().slice(0, 10), h]));
 
   // El día de cada uno; lo atrasado cuenta para hoy.
   const delDia = (fecha: string | null) => {
     const d = fecha ? diaAr(fecha) : hoy;
     return d < hoy ? hoy : d;
   };
-  const flexTodos = envios.filter((e) => e.flex && e.envioId && e.despacho);
-  const flex = flexTodos.filter((e) => delDia(e.despacho) === dia);
-  const web = webTodos.filter((p) => delDia(p.fechaEntrega?.toISOString() ?? null) === dia);
-  const conHoja = new Set(hojasProximas.map((h) => h.dia.toISOString().slice(0, 10)));
-  const proximos = Array.from({ length: 7 }, (_, i) => {
-    const d = sumarDias(hoy, i);
-    return {
-      dia: d,
-      flex: flexTodos.filter((e) => delDia(e.despacho) === d).length,
-      web: webTodos.filter((p) => delDia(p.fechaEntrega?.toISOString() ?? null) === d).length,
-      hoja: conHoja.has(d),
-    };
-  });
-  const bonif = await prisma.flexMl.findMany({ where: { tenantId: TENANT, envioId: { in: flex.map((f) => f.envioId!) } }, select: { envioId: true, monto: true } });
+  const flexTodos = envios.filter((e) => e.flex && e.envioId && e.despacho && dias.includes(delDia(e.despacho)));
+  const webDeLaSemana = webTodos.filter((p) => dias.includes(delDia(p.fechaEntrega?.toISOString() ?? null)));
+  const bonif = await prisma.flexMl.findMany({ where: { tenantId: TENANT, envioId: { in: flexTodos.map((f) => f.envioId!) } }, select: { envioId: true, monto: true } });
   const bonifDe = new Map(bonif.map((b) => [b.envioId, b.monto]));
 
-  const candidatos: Candidato[] = [];
-  for (const e of flex) {
-    let localidad: string | null = null;
-    let zona: ZonaParaResolver | null = null;
-    try {
-      const s = await mlFetch<MlDireccion>(TENANT, `/shipments/${e.envioId}`);
-      const a = s.receiver_address ?? {};
-      localidad = a.city?.name ?? a.neighborhood?.name ?? null;
-      zona = await zonaDe({ provincia: a.state?.name, localidad, cp: a.zip_code }, zonas);
-    } catch {
-      /* sin zona: se elige a mano */
-    }
-    const h = enHoja.get(e.pedidoId);
-    candidatos.push({
-      pedidoId: e.pedidoId,
-      origen: "flex",
-      numero: e.venta,
-      envioMl: e.envioId,
-      hasta: e.despacho,
-      conHora: e.conHora,
-      productos: e.productos,
-      localidad,
-      zona: zonaCorta(zona),
-      enHoja: h ? { id: h.id, estado: h.estado as EstadoReparto, precio: h.precio == null ? null : Number(h.precio), zonaNombre: h.zonaNombre, marcadoEn: h.marcadoEn?.toISOString() ?? null } : null,
-      ingreso: bonifDe.get(e.envioId!) ?? null,
-      estadoPedido: e.estadoPedido ?? null,
-      etiqueta: e.estado,
-      fecha: e.despacho ? diaAr(e.despacho) : null,
+  // Cada candidato con su día de despacho.
+  const lista: Array<{ c: Candidato; dia: string }> = [];
+  for (const e of flexTodos) {
+    const dia = delDia(e.despacho);
+    const zona = e.destino ? await zonaDe(e.destino, zonas) : null;
+    lista.push({
+      dia,
+      c: {
+        pedidoId: e.pedidoId,
+        origen: "flex",
+        numero: e.venta,
+        envioMl: e.envioId,
+        hasta: e.despacho,
+        conHora: e.conHora,
+        productos: e.productos,
+        localidad: e.destino?.localidad ?? null,
+        zona: zonaCorta(zona),
+        enHoja: enHojaDe(hojaDe.get(dia)?.envios.find((x) => x.pedidoId === e.pedidoId)),
+        ingreso: bonifDe.get(e.envioId!) ?? null,
+        estadoPedido: e.estadoPedido ?? null,
+        etiqueta: e.estado,
+        fecha: e.despacho ? diaAr(e.despacho) : null,
+      },
     });
   }
 
-  for (const p of web) {
+  for (const p of webDeLaSemana) {
+    const dia = delDia(p.fechaEntrega?.toISOString() ?? null);
     const oe = (p.origenExterno ?? {}) as { direccion_envio?: DireccionWeb; numero_pedido?: string };
-    const d = oe.direccion_envio;
+    const dir = oe.direccion_envio;
     // Pedidos de antes del 2026-11-23: la dirección está sólo en el cliente, como texto.
     const texto = p.cliente?.direccion ?? "";
-    const zona = d
-      ? await zonaDe({ provincia: d.provincia, localidad: d.ciudad, cp: d.cp }, zonas)
+    const zona = dir
+      ? await zonaDe({ provincia: dir.provincia, localidad: dir.ciudad, cp: dir.cp }, zonas)
       : await zonaDe({ provincia: /caba|capital/i.test(texto) ? "CABA" : null, localidad: null, cp: /\b[A-Z]?(\d{4})\b/.exec(texto)?.[1] ?? null }, zonas);
-    const h = enHoja.get(p.id);
-    candidatos.push({
-      pedidoId: p.id,
-      origen: "web",
-      numero: oe.numero_pedido ?? p.id.slice(-6),
-      envioMl: null,
-      hasta: p.fechaEntrega?.toISOString() ?? null,
-      conHora: false,
-      productos: p.items.map((i) => ({ nombre: i.combinacion?.nombre ?? i.modelo?.nombre ?? i.descripcion ?? "Producto", cantidad: i.cantidad })),
-      localidad: d?.ciudad ?? null,
-      zona: zonaCorta(zona),
-      enHoja: h ? { id: h.id, estado: h.estado as EstadoReparto, precio: h.precio == null ? null : Number(h.precio), zonaNombre: h.zonaNombre, marcadoEn: h.marcadoEn?.toISOString() ?? null } : null,
-      ingreso: p.precioEnvio || null,
-      estadoPedido: p.estado,
-      etiqueta: null,
-      fecha: p.fechaEntrega ? diaAr(p.fechaEntrega.toISOString()) : null,
+    lista.push({
+      dia,
+      c: {
+        pedidoId: p.id,
+        origen: "web",
+        numero: oe.numero_pedido ?? p.id.slice(-6),
+        envioMl: null,
+        hasta: p.fechaEntrega?.toISOString() ?? null,
+        conHora: false,
+        productos: productosDe(p.items),
+        localidad: dir?.ciudad ?? null,
+        zona: zonaCorta(zona),
+        enHoja: enHojaDe(hojaDe.get(dia)?.envios.find((x) => x.pedidoId === p.id)),
+        ingreso: p.precioEnvio || null,
+        estadoPedido: p.estado,
+        etiqueta: null,
+        fecha: p.fechaEntrega ? diaAr(p.fechaEntrega.toISOString()) : null,
+      },
     });
   }
 
   // Lo que se ofreció ese día y ya no está pendiente (se entregó, se canceló, se movió) también se ve.
-  for (const e of hoja?.envios ?? []) {
-    if (candidatos.some((c) => c.pedidoId === e.pedidoId)) continue;
-    const p = await prisma.pedido.findUnique({
-      where: { id: e.pedidoId },
-      select: { idMercadolibre: true, origenExterno: true, items: { select: { cantidad: true, descripcion: true, modelo: { select: { nombre: true } }, combinacion: { select: { nombre: true } } } } },
-    });
-    candidatos.push({
-      pedidoId: e.pedidoId,
-      origen: e.origen as "flex" | "web",
-      numero: (p?.origenExterno as { numero_pedido?: string; pack_id?: string } | null)?.numero_pedido ?? (p?.origenExterno as { pack_id?: string } | null)?.pack_id ?? p?.idMercadolibre ?? e.pedidoId.slice(-6),
-      envioMl: e.envioMl,
-      hasta: null,
-      conHora: false,
-      productos: (p?.items ?? []).map((i) => ({ nombre: i.combinacion?.nombre ?? i.modelo?.nombre ?? i.descripcion ?? "Producto", cantidad: i.cantidad })),
-      localidad: null,
-      zona: e.zonaId ? { id: e.zonaId, nombre: e.zonaNombre ?? "", precio: Number(e.precio ?? 0) } : null,
-      enHoja: { id: e.id, estado: e.estado as EstadoReparto, precio: e.precio == null ? null : Number(e.precio), zonaNombre: e.zonaNombre, marcadoEn: e.marcadoEn?.toISOString() ?? null },
-      ingreso: null,
-      estadoPedido: null,
-      etiqueta: null,
-      fecha: dia,
+  const sueltos = hojas
+    .flatMap((h) => h.envios.map((e) => ({ e, dia: h.dia.toISOString().slice(0, 10) })))
+    .filter(({ e, dia }) => !lista.some((x) => x.c.pedidoId === e.pedidoId && x.dia === dia));
+  const pedidosSueltos = sueltos.length
+    ? await prisma.pedido.findMany({
+        where: { id: { in: sueltos.map((s) => s.e.pedidoId) } },
+        select: { id: true, idMercadolibre: true, origenExterno: true, items: { select: { cantidad: true, descripcion: true, modelo: { select: { nombre: true } }, combinacion: { select: { nombre: true } } } } },
+      })
+    : [];
+  for (const { e, dia } of sueltos) {
+    const p = pedidosSueltos.find((x) => x.id === e.pedidoId);
+    const oe = (p?.origenExterno ?? null) as { numero_pedido?: string; pack_id?: string } | null;
+    lista.push({
+      dia,
+      c: {
+        pedidoId: e.pedidoId,
+        origen: e.origen as "flex" | "web",
+        numero: oe?.numero_pedido ?? oe?.pack_id ?? p?.idMercadolibre ?? e.pedidoId.slice(-6),
+        envioMl: e.envioMl,
+        hasta: null,
+        conHora: false,
+        productos: productosDe(p?.items ?? []),
+        localidad: null,
+        zona: e.zonaId ? { id: e.zonaId, nombre: e.zonaNombre ?? "", precio: Number(e.precio ?? 0) } : null,
+        enHoja: enHojaDe(e),
+        ingreso: null,
+        estadoPedido: null,
+        etiqueta: null,
+        fecha: dia,
+      },
     });
   }
 
-  candidatos.sort((a, b) => (a.zona?.precio ?? 99999) - (b.zona?.precio ?? 99999) || a.origen.localeCompare(b.origen));
+  lista.sort((a, b) => (a.c.zona?.precio ?? 99999) - (b.c.zona?.precio ?? 99999) || a.c.origen.localeCompare(b.c.origen));
+  const deUnDia = (d: string) => lista.filter((x) => x.dia === d).map((x) => x.c);
   return {
-    dia,
     hoy,
-    proximos,
-    candidatos,
     zonas: zonas.map((z) => ({ id: z.id, nombre: z.nombre, precio: z.precio })),
-    hoja: hoja ? { id: hoja.id, enviadaEn: hoja.enviadoEn?.toISOString() ?? null, vence: hoja.vence?.toISOString() ?? null } : null,
+    proximos: dias.map((d) => {
+      // Sólo los pendientes: lo que ya salió de la lista y quedó en la hoja no cuenta.
+      const pendientes = lista.filter((x) => x.dia === d && (x.c.etiqueta !== null || x.c.estadoPedido !== null));
+      return { dia: d, flex: pendientes.filter((x) => x.c.origen === "flex").length, web: pendientes.filter((x) => x.c.origen === "web").length, hoja: !!hojaDe.get(d)?.enviadoEn };
+    }),
+    dias: dias.map((d) => {
+      const h = hojaDe.get(d);
+      return { dia: d, candidatos: deUnDia(d), hoja: h ? { id: h.id, enviadaEn: h.enviadoEn?.toISOString() ?? null, vence: h.vence?.toISOString() ?? null } : null };
+    }),
   };
+}
+
+/** Un solo día (por defecto hoy), de lo que arma `armarReparto`. */
+export async function armarDia(diaPedido?: unknown): Promise<Dia> {
+  const r = await armarReparto();
+  const dia = esDia(diaPedido) && diaPedido >= r.hoy ? diaPedido : r.hoy;
+  const d = r.dias.find((x) => x.dia === dia);
+  return { dia, hoy: r.hoy, zonas: r.zonas, proximos: r.proximos, candidatos: d?.candidatos ?? [], hoja: d?.hoja ?? null };
 }
 
 // ─── Mandar la hoja ─────────────────────────────────────────────────────
@@ -248,12 +276,20 @@ export interface Elegido {
 }
 
 /**
- * Guarda la hoja de ese día con los envíos elegidos y genera un link nuevo (el anterior deja de
- * andar: sólo se guarda el hash). Los que estaban ofrecidos y se destildaron, se sacan; los que el
- * repartidor ya marcó, quedan. Se puede mandar un día antes: el link vale hasta el final del día
- * siguiente al del reparto.
+ * Guarda la hoja de ese día con los envíos elegidos. Los que estaban ofrecidos y se destildaron, se
+ * sacan; los que el repartidor ya marcó, quedan. Se puede mandar un día antes: el link vale hasta el
+ * final del día siguiente al del reparto.
+ *
+ * El link: la primera vez se genera uno. Después, guardar cambios **deja el mismo link** (desde el
+ * 2026-11-23: él ve los cambios al abrirlo, sin que se lo manden de nuevo). Sólo `linkNuevo` genera
+ * otro, y el anterior deja de andar (se guarda sólo el hash, así que el viejo no se puede volver a
+ * mostrar).
  */
-export async function mandarHoja(diaPedido: unknown, elegidos: Elegido[]): Promise<{ ok: true; token: string; vence: string; envios: number } | { error: string }> {
+export async function mandarHoja(
+  diaPedido: unknown,
+  elegidos: Elegido[],
+  op: { linkNuevo?: boolean } = {}
+): Promise<{ ok: true; token: string | null; vence: string; envios: number } | { error: string }> {
   if (!elegidos.length) return { error: "Elegí al menos un envío" };
   const hoy = hoyEnArgentina();
   if (diaPedido !== undefined && (!esDia(diaPedido) || diaPedido < hoy)) return { error: "El día no es válido" };
@@ -263,15 +299,19 @@ export async function mandarHoja(diaPedido: unknown, elegidos: Elegido[]): Promi
   const pedidos = await prisma.pedido.findMany({ where: { tenantId: TENANT, id: { in: elegidos.map((e) => e.pedidoId) } }, select: { id: true } });
   if (pedidos.length !== new Set(elegidos.map((e) => e.pedidoId)).size) return { error: "Hay envíos que no son de este negocio" };
 
-  const token = randomBytes(32).toString("base64url");
+  const antes = await prisma.hojaReparto.findUnique({ where: { tenantId_dia: { tenantId: TENANT, dia: fechaDia(dia) } } });
+  const sigueValido = !!antes?.tokenHash && !!antes.vence && antes.vence.getTime() > Date.now();
+  const token = op.linkNuevo || !sigueValido ? randomBytes(32).toString("base64url") : null;
   // Hasta las 23:59 del día siguiente al reparto (hora argentina), y al menos 48 h desde ahora.
   const finDelDiaSiguiente = new Date(`${sumarDias(dia, 1)}T23:59:59-03:00`);
-  const vence = new Date(Math.max(finDelDiaSiguiente.getTime(), Date.now() + HORAS_LINK * 60 * 60 * 1000));
-  const hoja = await prisma.hojaReparto.upsert({
-    where: { tenantId_dia: { tenantId: TENANT, dia: fechaDia(dia) } },
-    create: { dia: fechaDia(dia), tokenHash: hashDe(token), vence, enviadoEn: new Date() },
-    update: { tokenHash: hashDe(token), vence, enviadoEn: new Date() },
-  });
+  const vence = token ? new Date(Math.max(finDelDiaSiguiente.getTime(), Date.now() + HORAS_LINK * 60 * 60 * 1000)) : antes!.vence!;
+  const hoja = token
+    ? await prisma.hojaReparto.upsert({
+        where: { tenantId_dia: { tenantId: TENANT, dia: fechaDia(dia) } },
+        create: { dia: fechaDia(dia), tokenHash: hashDe(token), vence, enviadoEn: new Date() },
+        update: { tokenHash: hashDe(token), vence, enviadoEn: new Date() },
+      })
+    : antes!;
 
   const ids = new Set(elegidos.map((e) => e.pedidoId));
   await prisma.envioReparto.deleteMany({ where: { hojaId: hoja.id, estado: "ofrecido", pedidoId: { notIn: [...ids] } } });
