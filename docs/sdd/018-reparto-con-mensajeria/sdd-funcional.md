@@ -20,7 +20,7 @@ Necesita juntar los pedidos del día de Flex y de mensajería de la web, mandár
 Cuando esto esté en producción:
 1. **Agustín**, en el ERP, ve los envíos del día con la zona y el precio de cada uno, elige cuáles ofrecer y le manda un link por WhatsApp.
 2. **El repartidor**, desde el **celular** (decisión de Agustín: lo usa principalmente desde ahí), abre el link sin usuario.
-   - Ve dirección, zona, qué lleva y la hora límite de cada envío.
+   - Ve dirección, zona y la hora límite de cada envío.
    - Marca **"Lo llevo"** o **"No lo llevo"**, y después **"Entregado"** o **"No se pudo entregar"**.
 3. **El lunes**, el ERP muestra la semana: los entregados por zona, el total a pagar y el detalle.
    - Se marca como pagada y queda el historial.
@@ -49,7 +49,7 @@ Cuando esto esté en producción:
 
 ### 3.2 El repartidor, en el celular
 1. Abre el link y ve la lista ordenada por zona.
-   - En cada envío: nombre, dirección (botón a Google Maps), qué lleva ("Katana 95 cm con funda") y la hora límite si es Flex.
+   - En cada envío: nombre, dirección con la localidad al lado (botón a Google Maps) y la hora límite si es Flex. El producto no (2026-11-23).
 2. Toca **"Lo llevo"** o **"No lo llevo"** en cada uno.
 3. Después de la vuelta, en los que llevó: **"Entregado"** o **"No se pudo"**, con un motivo corto opcional.
 4. Arriba ve cuántos lleva hoy y cuánto suma la semana. Lo cobra el lunes.
@@ -91,7 +91,7 @@ flowchart TD
   - Los precios se editan en el ERP.
   - El precio queda **fijo en cada envío** al ofrecerlo: si mañana cambia la tarifa, lo de esta semana no cambia.
 - **RN-3. La zona se puede corregir a mano.** La Matanza está partida entre las zonas 1 y 2, y algunos códigos postales son de borde.
-- **RN-4. El link del repartidor ve sólo lo necesario**: los envíos que se le ofrecieron ese día, con nombre, dirección y lo que lleva. Sin precios de venta, sin otros pedidos, sin nada más del ERP.
+- **RN-4. El link del repartidor ve sólo lo necesario**: los envíos que se le ofrecieron ese día, con nombre y dirección. Sin el producto, sin precios de venta, sin otros pedidos, sin nada más del ERP.
   - El link vence a las 48 h.
   - Las direcciones de los Flex se leen de ML en el momento, no se guardan.
 - **RN-5. Nada se cambia en ML ni en la web.** Marcar "Entregado" acá es para pagarle. La entrega Flex la marca él en la app de ML; la liquidación cruza los Flex "Entregado" con el estado del envío en ML (`delivered`) y muestra los que no coinciden.
@@ -144,6 +144,7 @@ flowchart TD
 | 2026-11-23 | En la hoja vienen **todos tildados** | Se destilda lo que no va | Agustín |
 | 2026-11-23 | **Agustín y Twai** usan Reparto (hoja, link, liquidar) | Los dos despachan | Agustín |
 | 2026-11-23 | **Un link por día de despacho**, que se puede mandar el día antes; vale hasta el final del día siguiente | Que el repartidor vaya eligiendo | Agustín |
+| 2026-11-23 | **El repartidor no ve el producto**, y la localidad va al lado del número | No le hace falta | Agustín |
 | 2026-11-23 | **La fecha de la web es la estimada** (pedido + 3 días hábiles) y se mueve a mano | La web no manda fecha prometida | Agustín |
 
 ## 10. Preguntas abiertas

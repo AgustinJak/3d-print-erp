@@ -148,18 +148,15 @@ function Tarjeta({ e, guardando, onMarcar }: { e: EnvioDelRepartidor; guardando:
         </div>
         <div>
           {e.nombre && <p className="text-lg leading-snug font-medium">{e.nombre}</p>}
-          {e.direccion && <p className="leading-snug">{e.direccion}</p>}
-          {(e.detalle || e.localidad) && <p className="text-sm text-muted-foreground">{[e.detalle, e.localidad].filter(Boolean).join(" · ")}</p>}
+          {(e.direccion || e.localidad) && (
+            <p className="leading-snug">
+              {e.direccion}
+              {e.direccion && e.localidad && " "}
+              {e.localidad && <span className="font-medium">{e.localidad}</span>}
+            </p>
+          )}
+          {e.detalle && <p className="text-sm text-muted-foreground">{e.detalle}</p>}
         </div>
-        <p className="text-sm">
-          {e.productos.map((p, i) => (
-            <span key={i}>
-              {i > 0 && " + "}
-              {p.cantidad > 1 && <span className="font-mono tabular-nums">{p.cantidad} × </span>}
-              {p.nombre}
-            </span>
-          ))}
-        </p>
         {(e.mapa || e.telefono) && (
           <div className="flex gap-2 pt-1">
             {e.mapa && (

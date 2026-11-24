@@ -344,7 +344,6 @@ export interface EnvioDelRepartidor {
   telefono: string | null;
   mapa: string | null;
   hasta: string | null;
-  productos: Array<{ nombre: string; cantidad: number }>;
 }
 
 export interface HojaDelRepartidor {
@@ -382,7 +381,6 @@ export async function hojaDelRepartidor(token: string): Promise<HojaDelRepartido
           fechaEntrega: true,
           origenExterno: true,
           cliente: { select: { nombre: true, telefono: true, direccion: true } },
-          items: { select: { cantidad: true, descripcion: true, modelo: { select: { nombre: true } }, combinacion: { select: { nombre: true } } } },
         },
       },
     },
@@ -391,7 +389,7 @@ export async function hojaDelRepartidor(token: string): Promise<HojaDelRepartido
 
   const envios: EnvioDelRepartidor[] = [];
   for (const f of filas) {
-    const productos = f.pedido.items.map((i) => ({ nombre: i.combinacion?.nombre ?? i.modelo?.nombre ?? i.descripcion ?? "Producto", cantidad: i.cantidad }));
+    // Sin productos: el repartidor no los necesita (Agustín, 2026-11-23).
     let nombre: string | null = null;
     let direccion: string | null = null;
     let detalle: string | null = null;
@@ -445,7 +443,6 @@ export async function hojaDelRepartidor(token: string): Promise<HojaDelRepartido
       telefono,
       mapa: coordenadas ? `https://www.google.com/maps/search/?api=1&query=${coordenadas}` : direccion ? mapaDe(direccion, localidad) : null,
       hasta,
-      productos,
     });
   }
 

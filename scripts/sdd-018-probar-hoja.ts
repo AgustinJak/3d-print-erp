@@ -36,7 +36,7 @@ async function main() {
     ver("el link abre la hoja", !!h && h.envios.length === 1 && h.dia === dia);
     const e = h!.envios[0];
     ver("trae dirección y Maps", !!e.direccion && !!e.mapa);
-    ver("trae lo que lleva, zona y precio", e.productos.length > 0 && !!e.zona && e.precio != null, `${e.zona} ${e.precio}`);
+    ver("trae zona y precio, y no el producto", !!e.zona && e.precio != null && !("productos" in e), `${e.zona} ${e.precio}`);
     ver("un token inventado no abre nada", (await hojaDelRepartidor("x".repeat(43))) === null);
     ver("marca Lo llevo", "ok" in (await marcarDesdeLink(r.token, e.id, { estado: "tomado" })));
     ver("marca Entregado", "ok" in (await marcarDesdeLink(r.token, e.id, { estado: "entregado" })));

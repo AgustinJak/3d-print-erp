@@ -85,7 +85,7 @@ CREATE TABLE public.liquidaciones_reparto (
 | GET | `/api/reparto/semanas` | ERP | Semanas: entregados por zona, total, cuánto te dejó, pagado |
 | POST | `/api/reparto/liquidaciones` | ERP | Cierra la semana y la marca pagada |
 | GET y PUT | `/api/reparto/zonas` | ERP | Tarifas |
-| GET | `/api/reparto/hoja/[token]` | **Público** (bypass del middleware) | Lo que ve el repartidor: sus envíos de ese día con nombre, dirección y lo que lleva |
+| GET | `/api/reparto/hoja/[token]` | **Público** (bypass del middleware) | Lo que ve el repartidor: sus envíos de ese día con nombre, dirección y hora límite (sin el producto) |
 | POST | `/api/reparto/hoja/[token]/envios/[id]` | **Público** | `{ estado: tomado | rechazado | entregado | no_entregado, motivo? }` |
 
 Las dos rutas públicas validan:
@@ -114,7 +114,7 @@ Tienen un límite de pedidos por minuto.
 ## 6. Seguridad
 
 - El link es un token de 32 bytes aleatorios. Se guarda sólo su hash, vence a las 48 h y es uno por día.
-- La página pública devuelve sólo los envíos de esa hoja y sólo nombre, dirección, lo que lleva y la hora: nada de precios de venta ni otros pedidos.
+- La página pública devuelve sólo los envíos de esa hoja y sólo nombre, dirección y la hora (el producto no, desde el 2026-11-23): nada de precios de venta ni otros pedidos.
 - Las direcciones de los Flex se leen de ML con el token del ERP en el servidor y se mandan en la respuesta. No quedan en la base ni en logs.
 - La ruta pública no cambia nada fuera de `envios_reparto.estado`.
 
