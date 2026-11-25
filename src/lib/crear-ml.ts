@@ -8,6 +8,7 @@ import { margenDe } from "@/lib/precios-formula";
 import { cotizarEnvioGratis } from "@/lib/tarifas-ml";
 import { cargoFijo, paqueteDeItem, type PaqueteMl } from "@/lib/tarifas-ml-reglas";
 import { categoriaDeProducto, describirCategoria } from "@/lib/categorias-ml";
+import { normalizar } from "@/lib/temas";
 
 /**
  * Crear en Mercado Libre una combinación que no está publicada (docs/sdd/006, spec 008, TASK-017).
@@ -21,6 +22,10 @@ import { categoriaDeProducto, describirCategoria } from "@/lib/categorias-ml";
  * - \`status: "paused"\` al crear no sirve: se crea activa y se pausa en el paso siguiente.
  * - Los avisos de \`validate\` ("User has not mode me1", "Free shipping costs exceeds sale") no
  *   bloquean la creación.
+ *
+ * Variantes de color (2026-11-25, el reno): en User Products cada color es una publicación aparte, y
+ * ML las junta en una sola página si tienen el mismo `family_name` y distinto COLOR. El color sale
+ * del grupo "Color" de la combinación, y "Sumar a" copia el nombre exacto de la publicación elegida.
  */
 
 /** Lo que hay que hacer a mano después de crear la opción 2: la API no deja elegir las cuotas. */
@@ -49,6 +54,17 @@ export interface Borrador {
   /** Las medidas con que se cotizó. `de`: la publicación de la que salieron, si no las cargó nadie acá. */
   paquete: Paquete | null;
   paqueteDe: string | null;
+  /** El color de la combinación (su opción del grupo "Color"), que va como COLOR en ML. */
+  color: string | null;
+  /** Las otras publicaciones del producto en ML, para sumar esta como otro color de la misma página. */
+  familias: Familia[];
+}
+
+export interface Familia {
+  mla: string;
+  nombre: string;
+  color: string | null;
+  combinacion: string | null;
 }
 
 export interface PedidoDeCreacion {
@@ -63,6 +79,8 @@ export interface PedidoDeCreacion {
   paquete: Paquete;
   stock: number;
   fotos: string[];
+  /** Una publicación del producto: se crea con su mismo nombre, como otro color de esa página. */
+  sumarA?: string | null;
 }
 
 export interface Revision {
@@ -163,6 +181,7 @@ export async function borrador(tenantId: string, modeloId: string, combinacionId
     if (Number.isFinite(r.publicado)) op2 = { precio: r.publicado, ...deja(r.final, r.costos), envio, envioEstimado: envio == null };
   }
   const fotos = [...new Set([...(modelo?.imagenesUrls ?? []), ...(modelo?.imagenUrl ? [modelo.imagenUrl] : [])])];
+  const [color, familias] = await Promise.all([colorDeCombinacion(tenantId, combinacionId), familiasDelProducto(tenantId, modeloId)]);
   return {
     combinacionId,
     producto: p.nombre,
@@ -177,21 +196,90 @@ export async function borrador(tenantId: string, modeloId: string, combinacionId
     peso: modelo?.pesoGr ?? null,
     paquete,
     paqueteDe: deOtra?.mla ?? null,
+    color,
+    familias,
   };
 }
 
-/**
- * Los atributos que pide la categoría además de los de siempre. Hoy: el Fabricante, que algunas
- * categorías exigen (Adornos de Navidad, MLA116637, 2026-11-25) y va igual que la Marca. Sólo se
- * manda donde la categoría lo tiene.
- */
-async function extrasDeCategoria(tenantId: string, categoria: string): Promise<Array<{ id: string; value_name: string }>> {
-  const r = await ml(tenantId, "GET", `/categories/${categoria}/attributes`);
-  const atributos = Array.isArray(r.json) ? (r.json as Array<{ id?: string }>) : [];
-  return atributos.some((a) => a.id === "MANUFACTURER") ? [{ id: "MANUFACTURER", value_name: "Generic" }] : [];
+/** La opción del grupo "Color" de una combinación ("Marron", "Blanco"), o null. */
+export async function colorDeCombinacion(tenantId: string, combinacionId: string): Promise<string | null> {
+  const c = await prisma.combinacion.findFirst({ where: { id: combinacionId, tenantId }, select: { variantes: true } });
+  if (!c?.variantes.length) return null;
+  const vs = await prisma.varianteModelo.findMany({ where: { id: { in: c.variantes } }, select: { nombre: true, grupo: true } });
+  return vs.find((v) => normalizar(v.grupo ?? "") === "color")?.nombre ?? null;
 }
 
-function cuerpoDe(p: PedidoDeCreacion, opcion: 1 | 2, extras: Array<{ id: string; value_name: string }> = []): Record<string, unknown> {
+type ItemDeFamilia = { id: string; family_name?: string | null; title?: string | null; category_id?: string; status?: string; attributes?: Array<{ id: string; value_name?: string | null }> };
+const colorDeItem = (it: ItemDeFamilia) => it.attributes?.find((a) => a.id === "COLOR")?.value_name ?? null;
+
+/** Las publicaciones del producto en ML (una por página: sin repetir el nombre), con su color. */
+async function familiasDelProducto(tenantId: string, modeloId: string): Promise<Familia[]> {
+  const mapeos = await prisma.mapeoCanal.findMany({
+    where: { tenantId, canal: "mercadolibre", ignorar: false, unidades: 1, combinacion: { modeloId } },
+    select: { clave: true, combinacion: { select: { nombre: true } } },
+  });
+  const deMla = new Map(mapeos.map((m) => [m.clave.split("|")[0], m.combinacion?.nombre ?? null]));
+  const mlas = [...deMla.keys()].slice(0, 20);
+  if (!mlas.length) return [];
+  const r = await ml(tenantId, "GET", `/items?ids=${mlas.join(",")}&attributes=id,family_name,title,category_id,status,attributes`);
+  const items = (Array.isArray(r.json) ? (r.json as Array<{ code: number; body: ItemDeFamilia }>) : []).filter((x) => x.code === 200 && x.body.status !== "closed").map((x) => x.body);
+  const vistas = new Set<string>();
+  const out: Familia[] = [];
+  for (const it of items) {
+    const nombre = (it.family_name || it.title || "").trim();
+    const clave = `${nombre}|${colorDeItem(it) ?? ""}`;
+    if (!nombre || vistas.has(clave)) continue;
+    vistas.add(clave);
+    out.push({ mla: it.id, nombre, color: colorDeItem(it), combinacion: deMla.get(it.id) ?? null });
+  }
+  return out;
+}
+
+type Atributo = { id: string; value_name?: string; value_id?: string };
+
+/**
+ * Lo que hay que preparar antes de mandar a ML, igual para revisar y para crear:
+ * - El Fabricante, que algunas categorías exigen (Adornos de Navidad, MLA116637, 2026-11-25) y va
+ *   igual que la Marca. Sólo donde la categoría lo tiene.
+ * - El COLOR de la combinación, con el id de la lista de ML si está ("Marron" → Marrón).
+ * - Con `sumarA`: el nombre exacto de esa publicación, para que ML la ponga en la misma página.
+ */
+async function preparar(tenantId: string, p: PedidoDeCreacion): Promise<{ pedido: PedidoDeCreacion; extras: Atributo[]; errores: string[] }> {
+  const errores: string[] = [];
+  const [r, cat, color] = await Promise.all([
+    ml(tenantId, "GET", `/categories/${p.categoria}/attributes`),
+    ml(tenantId, "GET", `/categories/${p.categoria}`),
+    colorDeCombinacion(tenantId, p.combinacionId),
+  ]);
+  const atributos = Array.isArray(r.json) ? (r.json as Array<{ id?: string; values?: Array<{ id: string; name: string }> }>) : [];
+  const extras: Atributo[] = [];
+  if (atributos.some((a) => a.id === "MANUFACTURER")) extras.push({ id: "MANUFACTURER", value_name: "Generic" });
+  const deColor = atributos.find((a) => a.id === "COLOR");
+  if (deColor && color) {
+    const enLista = deColor.values?.find((v) => normalizar(v.name) === normalizar(color));
+    extras.push(enLista ? { id: "COLOR", value_id: enLista.id } : { id: "COLOR", value_name: color });
+  }
+  const maxFotos = Number((cat.json?.settings as { max_pictures_per_item?: number } | undefined)?.max_pictures_per_item) || 10;
+  if (p.fotos.length > maxFotos) errores.push(`ML acepta hasta ${maxFotos} fotos en esta categoría: destildá ${p.fotos.length - maxFotos}.`);
+
+  let pedido = p;
+  if (p.sumarA) {
+    const it = await ml(tenantId, "GET", `/items/${p.sumarA}?attributes=id,family_name,title,category_id,status,attributes`);
+    const item = it.json as ItemDeFamilia | null;
+    if (it.status >= 400 || !item?.id) errores.push(`No se encontró la publicación ${p.sumarA} en ML.`);
+    else {
+      const suColor = colorDeItem(item);
+      if (item.category_id !== p.categoria) errores.push(`${p.sumarA} está en otra categoría: para que ML las junte, tienen que estar en la misma.`);
+      if (!color) errores.push("Esta combinación no tiene una opción del grupo Color: sin color, ML no sabe que es otra variante.");
+      else if (!suColor) errores.push(`${p.sumarA} no tiene el Color cargado: cargalo primero en ML para que las junte.`);
+      else if (normalizar(suColor) === normalizar(color)) errores.push(`${p.sumarA} ya es ${suColor}: elegí una publicación de otro color o creala nueva.`);
+      pedido = { ...p, nombre: (item.family_name || item.title || p.nombre).trim() };
+    }
+  }
+  return { pedido, extras, errores };
+}
+
+function cuerpoDe(p: PedidoDeCreacion, opcion: 1 | 2, extras: Atributo[] = []): Record<string, unknown> {
   return {
     family_name: p.nombre.trim(),
     category_id: p.categoria,
@@ -241,10 +329,11 @@ async function ml(tenantId: string, metodo: string, path: string, cuerpo?: unkno
 /** Lo que dice el ERP y lo que dice ML (`/items/validate`) de cada opción, sin crear nada. */
 export async function revisar(tenantId: string, p: PedidoDeCreacion): Promise<Revision[]> {
   const opciones: Array<1 | 2> = p.soloOpcion2 ? [2] : p.opcion2 ? [1, 2] : [1];
-  const extras = await extrasDeCategoria(tenantId, p.categoria);
+  const { pedido, extras, errores: previos } = await preparar(tenantId, p);
+  p = pedido;
   return Promise.all(
     opciones.map(async (opcion) => {
-      const errores: string[] = [];
+      const errores: string[] = [...previos];
       const avisos: string[] = [];
       for (const r of PROHIBIDAS) if (r.test(p.nombre)) errores.push(`El nombre dice "${p.nombre.match(r)?.[0]}": no va de cara al cliente.`);
       if (!p.fotos.length) errores.push("Falta una foto: subila en la sección Fotos del producto. Sin foto ML no deja crear.");
@@ -269,7 +358,8 @@ export async function crear(tenantId: string, p: PedidoDeCreacion, usuario: stri
   const revisiones = await revisar(tenantId, p);
   if (revisiones.some((r) => r.errores.length)) throw new Error(revisiones.flatMap((r) => r.errores).join(" "));
   const out: Creada[] = [];
-  const extras = await extrasDeCategoria(tenantId, p.categoria);
+  const { pedido, extras } = await preparar(tenantId, p);
+  p = pedido;
   for (const opcion of (p.soloOpcion2 ? [2] : p.opcion2 ? [1, 2] : [1]) as Array<1 | 2>) {
     const precio = opcion === 1 ? p.precio1 : p.precio2!;
     const r = await ml(tenantId, "POST", "/items", cuerpoDe(p, opcion, extras));

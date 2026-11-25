@@ -31,6 +31,8 @@ interface Form {
   peso: string;
   stock: string;
   fotos: string[];
+  /** Una publicación del producto de otro color: se crea en la misma página de ML. "" = nueva. */
+  sumarA: string;
 }
 
 const numero = (s: string) => Number(s.replace(",", "."));
@@ -49,6 +51,9 @@ function Formulario({ modeloId, combinacionId, soloOpcion2, onCerrar, onCreada }
     pedir<Borrador>(`/api/modelos/${modeloId}/crear-ml?combinacion=${combinacionId}`)
       .then((x) => {
         setB(x);
+        // Si ya hay una publicación del producto de otro color, se propone sumarla ahí; las fotos
+        // las elige Agustín, porque las del producto son de todos los colores.
+        const otroColor = x.color ? x.familias.find((fa) => fa.color && fa.color.toLowerCase() !== x.color!.toLowerCase()) : undefined;
         setF({
           nombre: x.nombre,
           precio1: String(x.opcion1.precio),
@@ -61,7 +66,8 @@ function Formulario({ modeloId, combinacionId, soloOpcion2, onCerrar, onCreada }
           largo: x.paquete ? String(x.paquete.largo) : "",
           peso: x.paquete ? String(x.paquete.peso) : x.peso ? String(Math.round(x.peso + 30)) : "",
           stock: String(x.stock),
-          fotos: x.fotos.slice(0, 6),
+          fotos: otroColor ? [] : x.fotos.slice(0, 6),
+          sumarA: otroColor?.mla ?? "",
         });
         if (x.paquete) setCotizadas([x.paquete.alto, x.paquete.ancho, x.paquete.largo, x.paquete.peso].join("x"));
       })
@@ -121,6 +127,7 @@ function Formulario({ modeloId, combinacionId, soloOpcion2, onCerrar, onCreada }
       paquete: { alto: n(f.alto), ancho: n(f.ancho), largo: n(f.largo), peso: n(f.peso) },
       stock: Math.floor(n(f.stock)),
       fotos: f.fotos,
+      sumarA: f.sumarA || null,
     };
   }, [f, b, combinacionId, soloOpcion2]);
   const clave = JSON.stringify(pedido);
@@ -190,15 +197,38 @@ function Formulario({ modeloId, combinacionId, soloOpcion2, onCerrar, onCreada }
     </label>
   );
 
+  const familia = b.familias.find((fa) => fa.mla === f.sumarA) ?? null;
   return (
     <div className="space-y-4 text-sm">
+      {b.familias.length > 0 && (
+        <label className="space-y-1 block">
+          <span className="text-xs font-medium">Dónde va en ML</span>
+          <select value={f.sumarA} onChange={(e) => set("sumarA", e.target.value)} className="h-8 w-full rounded-md border bg-transparent px-2 text-sm">
+            <option value="">Publicación nueva, aparte</option>
+            {b.familias.map((fa) => (
+              <option key={fa.mla} value={fa.mla}>
+                Otro color de {fa.mla} · {fa.color ?? "sin color"} · {fa.nombre}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-muted-foreground">
+            {familia
+              ? `Se crea con el mismo nombre y Color ${b.color ?? "?"}: ML la muestra en la misma página que ${familia.mla}, con su precio, stock y fotos.`
+              : "Va sola, en su propia página."}
+          </span>
+        </label>
+      )}
+
       <label className="space-y-1 block">
         <span className="text-xs font-medium">Nombre en ML</span>
-        <Input value={f.nombre} onChange={(e) => set("nombre", e.target.value)} maxLength={60} className="h-8" />
-        <span className="text-xs text-muted-foreground">Sin &quot;impresión 3D&quot;, &quot;PLA&quot;, &quot;Sendero 3D&quot;, &quot;réplica&quot;, &quot;tipo&quot; ni &quot;símil&quot;. Lo terminás en ML.</span>
+        <Input value={familia ? familia.nombre : f.nombre} onChange={(e) => set("nombre", e.target.value)} maxLength={60} className="h-8" disabled={!!familia} />
+        <span className="text-xs text-muted-foreground">
+          {familia ? "El de la publicación a la que se suma: tiene que ser igual para que ML las junte." : <>Sin &quot;impresión 3D&quot;, &quot;PLA&quot;, &quot;Sendero 3D&quot;, &quot;réplica&quot;, &quot;tipo&quot; ni &quot;símil&quot;. Lo terminás en ML.</>}
+        </span>
       </label>
 
       <div className="text-xs text-muted-foreground">
+        {b.color && <>Color en ML: <span className="text-foreground">{b.color}</span> · </>}
         Categoría: {b.categoria ? <span className="text-foreground">{b.categoria.nombre}{b.categoria.comision != null ? ` (comisión ${String(b.categoria.comision).replace(".", ",")} %)` : ""}</span> : <span className="text-red-600">sin categoría: elegila en Política de precio</span>} · costo {pesos(b.costo)}
       </div>
 
@@ -246,7 +276,10 @@ function Formulario({ modeloId, combinacionId, soloOpcion2, onCerrar, onCreada }
       <div className="grid grid-cols-[100px_1fr] gap-3 items-start">
         {campo("stock", "Stock")}
         <div className="space-y-1">
-          <p className="text-xs font-medium">Fotos (del producto en el ERP)</p>
+          <p className="text-xs font-medium">
+            Fotos (del producto en el ERP){" "}
+            <span className="font-normal text-muted-foreground">{b.color ? `tildá sólo las del ${b.color.toLowerCase()} · ` : ""}{f.fotos.length} elegidas, hasta 12</span>
+          </p>
           {b.fotos.length ? (
             <div className="flex flex-wrap gap-2">
               {b.fotos.map((u) => (

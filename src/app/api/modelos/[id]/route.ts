@@ -225,7 +225,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
     if ("archivo3mfUrl" in body) data.archivo3mfUrl = texto("archivo3mfUrl") || null;
     if ("imagenesUrls" in body) {
-      const urls = Array.isArray(body.imagenesUrls) ? body.imagenesUrls.filter((u): u is string => typeof u === "string" && !!u.trim()).slice(0, 5) : [];
+      const urls = Array.isArray(body.imagenesUrls) ? body.imagenesUrls.filter((u): u is string => typeof u === "string" && !!u.trim()).slice(0, 15) : [];
       data.imagenesUrls = urls;
       data.imagenUrl = urls[0] ?? null; // la primera es la principal
     }

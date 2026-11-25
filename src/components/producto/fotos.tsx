@@ -7,7 +7,8 @@ import { FileUpload } from "@/components/file-upload";
 import { json, pedir, Seccion } from "@/components/producto/seccion";
 import type { Ficha } from "@/app/api/modelos/[id]/ficha/route";
 
-const MAXIMO = 5;
+// Hasta 15 (2026-11-25): con variantes de color hacen falta las fotos de cada una. ML toma hasta 12 por publicación.
+const MAXIMO = 15;
 
 /**
  * Fotos y archivo (spec 002, REQ-3). Sin botón Guardar: lo que se sube, se borra o se elige como

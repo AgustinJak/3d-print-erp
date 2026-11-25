@@ -23,7 +23,8 @@ const Cuerpo = z.object({
   precio2: z.number().positive().nullable(),
   paquete: z.object({ alto: z.number().positive(), ancho: z.number().positive(), largo: z.number().positive(), peso: z.number().positive() }),
   stock: z.number().int().min(1).max(999),
-  fotos: z.array(z.string().url()).max(10),
+  fotos: z.array(z.string().url()).max(12),
+  sumarA: z.string().regex(/^MLA\d+$/).nullable().optional(),
   aplicar: z.boolean().optional(),
 });
 

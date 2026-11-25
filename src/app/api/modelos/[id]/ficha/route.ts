@@ -275,7 +275,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         costoInsumos: m.costoInsumos,
         archivo3mfUrl: m.archivo3mfUrl,
         // La principal primero, sin repetir: hasta acá vivía también en `imagenUrl`.
-        imagenesUrls: [...new Set([...(m.imagenUrl ? [m.imagenUrl] : []), ...m.imagenesUrls])].slice(0, 5),
+        imagenesUrls: [...new Set([...(m.imagenUrl ? [m.imagenUrl] : []), ...m.imagenesUrls])].slice(0, 15),
         activo: m.activo,
         esInsumo: m.esInsumo,
         creadoEn: m.creadoEn.toISOString(),
