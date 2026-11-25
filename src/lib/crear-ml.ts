@@ -180,7 +180,18 @@ export async function borrador(tenantId: string, modeloId: string, combinacionId
   };
 }
 
-function cuerpoDe(p: PedidoDeCreacion, opcion: 1 | 2): Record<string, unknown> {
+/**
+ * Los atributos que pide la categoría además de los de siempre. Hoy: el Fabricante, que algunas
+ * categorías exigen (Adornos de Navidad, MLA116637, 2026-11-25) y va igual que la Marca. Sólo se
+ * manda donde la categoría lo tiene.
+ */
+async function extrasDeCategoria(tenantId: string, categoria: string): Promise<Array<{ id: string; value_name: string }>> {
+  const r = await ml(tenantId, "GET", `/categories/${categoria}/attributes`);
+  const atributos = Array.isArray(r.json) ? (r.json as Array<{ id?: string }>) : [];
+  return atributos.some((a) => a.id === "MANUFACTURER") ? [{ id: "MANUFACTURER", value_name: "Generic" }] : [];
+}
+
+function cuerpoDe(p: PedidoDeCreacion, opcion: 1 | 2, extras: Array<{ id: string; value_name: string }> = []): Record<string, unknown> {
   return {
     family_name: p.nombre.trim(),
     category_id: p.categoria,
@@ -207,6 +218,7 @@ function cuerpoDe(p: PedidoDeCreacion, opcion: 1 | 2): Record<string, unknown> {
       { id: "SELLER_PACKAGE_WIDTH", value_name: `${p.paquete.ancho} cm` },
       { id: "SELLER_PACKAGE_LENGTH", value_name: `${p.paquete.largo} cm` },
       { id: "SELLER_PACKAGE_WEIGHT", value_name: `${p.paquete.peso} g` },
+      ...extras,
     ],
   };
 }
@@ -229,6 +241,7 @@ async function ml(tenantId: string, metodo: string, path: string, cuerpo?: unkno
 /** Lo que dice el ERP y lo que dice ML (`/items/validate`) de cada opción, sin crear nada. */
 export async function revisar(tenantId: string, p: PedidoDeCreacion): Promise<Revision[]> {
   const opciones: Array<1 | 2> = p.soloOpcion2 ? [2] : p.opcion2 ? [1, 2] : [1];
+  const extras = await extrasDeCategoria(tenantId, p.categoria);
   return Promise.all(
     opciones.map(async (opcion) => {
       const errores: string[] = [];
@@ -238,7 +251,7 @@ export async function revisar(tenantId: string, p: PedidoDeCreacion): Promise<Re
       if (opcion === 2 && !(p.precio2 && p.precio2 > 0)) errores.push("Falta el precio de la opción 2.");
       if ([p.paquete.alto, p.paquete.ancho, p.paquete.largo, p.paquete.peso].some((x) => !(x > 0))) errores.push("Faltan las medidas o el peso del paquete.");
       if (!errores.length) {
-        const r = await ml(tenantId, "POST", "/items/validate", cuerpoDe(p, opcion));
+        const r = await ml(tenantId, "POST", "/items/validate", cuerpoDe(p, opcion, extras));
         const causas = ((r.json?.cause as Array<{ type: string; code: string; message: string }>) ?? []);
         for (const c of causas) (c.type === "error" ? errores : avisos).push(`${c.message} (${c.code})`);
         if (r.status >= 400 && !causas.length) errores.push(String(r.json?.message ?? `ML contestó ${r.status}`));
@@ -256,9 +269,10 @@ export async function crear(tenantId: string, p: PedidoDeCreacion, usuario: stri
   const revisiones = await revisar(tenantId, p);
   if (revisiones.some((r) => r.errores.length)) throw new Error(revisiones.flatMap((r) => r.errores).join(" "));
   const out: Creada[] = [];
+  const extras = await extrasDeCategoria(tenantId, p.categoria);
   for (const opcion of (p.soloOpcion2 ? [2] : p.opcion2 ? [1, 2] : [1]) as Array<1 | 2>) {
     const precio = opcion === 1 ? p.precio1 : p.precio2!;
-    const r = await ml(tenantId, "POST", "/items", cuerpoDe(p, opcion));
+    const r = await ml(tenantId, "POST", "/items", cuerpoDe(p, opcion, extras));
     const mla = typeof r.json?.id === "string" ? r.json.id : null;
     if (!mla) {
       const motivo = String(r.json?.message ?? `ML contestó ${r.status}`);

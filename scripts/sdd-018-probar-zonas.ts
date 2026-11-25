@@ -19,6 +19,13 @@ const casos: Array<[string, string, string, string]> = [
   ["Buenos Aires", "Lanús Oeste", "1824", "Zona 1"],
   ["Buenos Aires", "Ituzaingó", "1714", "Zona 1"],
   ["Buenos Aires", "González Catán", "1759", "Zona 2"],
+  // La Matanza partida en dos (2026-11-25): ML da "La Matanza" y el CP dice cuál.
+  ["Buenos Aires", "La Matanza", "1765", "Zona 2"],
+  ["Buenos Aires", "La Matanza", "1754", "Zona 1"],
+  ["Buenos Aires", "La Matanza", "1768", "Zona 1"],
+  ["Buenos Aires", "Isidro Casanova", "", "Zona 2"],
+  ["Buenos Aires", "Rafael Castillo", "1755", "Zona 2"],
+  ["Buenos Aires", "San Justo", "1754", "Zona 1"],
   ["Buenos Aires", "Plátanos", "1861", "Zona 2"],
   ["Buenos Aires", "Benavidez", "1621", "Zona 2"],
   ["Buenos Aires", "Bernal", "1876", "Zona 2"],

@@ -9,6 +9,9 @@ import { normalizar } from "@/lib/temas";
  *   1. CABA: por provincia o por código postal 1000-1499.
  *   2. Las localidades que el mapa nombra sueltas (Tristán Suárez es de Ezeiza pero va en la 3;
  *      González Catán es La Matanza pero va en la 2): ganan sobre el partido.
+ *   2b. Los códigos postales de una zona que no es CABA. Es para La Matanza, que el mapa parte en dos:
+ *      ML suele dar "La Matanza" como localidad, sin decir si es Isidro Casanova o San Justo, pero el
+ *      CP sí lo dice (2026-11-25: SyB cobró Isidro Casanova, CP 1765, como "La Matanza Sur").
  *   3. El partido: el de la localidad según georef (datos.gob.ar, la misma que usa el checkout de la
  *      web), guardado en `localidades_reparto` para no volver a preguntar.
  *   4. Si no se resuelve: sin zona, se elige a mano (RN-3).
@@ -49,6 +52,12 @@ function enRangos(cp: number, rangos: string | null): boolean {
   return false;
 }
 
+/** La zona (que no sea CABA) que lista ese código postal. */
+function zonaPorCp(cp: number | null, zonas: ZonaParaResolver[]): ZonaParaResolver | null {
+  if (cp == null) return null;
+  return zonas.find((z) => !z.partidos.some((p) => CABA.has(p)) && enRangos(cp, z.codigosPostales)) ?? null;
+}
+
 /** Puro: la zona con lo que se sabe. `partido` lo da quien llama (georef o el cache). */
 export function zonaPorDatos(d: DireccionParaZona, zonas: ZonaParaResolver[], partido: string | null): ZonaParaResolver | null {
   const provincia = normalizar(d.provincia ?? "");
@@ -62,6 +71,8 @@ export function zonaPorDatos(d: DireccionParaZona, zonas: ZonaParaResolver[], pa
     const suelta = zonas.find((z) => z.localidades.includes(localidad));
     if (suelta) return suelta;
   }
+  const porCp = zonaPorCp(cp, zonas);
+  if (porCp) return porCp;
   const p = normalizar(partido ?? "");
   if (p) {
     const porPartido = zonas.find((z) => z.partidos.includes(p));
@@ -110,7 +121,7 @@ export async function zonasActivas(): Promise<ZonaParaResolver[]> {
 /** La zona de una dirección, resolviendo el partido si hace falta. */
 export async function zonaDe(d: DireccionParaZona, zonas: ZonaParaResolver[]): Promise<ZonaParaResolver | null> {
   const sinPartido = zonaPorDatos(d, zonas, null);
-  if (sinPartido && (CABA.has(normalizar(d.provincia ?? "")) || zonas.some((z) => z.id === sinPartido.id && z.localidades.includes(normalizar(d.localidad ?? ""))))) {
+  if (sinPartido && (CABA.has(normalizar(d.provincia ?? "")) || zonas.some((z) => z.id === sinPartido.id && z.localidades.includes(normalizar(d.localidad ?? ""))) || zonaPorCp(cpNumero(d.cp), zonas)?.id === sinPartido.id)) {
     return sinPartido;
   }
   const partido = await partidoDe(d.localidad, zonas);

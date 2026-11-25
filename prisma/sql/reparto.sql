@@ -85,7 +85,14 @@ INSERT INTO public.zonas_reparto (nombre, precio, partidos, localidades, codigos
 SELECT * FROM (VALUES
   ('CABA', 4000::numeric, ARRAY['caba','capital federal','ciudad autonoma de buenos aires'], ARRAY[]::text[], '1000-1499', 1),
   ('Zona 1', 5800::numeric, ARRAY['san fernando','san isidro','vicente lopez','general san martin','san martin','tres de febrero','hurlingham','ituzaingo','moron','la matanza','avellaneda','lanus','lomas de zamora'], ARRAY[]::text[], NULL, 2),
-  ('Zona 2', 8200::numeric, ARRAY['tigre','malvinas argentinas','jose c paz','san miguel','moreno','merlo','quilmes','berazategui','florencio varela','almirante brown','esteban echeverria','ezeiza'], ARRAY['gonzalez catan','virrey del pino','20 de junio','veinte de junio'], NULL, 3),
+  ('Zona 2', 8200::numeric, ARRAY['tigre','malvinas argentinas','jose c paz','san miguel','moreno','merlo','quilmes','berazategui','florencio varela','almirante brown','esteban echeverria','ezeiza'], ARRAY['gonzalez catan','virrey del pino','20 de junio','veinte de junio','isidro casanova','rafael castillo','gregorio de laferrere','laferrere','ciudad evita'], '1755,1757,1759,1761,1763,1765,1778', 3),
   ('Zona 3', 9100::numeric, ARRAY['zarate','campana','escobar','pilar','lujan','general rodriguez','marcos paz','presidente peron','san vicente','canuelas','ensenada','berisso','la plata'], ARRAY['guernica','alejandro korn','korn','tristan suarez'], NULL, 4)
 ) AS z(nombre, precio, partidos, localidades, codigos_postales, orden)
 WHERE NOT EXISTS (SELECT 1 FROM public.zonas_reparto WHERE tenant_id = 'sendero3d');
+
+-- 2026-11-25: La Matanza Sur (el mapa de SyB parte La Matanza en dos). ML suele dar "La Matanza" como
+-- localidad; el CP dice cuál. SyB cobró Isidro Casanova (1765) como sur. Ya aplicado en producción.
+update zonas_reparto
+   set localidades = array['gonzalez catan','virrey del pino','20 de junio','veinte de junio','isidro casanova','rafael castillo','gregorio de laferrere','laferrere','ciudad evita'],
+       codigos_postales = '1755,1757,1759,1761,1763,1765,1778'
+ where tenant_id = 'sendero3d' and nombre = 'Zona 2';
