@@ -90,6 +90,8 @@ export interface CierreTercero {
   compartidos: GastosCompartidos;   // totales del mes, sin repartir
   parteCompartidos: number;         // lo que le toca de esos totales
   aPasar: number;       // neto − envío − publicidad − parteCompartidos
+  /** Lo que se le pagó de este mes, si se le pagó (docs/sdd/019). */
+  pagado: { monto: number | null; fecha: string } | null;
 
   notas: string | null;
   pedidos: PedidoTercero[];
@@ -291,6 +293,8 @@ interface FilaCierre {
   publicidad: number;
   notas: string | null;
   calculadoEn: Date;
+  pagadoMonto?: number | null;
+  pagadoEn?: Date | null;
 }
 
 /**
@@ -329,6 +333,7 @@ function armarCierre(
     compartidos,
     parteCompartidos,
     aPasar: fila.neto - fila.envio - fila.publicidad - parteCompartidos,
+    pagado: fila.pagadoEn ? { monto: fila.pagadoMonto ?? null, fecha: fila.pagadoEn.toISOString().slice(0, 10) } : null,
     notas: fila.notas,
     pedidos,
     calculadoEn: fila.calculadoEn.toISOString(),
@@ -420,6 +425,24 @@ export async function guardarPublicidad(
     (fila.pedidos ?? []) as unknown as PedidoTercero[],
     await leerCompartidos(tenantId, anio, mes)
   );
+}
+
+/**
+ * Marca un mes como pagado (o lo desmarca con `null`). Es lo que usa "Se puede retirar" para no
+ * contar plata de Shay que ya se le pasó (docs/sdd/019).
+ */
+export async function marcarPagado(
+  tenantId: string,
+  anio: number,
+  mes: number,
+  pago: { monto: number; fecha: string } | null,
+  socio = SOCIO_SHAY
+): Promise<boolean> {
+  const r = await prisma.ventaTercero.updateMany({
+    where: { tenantId, socio, anio, mes },
+    data: pago ? { pagadoMonto: pago.monto, pagadoEn: new Date(`${pago.fecha}T12:00:00Z`) } : { pagadoMonto: null, pagadoEn: null },
+  });
+  return r.count === 1;
 }
 
 /** El cierre ya guardado, si existe. No llama a ML. */

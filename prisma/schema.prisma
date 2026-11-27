@@ -694,6 +694,10 @@ model VentaTercero {
 
   calculadoEn DateTime @default(now()) @updatedAt @map("calculado_en")
 
+  /// Lo que se le pagó de este mes (docs/sdd/019). null = no se le pagó.
+  pagadoMonto Float?    @map("pagado_monto")
+  pagadoEn    DateTime? @map("pagado_en") @db.Date
+
   @@unique([tenantId, socio, anio, mes])
   @@map("ventas_terceros")
 }
@@ -1174,4 +1178,36 @@ model TareaArchivo {
 
   @@id([tareaId, archivoId])
   @@map("tarea_archivos")
+}
+
+/// El saldo disponible de Mercado Pago, leído del reporte de liberaciones (docs/sdd/019).
+model SaldoMp {
+  id       String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  tenantId String   @default("sendero3d") @map("tenant_id")
+  saldo    Float
+  /// La hora del último movimiento del reporte.
+  al       DateTime
+  leidoEn  DateTime @default(now()) @map("leido_en")
+  reporte  String?
+
+  @@index([tenantId, leidoEn(sort: Desc)], map: "saldos_mp_tenant_leido")
+  @@map("saldos_mp")
+}
+
+/// El resumen de la tarjeta de Mercado Pago, cargado a mano (docs/sdd/019).
+model ResumenTarjeta {
+  id          String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  tenantId    String   @default("sendero3d") @map("tenant_id")
+  cierre      DateTime @db.Date
+  vencimiento DateTime @db.Date
+  total       Float
+  /// [{ socio, monto, depositado }]: lo personal, que deposita cada socio.
+  partes      Json     @default("[]")
+  pagado      Boolean  @default(false)
+  notas       String?
+  creadoEn    DateTime @default(now()) @map("creado_en")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([tenantId, cierre], map: "resumenes_tarjeta_cierre")
+  @@map("resumenes_tarjeta")
 }

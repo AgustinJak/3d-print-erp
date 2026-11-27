@@ -3,6 +3,7 @@
 import { motion } from "motion/react";
 import { Segmentado } from "@/components/segmentado";
 import { FinanzasPorCuenta, type PorCuentaData } from "./por-cuenta";
+import { Retirar } from "./retirar";
 import { useEffect, useState, useCallback } from "react";
 import {
   ArrowLeft, ArrowRight, Wallet, Save, Download, Factory, Building2, ArrowRightLeft, Loader2, RefreshCw,
@@ -109,14 +110,6 @@ interface FinanzasData {
     transferencias: number;
     disponible: number;
     mes: number;
-  };
-  retirable: {
-    puede: number;
-    disponible: number;
-    cuotasEmpresariales: number;
-    faltaFabricacion: number;
-    repartoAdeudado: number;
-    dias: number;
   };
   billeteraEmp: {
     desde: string | null;
@@ -529,7 +522,9 @@ export default function FinanzasPage() {
 
         <Card>
           <CardContent className="pt-5 pb-4 space-y-4">
-            <div>
+            {/* Lo que se puede sacar de Mercado Pago, con el saldo real (docs/sdd/019). */}
+            <Retirar socios={socios} />
+            <div className="border-t pt-4">
               <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" /> Billetera empresarial</p>
               <p className={`text-2xl font-bold tabular-nums mt-0.5 ${data.billeteraEmp.disponible >= 0 ? "" : "text-red-500"}`}>{formatMoney(data.billeteraEmp.disponible)}</p>
               <p className="text-xs text-muted-foreground mt-0.5">Entró {formatMoney(data.billeteraEmp.acumulado)} · salió {formatMoney(data.billeteraEmp.gastado)}{data.billeteraEmp.transferencias > 0 ? ` · retiros ${formatMoney(data.billeteraEmp.transferencias)}` : ""}</p>

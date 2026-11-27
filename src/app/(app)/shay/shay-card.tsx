@@ -67,6 +67,8 @@ interface Cierre {
   compartidos: GastosCompartidos;
   parteCompartidos: number;
   aPasar: number;
+  /** Lo que se le pagó de este mes (docs/sdd/019). */
+  pagado: { monto: number | null; fecha: string } | null;
   notas: string | null;
   pedidos: PedidoTercero[];
   calculadoEn: string;
@@ -192,6 +194,28 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
         return;
       }
       if (data.cierre) setCierre(data.cierre);
+    } catch {
+      toast.error("No se pudo guardar");
+    }
+  };
+
+  /* ── pagado (docs/sdd/019): "Se puede retirar" no cuenta lo de los meses ya pagados ── */
+
+  const [pagando, setPagando] = useState<{ monto: string; fecha: string } | null>(null);
+  const marcarPagado = async (pagado: { monto: number; fecha: string } | null) => {
+    try {
+      const res = await fetch("/api/finanzas/terceros", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ anio, mes, pagado }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "No se pudo guardar");
+        return;
+      }
+      if (data.cierre) setCierre(data.cierre);
+      setPagando(null);
     } catch {
       toast.error("No se pudo guardar");
     }
@@ -528,6 +552,36 @@ export function ShayCard({ mes, anio, nombreMes }: { mes: number; anio: number; 
                 {cierre.publicidad > 0 && <> − {money(cierre.publicidad)} publicidad</>}
                 {cierre.parteCompartidos > 0 && <> − {money(cierre.parteCompartidos)} de gastos</>}
               </p>
+            </div>
+
+            {/* Si ya se le pagó: Finanzas deja de contar esta plata como de Shay al calcular lo que se puede retirar. */}
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              {cierre.pagado ? (
+                <>
+                  <span className="text-muted-foreground">
+                    Pagado el {new Date(`${cierre.pagado.fecha}T12:00:00Z`).toLocaleDateString("es-AR", { day: "numeric", month: "numeric", timeZone: "UTC" })}
+                    {cierre.pagado.monto != null && <> · {money(cierre.pagado.monto)}</>}
+                  </span>
+                  <button type="button" className="text-muted-foreground underline-offset-2 hover:underline" onClick={() => marcarPagado(null)}>
+                    deshacer
+                  </button>
+                </>
+              ) : pagando ? (
+                <>
+                  <Input type="date" value={pagando.fecha} onChange={(e) => setPagando({ ...pagando, fecha: e.target.value })} className="h-7 w-36 text-xs" />
+                  <Input inputMode="decimal" value={pagando.monto} onChange={(e) => setPagando({ ...pagando, monto: e.target.value })} className="h-7 w-28 text-xs" aria-label="Monto pagado" />
+                  <Button size="sm" className="h-7 text-xs" disabled={!pagando.fecha || !(parsePrice(pagando.monto) >= 0)} onClick={() => marcarPagado({ monto: parsePrice(pagando.monto), fecha: pagando.fecha })}>
+                    Guardar
+                  </Button>
+                  <button type="button" className="text-muted-foreground" onClick={() => setPagando(null)}>
+                    cancelar
+                  </button>
+                </>
+              ) : (
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setPagando({ monto: String(Math.round(cierre.aPasar)), fecha: new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }) })}>
+                  Marcar pagado
+                </Button>
+              )}
             </div>
 
             {abierto && (

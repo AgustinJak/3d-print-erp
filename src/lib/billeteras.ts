@@ -60,47 +60,6 @@ export function saldoBilletera(
   };
 }
 
-export interface Retirable {
-  /** Lo que se puede sacar hoy sin dejar al negocio corto para lo que viene. Nunca negativo. */
-  puede: number;
-  /** La billetera empresarial, de donde sale. */
-  disponible: number;
-  /** Gastos y cuotas empresariales de los próximos días. */
-  cuotasEmpresariales: number;
-  /** Lo que a fabricación le falta para lo suyo de los próximos días (o su negativo). */
-  faltaFabricacion: number;
-  /** Lo entregado por el repartidor que todavía no se le pagó (docs/sdd/018). */
-  repartoAdeudado: number;
-  dias: number;
-}
-
-/**
- * Cuánto se puede retirar hoy (decisión de Agustín, 2026-11-27: Mercado Pago queda sólo para la
- * empresa y la ganancia se retira a otra cuenta). Es la billetera empresarial menos lo que ya se
- * sabe que va a salir en los próximos `dias`:
- * - los gastos y cuotas empresariales con fecha en ese plazo;
- * - lo que le falte a fabricación para sus cuotas del plazo (si está en negativo, también eso:
- *   lo cubre la empresa);
- * - lo que se le debe al repartidor.
- * Los cargos de ML no van: la billetera ya los descuenta a medida que ML los genera.
- */
-export function cuantoSePuedeRetirar(
-  empDisponible: number,
-  fabDisponible: number,
-  gastos: Array<{ fecha: Date; monto: number; billetera: string }>,
-  repartoAdeudado: number,
-  ahora: Date,
-  dias = 30
-): Retirable {
-  const hasta = new Date(ahora.getTime() + dias * 864e5);
-  const proximos = (b: NombreBilletera) =>
-    gastos.filter((g) => g.billetera === b && !yaOcurrio(g.fecha, ahora) && g.fecha <= hasta).reduce((s, g) => s + g.monto, 0);
-  const cuotasEmpresariales = proximos("empresarial");
-  const faltaFabricacion = Math.max(0, proximos("fabricacion") - fabDisponible);
-  const puede = Math.max(0, empDisponible - cuotasEmpresariales - faltaFabricacion - repartoAdeudado);
-  return { puede, disponible: empDisponible, cuotasEmpresariales, faltaFabricacion, repartoAdeudado, dias };
-}
-
 /** La billetera de fabricación leída de la base, para quien no tiene ya los datos cargados. */
 export async function billeteraFabricacion(tenantId: string, ahora = new Date()): Promise<SaldoBilletera> {
   const [costo, gastos, transferencias] = await Promise.all([

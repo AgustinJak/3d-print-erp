@@ -7,6 +7,7 @@ import {
   compartidosPrevios,
   guardarCompartidos,
   leerCierreTercero,
+  marcarPagado,
 } from "@/lib/ventas-terceros";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -20,6 +21,8 @@ import { NextRequest, NextResponse } from "next/server";
  * PATCH → guarda los gastos compartidos del mes: percepciones y monotributo con
  *         su TOTAL, que se reparte solo según cuánto vendió cada tienda, y el
  *         convenio de Shay como monto fijo (`iibbSocio`, desde el 2026-11-12).
+ *         Con `pagado: { monto, fecha } | null` marca (o desmarca) el mes como pagado a Shay
+ *         (docs/sdd/019), sin tocar los gastos.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -65,6 +68,17 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
     const { anio, mes } = body;
     if (!anio || !mes) return NextResponse.json({ error: "anio y mes requeridos" }, { status: 400 });
+
+    if ("pagado" in body) {
+      const p = body.pagado as { monto?: unknown; fecha?: unknown } | null;
+      const monto = Number(p?.monto);
+      if (p !== null && (!Number.isFinite(monto) || monto < 0 || typeof p?.fecha !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(p.fecha))) {
+        return NextResponse.json({ error: "Faltan el monto o la fecha del pago" }, { status: 400 });
+      }
+      const ok = await marcarPagado(tenantId, Number(anio), Number(mes), p === null ? null : { monto, fecha: p.fecha as string });
+      if (!ok) return NextResponse.json({ error: "Primero calculá el mes" }, { status: 400 });
+      return NextResponse.json({ cierre: await leerCierreTercero(tenantId, Number(anio), Number(mes)) });
+    }
 
     await guardarCompartidos(tenantId, Number(anio), Number(mes), {
       percepciones: body.percepciones,
