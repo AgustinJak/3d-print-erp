@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedTenant } from "@/lib/tenant";
-import { saldoBilletera, yaOcurrio as yaOcurrioHoy } from "@/lib/billeteras";
+import { cuantoSePuedeRetirar, saldoBilletera, yaOcurrio as yaOcurrioHoy } from "@/lib/billeteras";
 import { cargosPorMes, cargosVacios, ultimaLecturaDeMl, type CargosDelMes } from "@/lib/resultado-mes";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -110,8 +110,11 @@ export async function GET(request: NextRequest) {
     });
 
     // ─── Helpers ──────────────────────────────────────────
+    // Lo cobrado incluye el envío que paga el cliente (desde el 2026-11-27): lo que se paga por mandarlo
+    // (MiCorreo, la moto) es gasto, así que el envío cobrado tiene que ser ingreso. En ML es siempre 0:
+    // su envío va en el neto y en la bonificación Flex. El panel ya lo contaba así.
     const calcularTotales = (pedidos: PedidoConItems[]) => {
-      let ingresos = 0;       // venta de productos (sin envío)
+      let ingresos = 0;
       let costoFab = 0;
       let envios = 0;
       pedidos.forEach((p) => {
@@ -120,6 +123,7 @@ export async function GET(request: NextRequest) {
           costoFab += item.costoUnitario * item.cantidad;
         });
         envios += p.precioEnvio;
+        ingresos += p.precioEnvio;
       });
       return { ingresos, costoFab, envios, ganancia: ingresos - costoFab };
     };
@@ -220,6 +224,10 @@ export async function GET(request: NextRequest) {
     const transfeHaciaEmp = emp.transferidoHacia;
     const transfeDesdeEmp = emp.transferidoDesde;
     const billeteraEmpDisponible = emp.disponible + flexHistorico - cargosHistoricos;
+
+    // Cuánto se puede retirar hoy (2026-11-27): la empresarial menos lo que se sabe que viene en 30 días.
+    const adeudadoReparto = await prisma.envioReparto.aggregate({ where: { tenantId, estado: "entregado", liquidacionId: null }, _sum: { precio: true } });
+    const retirable = cuantoSePuedeRetirar(billeteraEmpDisponible, fab.disponible, todosGastos, Number(adeudadoReparto._sum.precio ?? 0), ahora);
 
     // Compromisos futuros (cuotas + gastos con fecha posterior a hoy)
     const compromisosFuturosFab = fab.comprometido - fab.gastado;
@@ -523,6 +531,7 @@ export async function GET(request: NextRequest) {
         disponible: billeteraEmpDisponible,
         mes: billeteraEmpMes + cargosDelMes.flex.ingresos - cargosDelMes.neto,
       },
+      retirable,
       ml: { leidoEn: await ultimaLecturaDeMl(tenantId) },
       porCuenta,
       gastosPorCategoria,
