@@ -529,25 +529,7 @@ export default function FinanzasPage() {
 
         <Card>
           <CardContent className="pt-5 pb-4 space-y-4">
-            {/* Mercado Pago es sólo de la empresa (2026-11-27): esto es lo que se puede pasar a la cuenta personal hoy. */}
             <div>
-              <p className="text-xs text-muted-foreground flex items-center gap-1.5"><MinusCircle className="h-3.5 w-3.5" /> Se puede retirar hoy</p>
-              <p className="text-2xl font-bold tabular-nums mt-0.5 text-primary">{formatMoney(data.retirable.puede)}</p>
-              {socios.length > 0 && data.retirable.puede > 0 && (
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {socios.map((s) => `${s.nombre} ${formatMoney(data.retirable.puede * (s.porcentaje / 100))}`).join(" · ")}
-                </p>
-              )}
-              <div className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
-                <p>De la billetera empresarial ({formatMoney(data.retirable.disponible)}) se reserva lo que viene en {data.retirable.dias} días:</p>
-                {data.retirable.cuotasEmpresariales > 0 && <p>· gastos y cuotas: {formatMoney(data.retirable.cuotasEmpresariales)}</p>}
-                {data.retirable.faltaFabricacion > 0 && <p>· lo que le falta a fabricación: {formatMoney(data.retirable.faltaFabricacion)}</p>}
-                {data.retirable.repartoAdeudado > 0 && <p>· lo que se le debe al repartidor: {formatMoney(data.retirable.repartoAdeudado)}</p>}
-                {data.retirable.cuotasEmpresariales + data.retirable.faltaFabricacion + data.retirable.repartoAdeudado === 0 && <p>· nada por ahora.</p>}
-                <p>Lo de Shay no cuenta: no es del negocio. Retirá con el botón Retiro, a nombre de quien saca.</p>
-              </div>
-            </div>
-            <div className="border-t pt-4">
               <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" /> Billetera empresarial</p>
               <p className={`text-2xl font-bold tabular-nums mt-0.5 ${data.billeteraEmp.disponible >= 0 ? "" : "text-red-500"}`}>{formatMoney(data.billeteraEmp.disponible)}</p>
               <p className="text-xs text-muted-foreground mt-0.5">Entró {formatMoney(data.billeteraEmp.acumulado)} · salió {formatMoney(data.billeteraEmp.gastado)}{data.billeteraEmp.transferencias > 0 ? ` · retiros ${formatMoney(data.billeteraEmp.transferencias)}` : ""}</p>
